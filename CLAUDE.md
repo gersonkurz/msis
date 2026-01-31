@@ -41,7 +41,9 @@ msis-3.x/
 │   ├── generator/      # IR → WiX XML generation
 │   │   ├── context.go
 │   │   └── context_test.go
-│   └── wix/            # WiX CLI integration (TODO)
+│   └── wix/            # WiX CLI integration
+│       ├── builder.go
+│       └── builder_test.go
 ├── templates/          # WiX 6.x Handlebars templates (TODO)
 ├── go.mod
 └── justfile
@@ -61,9 +63,18 @@ msis-3.x/
   - SetEnv XML generation (Environment elements) ✅
   - Service XML generation (ServiceInstall/ServiceControl) ✅
   - CLI integration (outputs Directory and Feature XML) ✅
-  - Tests: 11 generator tests, 41 total tests passing ✅
-- **Milestone 3.4**: Template rendering
-- **Milestone 3.5**: WiX CLI integration
+  - Tests: 15 generator tests ✅
+- **Milestone 3.4**: Template rendering ✅
+  - Template renderer using raymond (Handlebars) ✅
+  - Variable context building ✅
+  - Templates ported from msis-2.x ✅
+  - CLI writes complete .wxs file ✅
+  - Tests: 9 template tests ✅
+- **Milestone 3.5**: WiX CLI integration ✅
+  - WiX builder with `wix build` invocation ✅
+  - EULA acceptance handling ✅
+  - Cleanup of .wixpdb and .wxs ✅
+  - Tests: 9 wix tests ✅
 
 ## Key Dependencies
 

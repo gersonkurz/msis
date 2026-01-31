@@ -1,0 +1,166 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+    <Package Name="{{PRODUCT_NAME}}" UpgradeCode="{{UPGRADE_CODE}}" Language="{{LCID}}" Codepage="{{CODEPAGE}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" InstallerVersion="301">
+        <SummaryInformation Keywords="Installer" Description="{{PRODUCT_NAME}}" Manufacturer="{{MANUFACTURER}}" Codepage="{{CODEPAGE}}" />
+        <Media Id="1" Cabinet="setupthis.cab" EmbedCab="yes" />
+        <SetProperty Id="COMPUTERNAME" Before="InstallInitialize" Sequence="execute" Value="[%COMPUTERNAME]" />
+        <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed. Setup will now exit." />
+        <WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />
+        <WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />
+        <util:QueryWindowsWellKnownSIDs />
+		<Binary Id="binary.dll" SourceFile="{{TEMPLATE_FOLDER}}/x86/{{DLL_ENTRY}}" />
+        {{#if SETUP_ICON }}
+        <Icon Id="ngbt_setup_icon.ico" SourceFile="{{SETUP_ICON}}" />
+        <Property Id="ARPPRODUCTICON" Value="ngbt_setup_icon.ico" />
+        {{/if}}
+        {{#if DLL_CUSTOM }}
+        <Binary Id="CustomAction" SourceFile="{{DLL_CUSTOM}}" />
+        {{/if}}
+        {{#unless REPAIR_ENABLED }}
+        <Property Id="ARPNOREPAIR" Value="yes" Secure="yes" />
+        {{/unless}}
+        {{#unless REMOVE_ENABLED }}
+        <Property Id="ARPNOMODIFY" Value="yes" Secure="yes" />
+        {{/unless}}
+        {{#if REMOVE_REGISTRY_TREE }}
+        <Property Id="REMOVE_REGISTRY_TREE" Value="{{ REMOVE_REGISTRY_TREE }}" Secure="yes" />
+        {{/if}}
+        {{#if DO_NOT_UPGRADE_FROM }}
+        <Upgrade Id="{{ DO_NOT_UPGRADE_FROM }}">
+            <UpgradeVersion IncludeMaximum="yes" IncludeMinimum="yes" Maximum="255.255.65535.65535" Minimum="1.0.0.0" MigrateFeatures="no" Property="OLDPRODUCTISINSTALLED" OnlyDetect="yes" />      
+        </Upgrade>
+        {{#if DO_NOT_UPGRADE_MESSAGE}}
+        <Launch Condition="NOT OLDPRODUCTISINSTALLED OR Installed" Message="{{DO_NOT_UPGRADE_MESSAGE}}" />
+        {{/if}}
+        {{#unless DO_NOT_UPGRADE_MESSAGE}}
+        <Launch Condition="NOT OLDPRODUCTISINSTALLED OR Installed" Message="older version of ProAKT cannot be upgraded" />
+        {{/unless}}
+        {{/if}}
+		<DirectoryRef Id="INSTALLDIR">
+			<Merge Id="VCRedist_141" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC141_CRT_x86.msm" DiskId="1" Language="0" />
+            <Merge Id="VCRedist_140" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC140_CRT_x86.msm" DiskId="1" Language="0" />
+            <Merge Id="VCRedist_100" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC100_CRT_x86.msm" DiskId="1" Language="0" />
+        </DirectoryRef>
+        <Feature Id="VCRedist" Title="Visual C++ Runtime" AllowAdvertise="no" Display="hidden" Level="1">
+			<MergeRef Id="VCRedist_141" />
+            <MergeRef Id="VCRedist_140" />
+            <MergeRef Id="VCRedist_100" />
+        </Feature>
+        <Property Id="WIXUI_FEATURETREENOLICENSE" Value="INSTALLDIR" />
+        {{{FEATURES}}}
+        <UI Id="WixUI_FeatureTreeNoLicense">
+            <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+            <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+            <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+            <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+            <Property Id="WixUI_Mode" Value="FeatureTree" />
+            <DialogRef Id="ErrorDlg" />
+            <DialogRef Id="FatalError" />
+            <DialogRef Id="FilesInUse" />
+            <DialogRef Id="MsiRMFilesInUse" />
+            <DialogRef Id="PrepareDlg" />
+            <DialogRef Id="ProgressDlg" />
+            <DialogRef Id="ResumeDlg" />
+            <DialogRef Id="UserExit" />
+            {{#if START_EXE}}
+            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+            {{/if}}
+            <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Condition="NOT Installed" />
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="1" Condition="Installed" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+            <Publish Dialog="CustomizeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="CustomizeDlg" Order="1" Condition="NOT Installed OR WixUI_InstallMode = &quot;Change&quot;" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+            <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="Installed AND PATCH" />
+            <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="ChangeButton" Event="NewDialog" Value="CustomizeDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+            <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+        </UI>
+        {{#if START_EXE}}
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch {{PRODUCT_NAME}}" />
+		<Property Id="WixShellExecTarget" Value="[#{{START_EXE}}]" />
+		<CustomAction Id="LaunchApplication" DllEntry="WixShellExec" Impersonate="yes" BinaryRef="Wix4UtilCA_X86" />
+        {{/if}}
+        <UIRef Id="WixUI_Common" />
+        <UIRef Id="WixUI_ErrorProgressText" />
+        {{#if REMOVE_FOLDERS_ON_UNINSTALL }}
+        <CustomAction Id="RemoveAllFoldersOnUninstall" Return="check" Execute="immediate" DllEntry="RemoveAllFoldersOnUninstall" BinaryRef="binary.dll" />
+        {{/if}}
+        {{#if REMOVE_REGISTRY_TREE }}
+        <CustomAction Id="RemoveRegistryTreeOnUninstallPrep" Property="RemoveRegistryTreeOnUninstall" Value="[REMOVE_REGISTRY_TREE]" />
+        <CustomAction Id="RemoveRegistryTreeOnUninstall" Return="check" Execute="deferred" Impersonate="no" DllEntry="RemoveRegistryTreeOnUninstall" BinaryRef="binary.dll" />
+        {{/if}}
+
+        {{#if DLL_CUSTOM }}
+        <CustomAction Id="BeforeInstallAction" DllEntry="BeforeInstall" Return="check" BinaryRef="CustomAction" />
+	    <CustomAction Id="AfterInstallAction" DllEntry="AfterInstall" Return="check" BinaryRef="CustomAction" />
+	    <CustomAction Id="BeforeUninstallAction" DllEntry="BeforeUninstall" Return="check" BinaryRef="CustomAction" />
+	    <CustomAction Id="AfterUninstallAction" DllEntry="AfterUninstall" Return="check" BinaryRef="CustomAction" />
+        {{/if}}
+
+        {{{CUSTOM_ACTIONS}}}
+        <CustomAction Id="BeforeInstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeInstall" BinaryRef="binary.dll" />
+        <CustomAction Id="AfterInstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterInstall" BinaryRef="binary.dll" />
+        <CustomAction Id="BeforeUpgrade" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeUpgrade" BinaryRef="binary.dll" />
+        <CustomAction Id="AfterUpgrade" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterUpgrade" BinaryRef="binary.dll" />
+        <CustomAction Id="BeforeUninstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeUninstall" BinaryRef="binary.dll" />
+        <CustomAction Id="AfterUninstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterUninstall" BinaryRef="binary.dll" />
+        <!-- debugging
+        <CustomAction Id="ListAllKnownPropertiesPrep" Property="ListAllKnownProperties" Value="REMOVE_REGISTRY_TREE=[REMOVE_REGISTRY_TREE]"/>
+        <CustomAction Id="ListAllKnownProperties" Return="ignore" Execute="deferred" Impersonate="no" BinaryKey="binary.dll" DllEntry="ListAllKnownProperties" />
+        -->
+		
+
+		<InstallExecuteSequence>
+            {{{INSTALL_EXECUTE_SEQUENCE}}}
+            {{#if DLL_CUSTOM }}
+            <Custom Action="BeforeInstallAction" After="CostFinalize" Condition="NOT Installed AND NOT PATCH" />
+            <Custom Action="AfterInstallAction" After="InstallFinalize" Condition="NOT Installed" />
+            <Custom Action="BeforeUninstallAction" After="CostFinalize" Condition="(REMOVE = &quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+            {{/if}}
+            <Custom Action="BeforeInstall" After="InstallInitialize" Condition="NOT Installed" />
+            <Custom Action="AfterInstall" Before="InstallFinalize" Condition="NOT Installed" />
+            <!-- UPGRADINGPRODUCTCODE - only set for RemoveExistingProducts - so it is set in the Uninstaller of the previous version - upgrade is detected via WIX_UPGRADE_DETECTED or WIX_DOWNGRADE_DETECTED
+            <Custom Action="BeforeUpgrade" After="InstallInitialize">UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="AfterUpgrade" Before="InstallFinalize">UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action="BeforeUninstall" After="InstallInitialize"> (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
+            <Custom Action="AfterUninstall" Before="InstallFinalize"> (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
+            -->
+            <Custom Action="BeforeUpgrade" After="InstallInitialize" Condition="WIX_UPGRADE_DETECTED" />
+            <Custom Action="AfterUpgrade" Before="InstallFinalize" Condition="WIX_UPGRADE_DETECTED" />
+            <Custom Action="BeforeUninstall" After="InstallInitialize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            <!-- debugging
+            <Custom Action="ListAllKnownPropertiesPrep" Before="ListAllKnownProperties">(NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
+            <Custom Action="ListAllKnownProperties" Before="InstallFinalize">(NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
+            -->
+            {{#if REMOVE_FOLDERS_ON_UNINSTALL }}
+            <Custom Action="RemoveAllFoldersOnUninstall" After="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            {{/if}}
+            {{#if REMOVE_REGISTRY_TREE }}
+            <Custom Action="RemoveRegistryTreeOnUninstallPrep" Before="RemoveRegistryTreeOnUninstall" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            <Custom Action="RemoveRegistryTreeOnUninstall" Before="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            {{/if}}
+            {{#if DLL_CUSTOM }}
+            <Custom Action="AfterUninstallAction" After="RemoveAllFoldersOnUninstall" Condition="(REMOVE = &quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+            {{/if}}
+            <Custom Action="AfterUninstall" Before="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            {{#if SCHEDULE_REBOOT }}
+            <ScheduleReboot After="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            {{/if}}
+        </InstallExecuteSequence>
+
+        <StandardDirectory Id="DesktopFolder">{{{DESKTOP_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="CommonAppDataFolder">{{{APPDATADIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="ProgramFilesFolder">
+            {{{INSTALLDIR_FILES}}}
+            <!-- Note: The next empty directory is needed so that the Default INSTALLFOLDER created by WixToolset IS NOT CREATED -->
+            <!-- https://docs.firegiant.com/wix/fivefour/#default-installation-folder -->
+			<Directory Id="INSTALLFOLDER" />
+        </StandardDirectory>
+        <StandardDirectory Id="ProgramMenuFolder">{{{STARTMENU_FILES}}}</StandardDirectory>
+        {{{REGISTRY_ENTRIES}}}
+    </Package>
+</Wix>

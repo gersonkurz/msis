@@ -508,6 +508,86 @@ func TestFeatureIDsAreUnique(t *testing.T) {
 	}
 }
 
+func TestDuplicateFeatureNamesGetSeparateComponents(t *testing.T) {
+	// Create temp directory with test files
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create distinct files for each feature
+	file1 := filepath.Join(tmpDir, "feature1_file.txt")
+	file2 := filepath.Join(tmpDir, "feature2_file.txt")
+	if err := os.WriteFile(file1, []byte("f1"), 0644); err != nil {
+		t.Fatalf("failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(file2, []byte("f2"), 0644); err != nil {
+		t.Fatalf("failed to create file2: %v", err)
+	}
+
+	// Two features with SAME display name but DIFFERENT files
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Duplicate Name",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: file1, Target: "[INSTALLDIR]dir1"},
+				},
+			},
+			{
+				Name:    "Duplicate Name", // Same name!
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: file2, Target: "[INSTALLDIR]dir2"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Parse the feature XML to verify each feature has its own components
+	// First feature (FEATURE_00000) should have feature1_file.txt
+	// Second feature (FEATURE_00001) should have feature2_file.txt
+
+	// Find feature sections
+	feature0Start := strings.Index(output.FeatureXML, "FEATURE_00000")
+	feature1Start := strings.Index(output.FeatureXML, "FEATURE_00001")
+
+	if feature0Start == -1 || feature1Start == -1 {
+		t.Fatalf("expected both features in output:\n%s", output.FeatureXML)
+	}
+
+	// Get the section for feature 0 (from FEATURE_00000 to FEATURE_00001)
+	feature0Section := output.FeatureXML[feature0Start:feature1Start]
+
+	// Get the section for feature 1 (from FEATURE_00001 to end)
+	feature1Section := output.FeatureXML[feature1Start:]
+
+	// Feature 0 should have a ComponentRef (for file1)
+	if !strings.Contains(feature0Section, "ComponentRef") {
+		t.Error("FEATURE_00000 should have ComponentRef for its file")
+	}
+
+	// Feature 1 should have a ComponentRef (for file2)
+	if !strings.Contains(feature1Section, "ComponentRef") {
+		t.Error("FEATURE_00001 should have ComponentRef for its file")
+	}
+
+	// Verify the components are different by checking that we have 2 ComponentRefs total
+	componentRefCount := strings.Count(output.FeatureXML, "ComponentRef")
+	if componentRefCount != 2 {
+		t.Errorf("expected 2 ComponentRefs (one per feature), got %d", componentRefCount)
+	}
+}
+
 func TestDirectoryXMLSorted(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{
@@ -542,5 +622,106 @@ func TestDirectoryXMLSorted(t *testing.T) {
 	}
 	if output.FeatureXML != output2.FeatureXML {
 		t.Error("feature XML output should be deterministic")
+	}
+}
+
+func TestGenerateShortName(t *testing.T) {
+	tests := []struct {
+		fileName   string
+		occurrence int
+		want       string
+	}{
+		{"ng1_watchdog.processes.xml", 2, "NG1_WA_2.XML"},
+		{"ng1_watchdog.processes.xml", 3, "NG1_WA_3.XML"},
+		{"readme.txt", 2, "README_2.TXT"},
+		{"LONGFILENAME.doc", 2, "LONGFI_2.DOC"},
+		{"file", 2, "FILE_2"},                     // No extension
+		{"a.b.c.d", 2, "ABC_2.D"},                 // Multiple dots - ext is last part
+		{"file.toolongext", 2, "FILE_2.TOO"},     // Extension truncated to 3
+		{"!!!special!!!.txt", 2, "SPECIA_2.TXT"}, // Special chars stripped, keeps SPECIA
+		{"config_backup.xml", 2, "CONFIG_2.XML"}, // Underscore preserved
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.fileName, func(t *testing.T) {
+			got := generateShortName(tt.fileName, tt.occurrence)
+			if got != tt.want {
+				t.Errorf("generateShortName(%q, %d) = %q, want %q", tt.fileName, tt.occurrence, got, tt.want)
+			}
+			// Verify 8.3 format: base max 8 chars, ext max 3 chars
+			parts := strings.Split(got, ".")
+			if len(parts[0]) > 8 {
+				t.Errorf("base name %q exceeds 8 characters", parts[0])
+			}
+			if len(parts) > 1 && len(parts[1]) > 3 {
+				t.Errorf("extension %q exceeds 3 characters", parts[1])
+			}
+		})
+	}
+}
+
+func TestDuplicateTargetFilesGetShortName(t *testing.T) {
+	// Create temp directory with test files
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create two source directories with the same filename
+	baseDir := filepath.Join(tmpDir, "base")
+	overrideDir := filepath.Join(tmpDir, "override")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		t.Fatalf("failed to create base dir: %v", err)
+	}
+	if err := os.MkdirAll(overrideDir, 0755); err != nil {
+		t.Fatalf("failed to create override dir: %v", err)
+	}
+
+	// Same filename in both directories
+	baseFile := filepath.Join(baseDir, "config.xml")
+	overrideFile := filepath.Join(overrideDir, "config.xml")
+	if err := os.WriteFile(baseFile, []byte("base"), 0644); err != nil {
+		t.Fatalf("failed to create base file: %v", err)
+	}
+	if err := os.WriteFile(overrideFile, []byte("override"), 0644); err != nil {
+		t.Fatalf("failed to create override file: %v", err)
+	}
+
+	// Two features targeting the SAME directory with files of the SAME name
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Base Feature",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: baseDir, Target: "[INSTALLDIR]config"},
+				},
+			},
+			{
+				Name:    "Override Feature",
+				Enabled: false,
+				Allowed: true,
+				Items: []ir.Item{
+					ir.Files{Source: overrideDir, Target: "[INSTALLDIR]config"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// First file should NOT have ShortName
+	// Second file SHOULD have ShortName to avoid collision
+	if strings.Contains(output.DirectoryXML, "ShortName='CONFIG_1") {
+		t.Error("first occurrence should NOT have ShortName")
+	}
+	if !strings.Contains(output.DirectoryXML, "ShortName='CONFIG_2.XML'") {
+		t.Errorf("expected second occurrence to have ShortName='CONFIG_2.XML', got:\n%s", output.DirectoryXML)
 	}
 }

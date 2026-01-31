@@ -1,0 +1,109 @@
+﻿<!-- Copyright (c) .NET Foundation and contributors. All rights reserved. Licensed under the Microsoft Reciprocal License. See LICENSE.TXT file in the project root for full license information. -->
+
+
+<WixLocalization Culture="da-dk" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+    <String Id="msierrUSRFailedUserCreate" Overridable="yes" Value="Failed to create user. ([2] [3] [4] [5])" />
+    <String Id="msierrUSRFailedUserCreatePswd" Overridable="yes" Value="Failed to create user due to invalid password. ([2] [3] [4] [5])" />
+    <String Id="msierrUSRFailedUserGroupAdd" Overridable="yes" Value="Failed to add user to group. ([2] [3] [4] [5])" />
+    <String Id="msierrUSRFailedUserCreateExists" Overridable="yes" Value="Failed to create user because it already exists. ([2] [3] [4] [5])" />
+
+    <String Id="msierrSMBFailedCreate" Overridable="yes" Value="Failed to create network share. ([2] [3] [4] [5])" />
+    <String Id="msierrSMBFailedDrop" Overridable="yes" Value="Failed to drop network share. ([2] [3] [4] [5])" />
+
+    <String Id="msierrPERFMONFailedRegisterDLL" Overridable="yes" Value="Failed to register DLL with PerfMon. ([2] [3] [4] [5])" />
+    <String Id="msierrPERFMONFailedUnregisterDLL" Overridable="yes" Value="Failed to unregister DLL with PerfMon. ([2] [3] [4] [5])" />
+
+    <String Id="msierrInstallPerfCounterData" Overridable="yes" Value="Failed to install performance counters. ([2] [3] [4] [5])" />
+    <String Id="msierrUninstallPerfCounterData" Overridable="yes" Value="Failed to uninstall performance counters. ([2] [3] [4] [5])" />
+
+    <String Id="msierrSecureObjectsFailedCreateSD" Overridable="yes" Value="Failed to create security descriptor for [3]\[4], system error: [2]" />
+    <String Id="msierrSecureObjectsFailedSet" Overridable="yes" Value="Failed to set security descriptor on object [3], system error: [2]" />
+    <String Id="msierrSecureObjectsUnknownType" Overridable="yes" Value="Unknown Object Type [3], system error: [2]" />
+
+    <String Id="msierrXmlFileFailedRead" Overridable="yes" Value="There was a failure while configuring XML files." />
+    <String Id="msierrXmlFileFailedOpen" Overridable="yes" Value="Failed to open XML file [3], system error: [2]" />
+    <String Id="msierrXmlFileFailedSelect" Overridable="yes" Value="Failed to find node: [3] in XML file: [4], system error: [2]" />
+    <String Id="msierrXmlFileFailedSave" Overridable="yes" Value="Failed to save changes to XML file [3], system error: [2]" />
+
+    <String Id="msierrXmlConfigFailedRead" Overridable="yes" Value="There was a failure while configuring XML files." />
+    <String Id="msierrXmlConfigFailedOpen" Overridable="yes" Value="Failed to open XML file [3], system error: [2]" />
+    <String Id="msierrXmlConfigFailedSelect" Overridable="yes" Value="Failed to find node: [3] in XML file: [4], system error: [2]" />
+    <String Id="msierrXmlConfigFailedSave" Overridable="yes" Value="Failed to save changes to XML file [3], system error: [2]" />
+    
+    <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] [ProductVersion] Setup Wizard" />
+    <String Id="PrepareDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] [ProductVersion] Setup Wizard" />
+    
+    <String Id="AdvancedWelcomeEulaDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="AdvancedWelcomeEulaDlgTitle" Value="{\WixUI_Font_Title}Please read the [ProductName] [ProductVersion] License Agreement" />
+    <String Id="BrowseDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="CancelDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="CancelDlgText" Value="Are you sure you want to cancel [ProductName] [ProductVersion] installation?" />
+    <String Id="CustomizeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="DiskCostDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ErrorDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ExitDialog_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}Completed the [ProductName] [ProductVersion] Setup Wizard" />
+    <String Id="FatalError_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="FatalErrorTitle" Value="{\WixUI_Font_Bigger}[ProductName] [ProductVersion] Setup Wizard ended prematurely" />
+    <String Id="FatalErrorDescription1" Value="[ProductName] [ProductVersion] Setup Wizard ended prematurely because of an error. Your system has not been modified. To install this program at a later time, run Setup Wizard again." />
+    <String Id="FeaturesDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="FilesInUse_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="InstallDirDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="InstallDirDlgFolderLabel" Value="Install [ProductName] [ProductVersion] to:" />
+    <String Id="InstallScopeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="InstallScopeDlgPerUserDescription" Value="[ProductName] [ProductVersion] will be installed in a per-user folder and be available just for your user account. You do not need local Administrator privileges." />
+    <String Id="InstallScopeDlgNoPerUserDescription" Value="[ProductName] [ProductVersion] does not support per-user installation." />
+    <String Id="InstallScopeDlgPerMachineDescription" Value="[ProductName] [ProductVersion] will be installed in a per-machine folder by default and be available for all users. You can change the default installation folder. You must have local Administrator privileges." />
+    <String Id="InvalidDirDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="LicenseAgreementDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="MaintenanceTypeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="MaintenanceTypeDlgChangeDisabledText" Value="[ProductName] [ProductVersion] has no independently selectable features." />
+    <String Id="MaintenanceTypeDlgRemoveText" Value="Removes [ProductName] [ProductVersion] from your computer." />
+    <String Id="MaintenanceTypeDlgRemoveDisabledText" Value="[ProductName] [ProductVersion] cannot be removed." />
+    <String Id="MaintenanceTypeDlgRepairDisabledText" Value="[ProductName] [ProductVersion] cannot be repaired." />
+    <String Id="MaintenanceWelcomeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="MaintenanceWelcomeDlgDescription" Value="The Setup Wizard allows you to change the way [ProductName] [ProductVersion] features are installed on your computer or to remove it from your computer. Click Next to continue or Cancel to exit the Setup Wizard." />
+    <String Id="MaintenanceWelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] [ProductVersion] Setup Wizard" />
+    <String Id="MsiRMFilesInUse_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="OutOfDiskDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="OutOfRbDiskDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="PrepareDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ProgressDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ProgressDlgTextInstalling" Value="Please wait while the Setup Wizard installs [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleInstalling" Value="{\WixUI_Font_Title}Installing [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextChanging" Value="Please wait while the Setup Wizard changes [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleChanging" Value="{\WixUI_Font_Title}Changing [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextRepairing" Value="Please wait while the Setup Wizard repairs [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleRepairing" Value="{\WixUI_Font_Title}Repairing [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextRemoving" Value="Please wait while the Setup Wizard removes [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleRemoving" Value="{\WixUI_Font_Title}Removing [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextUpdating" Value="Please wait while the Setup Wizard updates [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleUpdating" Value="{\WixUI_Font_Title}Updating [ProductName] [ProductVersion]" />
+    <String Id="ResumeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="ResumeDlgDescription" Value="The Setup Wizard will complete the installation of [ProductName] [ProductVersion] on your computer. Click Install to continue or Cancel to exit the Setup Wizard." />
+    <String Id="ResumeDlgTitle" Value="{\WixUI_Font_Bigger}Resuming the [ProductName] [ProductVersion] Setup Wizard" />
+
+    <String Id="SetupTypeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="UserExit_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="UserExitTitle" Value="{\WixUI_Font_Bigger}[ProductName] [ProductVersion] Setup Wizard was interrupted" />
+    <String Id="UserExitDescription1" Value="[ProductName] [ProductVersion] setup was interrupted. Your system has not been modified. To install this program at a later time, please run the installation again." />
+    <String Id="VerifyReadyDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="VerifyReadyDlgInstallTitle" Value="{\WixUI_Font_Title}Ready to install [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgChangeTitle" Value="{\WixUI_Font_Title}Ready to change [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgRepairText" Value="Click Repair to repair the installation of [ProductName] [ProductVersion]. Click Back to review or change any of your installation settings. Click Cancel to exit the wizard." />
+    <String Id="VerifyReadyDlgRepairTitle" Value="{\WixUI_Font_Title}Ready to repair [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgRemoveText" Value="Click Remove to remove [ProductName] [ProductVersion] from your computer. Click Back to review or change any of your installation settings. Click Cancel to exit the wizard." />
+    <String Id="VerifyReadyDlgRemoveTitle" Value="{\WixUI_Font_Title}Ready to remove [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgUpdateText" Value="Click Update to update [ProductName] [ProductVersion] from your computer. Click Back to review or change any of your installation settings. Click Cancel to exit the wizard." />
+    <String Id="VerifyReadyDlgUpdateTitle" Value="{\WixUI_Font_Title}Ready to update [ProductName] [ProductVersion]" />
+    <String Id="WaitForCostingDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="WelcomeDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="WelcomeDlgDescription" Value="The Setup Wizard will install [ProductName] [ProductVersion] on your computer. Click Next to continue or Cancel to exit the Setup Wizard." />
+    <String Id="WelcomeUpdateDlgDescriptionUpdate" Value="The Setup Wizard will update [ProductName] [ProductVersion] on your computer. Click Next to continue or Cancel to exit the Setup Wizard." />
+    <String Id="WelcomeEulaDlg_Title" Value="[ProductName] [ProductVersion] Setup" />
+    <String Id="WelcomeEulaDlgTitle" Value="{\WixUI_Font_Title}Please read the [ProductName] [ProductVersion] License Agreement" />
+    <String Id="Error9" Value="[ProductName] [ProductVersion]" />
+    <String Id="Error20" Value="Please wait while Windows configures [ProductName] [ProductVersion]" />
+    <String Id="Error32" Value="{[ProductName] [ProductVersion] }Setup completed successfully." />
+    <String Id="Error33" Value="{[ProductName] [ProductVersion] }Setup failed." />
+</WixLocalization>

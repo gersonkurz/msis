@@ -1,0 +1,33 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+   <!--
+      .NET Framework installation state properties
+      Official documentation can be found at the following location:
+      .NET Framework 4.5/4.5.1/4.5.2/4.6/4.6.1/4.6.2/4.7/4.7.1/4.8 - https://msdn.microsoft.com/en-us/library/w0x726c2(v=vs.110).aspx
+   -->
+
+  <?define NetFx48MinRelease = 528040 ?>
+  <?define NetFx48Description = Microsoft .NET Framework 4.8 ?>
+  
+  <?define NetFx472MinRelease = 461808 ?>
+  <?define NetFx472Description = Microsoft .NET Framework 4.7.2 ?>
+  
+  <?define NetFx462MinRelease = 394802 ?>
+  <?define NetFx462Description = Microsoft .NET Framework 4.6.2 ?>
+  
+  <?define NetFx452MinRelease = 379893 ?>
+  <?define NetFx452Description = Microsoft .NET Framework 4.5.2 ?>
+  
+  <Bundle Name="{{PRODUCT_NAME}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" UpgradeCode="{{UPGRADE_CODE}}">
+  
+    <BootstrapperApplication>
+	    <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}" LogoFile="{{LOGO_BOOTSTRAP}}" Theme="hyperlinkLicense"/>
+      <bal:DisplayInternalUICondition>WixBundleAction = 6</bal:DisplayInternalUICondition>
+	  </BootstrapperApplication>
+
+    <Chain>
+		  <ExePackage Id="{{NET_FRAMEWORK}}" DisplayName="$(var.{{NET_FRAMEWORK}}Description)" SourceFile="{{TEMPLATE_FOLDER}}\netframeworks\\{{NET_FRAMEWORK}}.exe" Permanent="yes" Vital="yes" Compressed="yes" DetectCondition="NETFRAMEWORK45 &gt;= $(var.{{NET_FRAMEWORK}}MinRelease)" InstallArguments="/passive /norestart" />
+      <MsiPackage SourceFile="./{{BUILD_TARGET}}"/>
+    </Chain>
+	
+  </Bundle>
+</Wix>

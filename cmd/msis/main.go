@@ -13,19 +13,22 @@ import (
 
 	"github.com/gersonkurz/msis/internal/generator"
 	"github.com/gersonkurz/msis/internal/parser"
+	"github.com/gersonkurz/msis/internal/template"
 	"github.com/gersonkurz/msis/internal/variables"
+	"github.com/gersonkurz/msis/internal/wix"
 )
 
 // Version is set via ldflags at build time
 var Version = "3.0.0-dev"
 
 type cliArgs struct {
-	build          bool
-	retainWxs      bool
-	template       string
-	templateFolder string
-	dryRun         bool
-	files          []string
+	build           bool
+	retainWxs       bool
+	template        string
+	templateFolder  string
+	customTemplates string
+	dryRun          bool
+	files           []string
 }
 
 func main() {
@@ -91,22 +94,71 @@ func processFile(filename string, args *cliArgs) error {
 		return nil
 	}
 
-	// TODO: Milestone 3.4 - Template rendering
-	// TODO: Milestone 3.5 - WiX CLI integration
-
-	if args.build {
-		fmt.Printf("  [build] Would generate: %s\n", vars.BuildTarget())
-		if !args.retainWxs {
-			fmt.Println("  [build] Would delete .wxs after build")
+	// Milestone 3.4 - Template rendering
+	templateFolder := args.templateFolder
+	if templateFolder == "" {
+		// Default: look for templates in executable directory or standard location
+		exePath, _ := os.Executable()
+		templateFolder = filepath.Join(filepath.Dir(exePath), "templates")
+		if _, err := os.Stat(templateFolder); os.IsNotExist(err) {
+			// Try relative to working directory
+			templateFolder = "templates"
 		}
 	}
 
-	// For now, output the generated XML fragments to stdout (for debugging)
-	if !args.build && output.DirectoryXML != "" {
-		fmt.Println("\n<!-- Directory Structure -->")
-		fmt.Print(output.DirectoryXML)
-		fmt.Println("\n<!-- Features -->")
-		fmt.Print(output.FeatureXML)
+	renderer := template.NewRenderer(vars, templateFolder, args.customTemplates, output)
+
+	// Support custom template override via --template flag
+	if args.template != "" {
+		renderer.SetCustomTemplate(args.template)
+	}
+
+	// Select silent or regular template based on setup.Silent
+	var wxsContent string
+	if setup.Silent {
+		// Try silent template first
+		wxsContent, err = renderer.RenderSilent()
+		if err != nil {
+			return fmt.Errorf("rendering silent template: %w", err)
+		}
+		if wxsContent == "" {
+			// No silent template available, fall back to regular
+			wxsContent, err = renderer.Render()
+			if err != nil {
+				return fmt.Errorf("rendering template: %w", err)
+			}
+		}
+	} else {
+		wxsContent, err = renderer.Render()
+		if err != nil {
+			return fmt.Errorf("rendering template: %w", err)
+		}
+	}
+
+	// Determine output filename
+	wxsFile := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".wxs"
+	if vars.BuildTarget() != "" {
+		wxsFile = strings.TrimSuffix(vars.BuildTarget(), filepath.Ext(vars.BuildTarget())) + ".wxs"
+	}
+
+	// Write WXS file
+	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+		return fmt.Errorf("writing WXS file: %w", err)
+	}
+	fmt.Printf("  Written: %s\n", wxsFile)
+
+	// Milestone 3.5 - WiX CLI integration
+	if args.build {
+		if !wix.IsWixAvailable() {
+			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
+		}
+
+		builder := wix.NewBuilder(vars, wxsFile, templateFolder, args.customTemplates, args.retainWxs)
+		if err := builder.Build(); err != nil {
+			return fmt.Errorf("building MSI: %w", err)
+		}
+
+		fmt.Printf("  Built: %s\n", vars.BuildTarget())
 	}
 
 	return nil
@@ -139,7 +191,8 @@ func parseArgs() *cliArgs {
 	flag.BoolVar(&args.build, "build", false, "run WiX build tools automatically")
 	flag.BoolVar(&args.retainWxs, "retainwxs", false, "retain WXS file after build")
 	flag.StringVar(&args.template, "template", "", "custom template to use")
-	flag.StringVar(&args.templateFolder, "templatefolder", "", "template folder path")
+	flag.StringVar(&args.templateFolder, "templatefolder", "", "template folder path (base)")
+	flag.StringVar(&args.customTemplates, "customtemplates", "", "custom templates overlay (takes precedence)")
 	flag.BoolVar(&args.dryRun, "dry-run", false, "parse and validate only, no output")
 
 	// Help flags
@@ -167,16 +220,18 @@ func printUsage() {
 	fmt.Println("Usage: msis [OPTIONS] FILE [FILE...]")
 	fmt.Println()
 	fmt.Println("Options:")
-	fmt.Println("  --build           Run WiX build tools automatically")
-	fmt.Println("  --retainwxs       Retain WXS file after build")
-	fmt.Println("  --template NAME   Custom template to use")
-	fmt.Println("  --templatefolder  Template folder path")
-	fmt.Println("  --dry-run         Parse and validate only, no output")
-	fmt.Println("  --help, -h, /?    Show this help message")
+	fmt.Println("  /BUILD              Run WiX build tools automatically")
+	fmt.Println("  /RETAINWXS          Retain WXS file after build")
+	fmt.Println("  /TEMPLATE:NAME      Custom template to use")
+	fmt.Println("  /TEMPLATEFOLDER:PATH   Base template folder (public defaults)")
+	fmt.Println("  /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)")
+	fmt.Println("  /DRY-RUN            Parse and validate only, no output")
+	fmt.Println("  /?, /HELP           Show this help message")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  msis setup.msis                    Generate .wxs file")
-	fmt.Println("  msis setup.msis --build            Generate and build MSI")
-	fmt.Println("  msis setup.msis --build --retainwxs  Build and keep .wxs")
-	fmt.Println("  msis setup.msis --dry-run          Validate only")
+	fmt.Println("  msis setup.msis                          Generate .wxs file")
+	fmt.Println("  msis /BUILD setup.msis                   Generate and build MSI")
+	fmt.Println("  msis /BUILD /RETAINWXS setup.msis        Build and keep .wxs")
+	fmt.Println("  msis /TEMPLATEFOLDER:templates /BUILD setup.msis")
+	fmt.Println("  msis /DRY-RUN setup.msis                 Validate only")
 }

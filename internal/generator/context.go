@@ -37,8 +37,16 @@ type Context struct {
 	// Excluded folders (lowercase paths, normalized to source-relative)
 	ExcludedFolders map[string]bool
 
-	// Feature component references (for ComponentRef in features)
-	FeatureComponents map[string][]string // feature name -> component IDs
+	// Feature IDs - maps feature index path to generated ID
+	// Index path is built using feature position in parent (e.g., "0/1/0")
+	featureIDs map[string]string
+
+	// Feature component references (keyed by unique feature ID, not name)
+	FeatureComponents map[string][]string // feature ID -> component IDs
+
+	// Target file tracking for duplicate detection (key: "dirID:lowercaseFilename")
+	// Value is the count of files targeting this location
+	targetFileSeen map[string]int
 }
 
 // NewContext creates a new generation context.
@@ -50,7 +58,9 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		componentIDs:      make(map[string]bool),
 		DirectoryTrees:    make(map[string]*Directory),
 		ExcludedFolders:   make(map[string]bool),
+		featureIDs:        make(map[string]string),
 		FeatureComponents: make(map[string][]string),
+		targetFileSeen:    make(map[string]int),
 	}
 }
 
@@ -79,6 +89,7 @@ type Component struct {
 type File struct {
 	ID         string
 	Name       string
+	ShortName  string // 8.3 format, only set for duplicate targets to avoid collision
 	SourcePath string
 	KeyPath    bool
 }
@@ -172,6 +183,52 @@ func GenerateGUID(path string) string {
 		hex.EncodeToString(hash[6:8]),
 		hex.EncodeToString(hash[8:10]),
 		hex.EncodeToString(hash[10:16]))
+}
+
+// generateShortName creates a valid 8.3 short name for duplicate target files.
+// Format: XXXXX_N.EXT where XXXXX is max 5 chars from base name,
+// N is the occurrence number, and EXT is max 3 chars from extension.
+// Uses _N instead of ~N to avoid WIX1044 ambiguous short name warning.
+func generateShortName(fileName string, occurrence int) string {
+	// Split into base and extension
+	ext := filepath.Ext(fileName)
+	base := strings.TrimSuffix(fileName, ext)
+
+	// Clean extension (remove leading dot, truncate to 3 chars, uppercase)
+	ext = strings.TrimPrefix(ext, ".")
+	if len(ext) > 3 {
+		ext = ext[:3]
+	}
+	ext = strings.ToUpper(ext)
+
+	// Determine max base length based on occurrence number digits
+	// Total must be <= 8 chars: base + "_" + digits
+	occStr := fmt.Sprintf("%d", occurrence)
+	maxBaseLen := 8 - 1 - len(occStr) // 8 - underscore - digits
+	if maxBaseLen < 1 {
+		maxBaseLen = 1
+	}
+
+	// Clean base name: keep only alphanumeric and underscore, truncate, uppercase
+	var cleanBase strings.Builder
+	for _, c := range strings.ToUpper(base) {
+		if (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			cleanBase.WriteRune(c)
+			if cleanBase.Len() >= maxBaseLen {
+				break
+			}
+		}
+	}
+	baseStr := cleanBase.String()
+	if baseStr == "" {
+		baseStr = "FILE"[:maxBaseLen]
+	}
+
+	// Format: BASE_N.EXT (no tilde to avoid WIX1044)
+	if ext != "" {
+		return fmt.Sprintf("%s_%s.%s", baseStr, occStr, ext)
+	}
+	return fmt.Sprintf("%s_%s", baseStr, occStr)
 }
 
 // sanitizePath converts a path to a valid WiX ID component.
@@ -269,16 +326,21 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		c.collectExcludesFromFeature(&feature)
 	}
 
-	// Second pass: process features and items
-	for _, feature := range c.Setup.Features {
-		if err := c.processFeature(&feature, ""); err != nil {
+	// Second pass: pre-assign feature IDs (ensures consistency between processing and generation)
+	for i := range c.Setup.Features {
+		c.assignFeatureIDs(&c.Setup.Features[i], "", i)
+	}
+
+	// Third pass: process features and items
+	for i, feature := range c.Setup.Features {
+		if err := c.processFeature(&feature, "", i); err != nil {
 			return nil, err
 		}
 	}
 
-	// Process top-level items
+	// Process top-level items (no feature association)
 	for _, item := range c.Setup.Items {
-		if err := c.processItem(item, nil, ""); err != nil {
+		if err := c.processItem(item, ""); err != nil {
 			return nil, err
 		}
 	}
@@ -323,6 +385,25 @@ func (c *Context) collectExcludesFromFeature(feature *ir.Feature) {
 	}
 }
 
+// assignFeatureIDs pre-assigns unique IDs to features using index-based paths.
+// This ensures the same IDs are used during both item processing and XML generation.
+func (c *Context) assignFeatureIDs(feature *ir.Feature, parentIndexPath string, index int) {
+	// Build index path using position (not name) to avoid collisions
+	indexPath := fmt.Sprintf("%d", index)
+	if parentIndexPath != "" {
+		indexPath = parentIndexPath + "/" + indexPath
+	}
+
+	// Generate and store unique ID for this feature
+	featureID := c.NextFeatureID()
+	c.featureIDs[indexPath] = featureID
+
+	// Process sub-features
+	for i := range feature.SubFeatures {
+		c.assignFeatureIDs(&feature.SubFeatures[i], indexPath, i)
+	}
+}
+
 // isExcluded checks if a path should be excluded, matching against both absolute
 // and relative forms (relative to basePath or WorkDir).
 func (c *Context) isExcluded(path, basePath string) bool {
@@ -350,22 +431,26 @@ func (c *Context) isExcluded(path, basePath string) bool {
 	return false
 }
 
-func (c *Context) processFeature(feature *ir.Feature, parentPath string) error {
-	featurePath := feature.Name
-	if parentPath != "" {
-		featurePath = parentPath + "/" + feature.Name
+func (c *Context) processFeature(feature *ir.Feature, parentIndexPath string, index int) error {
+	// Build index path (matches assignFeatureIDs)
+	indexPath := fmt.Sprintf("%d", index)
+	if parentIndexPath != "" {
+		indexPath = parentIndexPath + "/" + indexPath
 	}
+
+	// Get the pre-assigned feature ID
+	featureID := c.featureIDs[indexPath]
 
 	// Process items
 	for _, item := range feature.Items {
-		if err := c.processItem(item, feature, featurePath); err != nil {
+		if err := c.processItem(item, featureID); err != nil {
 			return err
 		}
 	}
 
 	// Process sub-features
-	for _, sf := range feature.SubFeatures {
-		if err := c.processFeature(&sf, featurePath); err != nil {
+	for i := range feature.SubFeatures {
+		if err := c.processFeature(&feature.SubFeatures[i], indexPath, i); err != nil {
 			return err
 		}
 	}
@@ -373,18 +458,18 @@ func (c *Context) processFeature(feature *ir.Feature, parentPath string) error {
 	return nil
 }
 
-func (c *Context) processItem(item ir.Item, feature *ir.Feature, featurePath string) error {
+func (c *Context) processItem(item ir.Item, featureID string) error {
 	switch it := item.(type) {
 	case ir.Files:
-		return c.processFiles(it, feature, featurePath)
+		return c.processFiles(it, featureID)
 	case ir.SetEnv:
-		return c.processSetEnv(it, feature, featurePath)
+		return c.processSetEnv(it, featureID)
 	case ir.Service:
-		return c.processService(it, feature, featurePath)
+		return c.processService(it, featureID)
 	case ir.Shortcut:
-		return c.processShortcut(it, feature, featurePath)
+		return c.processShortcut(it, featureID)
 	case ir.Execute:
-		return c.processExecute(it, feature, featurePath)
+		return c.processExecute(it, featureID)
 	case ir.Exclude:
 		// Already processed in first pass
 		return nil
@@ -395,18 +480,22 @@ func (c *Context) processItem(item ir.Item, feature *ir.Feature, featurePath str
 	return nil
 }
 
-func (c *Context) processFiles(files ir.Files, feature *ir.Feature, featurePath string) error {
+func (c *Context) processFiles(files ir.Files, featureID string) error {
 	rootKey, subPath := ParseTarget(files.Target)
 	dir := c.GetOrCreateDirectory(rootKey, subPath, files.DoNotOverwrite)
 
-	// Resolve source path
+	// Source path as specified in .msis (relative to .msis file directory)
+	// Keep it relative so WXS paths are relative to WXS output location
 	source := files.Source
+
+	// Resolve to absolute for existence check
+	absSource := source
 	if !filepath.IsAbs(source) {
-		source = filepath.Join(c.WorkDir, source)
+		absSource = filepath.Join(c.WorkDir, source)
 	}
 
 	// Check if source exists
-	info, err := os.Stat(source)
+	info, err := os.Stat(absSource)
 	if err != nil {
 		// Source doesn't exist - skip silently for dry-run
 		return nil
@@ -414,20 +503,24 @@ func (c *Context) processFiles(files ir.Files, feature *ir.Feature, featurePath 
 
 	if info.IsDir() {
 		// Enumerate directory recursively
-		return c.addDirectoryContents(dir, source, source, featurePath, files.DoNotOverwrite)
+		// Use relative source for WXS paths, absolute for file enumeration
+		return c.addDirectoryContents(dir, source, absSource, featureID, files.DoNotOverwrite)
 	} else {
-		// Single file
-		return c.addFile(dir, source, info.Name(), featurePath)
+		// Single file - use relative path for WXS
+		return c.addFile(dir, source, info.Name(), featureID)
 	}
 }
 
-func (c *Context) addDirectoryContents(dir *Directory, basePath, currentPath, featurePath string, doNotOverwrite bool) error {
+// addDirectoryContents recursively adds files from a directory.
+// relBasePath is the relative path for WXS output (e.g., "install")
+// absCurrentPath is the absolute path for file enumeration
+func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPath, featureID string, doNotOverwrite bool) error {
 	// Check if excluded (check both absolute and relative paths)
-	if c.isExcluded(currentPath, basePath) {
+	if c.isExcluded(absCurrentPath, relBasePath) {
 		return nil
 	}
 
-	entries, err := os.ReadDir(currentPath)
+	entries, err := os.ReadDir(absCurrentPath)
 	if err != nil {
 		return nil // Skip if can't read
 	}
@@ -437,11 +530,26 @@ func (c *Context) addDirectoryContents(dir *Directory, basePath, currentPath, fe
 		return entries[i].Name() < entries[j].Name()
 	})
 
-	for _, entry := range entries {
-		fullPath := filepath.Join(currentPath, entry.Name())
+	// Calculate relative path from base for WXS output
+	absBasePath := relBasePath
+	if !filepath.IsAbs(relBasePath) {
+		absBasePath = filepath.Join(c.WorkDir, relBasePath)
+	}
+	relPath, _ := filepath.Rel(absBasePath, absCurrentPath)
 
-		if c.isExcluded(fullPath, basePath) {
+	for _, entry := range entries {
+		absFullPath := filepath.Join(absCurrentPath, entry.Name())
+
+		if c.isExcluded(absFullPath, relBasePath) {
 			continue
+		}
+
+		// Compute relative path for WXS Source attribute
+		var wxsSourcePath string
+		if relPath == "." || relPath == "" {
+			wxsSourcePath = filepath.Join(relBasePath, entry.Name())
+		} else {
+			wxsSourcePath = filepath.Join(relBasePath, relPath, entry.Name())
 		}
 
 		if entry.IsDir() {
@@ -458,11 +566,11 @@ func (c *Context) addDirectoryContents(dir *Directory, basePath, currentPath, fe
 				}
 				dir.Children[key] = subDir
 			}
-			if err := c.addDirectoryContents(subDir, basePath, fullPath, featurePath, doNotOverwrite); err != nil {
+			if err := c.addDirectoryContents(subDir, relBasePath, absFullPath, featureID, doNotOverwrite); err != nil {
 				return err
 			}
 		} else {
-			if err := c.addFile(dir, fullPath, entry.Name(), featurePath); err != nil {
+			if err := c.addFile(dir, wxsSourcePath, entry.Name(), featureID); err != nil {
 				return err
 			}
 		}
@@ -471,19 +579,38 @@ func (c *Context) addDirectoryContents(dir *Directory, basePath, currentPath, fe
 	return nil
 }
 
-func (c *Context) addFile(dir *Directory, sourcePath, fileName, featurePath string) error {
+func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string) error {
 	// Create component for file
-	compPath := dir.getFullPath() + "\\" + fileName
+	// Use source path in component ID to handle feature-based file overrides
+	// (same target file from different sources in different features)
+	compPath := sourcePath // Use source path for uniqueness
 	compID := c.NextComponentID(compPath)
 	fileID := c.NextFileID()
 
+	// Generate explicit GUID from source path to ensure uniqueness
+	// even when multiple features install different versions of the same target file
+	guid := GenerateGUID(sourcePath)
+
+	// Track target file for duplicate detection
+	// Key is dirID:lowercaseFilename to identify the target location
+	targetKey := dir.ID + ":" + strings.ToLower(fileName)
+	c.targetFileSeen[targetKey]++
+	occurrence := c.targetFileSeen[targetKey]
+
+	// Generate ShortName only for duplicates (2nd occurrence and beyond)
+	var shortName string
+	if occurrence > 1 {
+		shortName = generateShortName(fileName, occurrence)
+	}
+
 	comp := &Component{
 		ID:   compID,
-		GUID: "*", // Auto-generate
+		GUID: guid,
 		Files: []*File{
 			{
 				ID:         fileID,
 				Name:       fileName,
+				ShortName:  shortName,
 				SourcePath: sourcePath,
 				KeyPath:    true,
 			},
@@ -492,9 +619,9 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featurePath stri
 
 	dir.Components = append(dir.Components, comp)
 
-	// Track component for feature
-	if featurePath != "" {
-		c.FeatureComponents[featurePath] = append(c.FeatureComponents[featurePath], compID)
+	// Track component for feature (keyed by unique feature ID)
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
 	}
 
 	return nil
@@ -513,7 +640,7 @@ func (dir *Directory) getFullPath() string {
 	return strings.Join(parts, "\\")
 }
 
-func (c *Context) processSetEnv(env ir.SetEnv, feature *ir.Feature, featurePath string) error {
+func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 	// Environment variables go in INSTALLDIR
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 
@@ -522,7 +649,7 @@ func (c *Context) processSetEnv(env ir.SetEnv, feature *ir.Feature, featurePath 
 
 	comp := &Component{
 		ID:   compID,
-		GUID: "*",
+		GUID: GenerateGUID(compID), // Explicit GUID required for non-file components
 		Environment: &Environment{
 			ID:    envID,
 			Name:  env.Name,
@@ -532,14 +659,14 @@ func (c *Context) processSetEnv(env ir.SetEnv, feature *ir.Feature, featurePath 
 
 	dir.Components = append(dir.Components, comp)
 
-	if featurePath != "" {
-		c.FeatureComponents[featurePath] = append(c.FeatureComponents[featurePath], compID)
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
 	}
 
 	return nil
 }
 
-func (c *Context) processService(svc ir.Service, feature *ir.Feature, featurePath string) error {
+func (c *Context) processService(svc ir.Service, featureID string) error {
 	// Services go in INSTALLDIR
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 
@@ -553,7 +680,7 @@ func (c *Context) processService(svc ir.Service, feature *ir.Feature, featurePat
 
 	comp := &Component{
 		ID:   compID,
-		GUID: "*",
+		GUID: GenerateGUID(compID), // Explicit GUID required for non-file components
 		Service: &Service{
 			ID:          svcID,
 			Name:        svc.ServiceName,
@@ -568,19 +695,19 @@ func (c *Context) processService(svc ir.Service, feature *ir.Feature, featurePat
 
 	dir.Components = append(dir.Components, comp)
 
-	if featurePath != "" {
-		c.FeatureComponents[featurePath] = append(c.FeatureComponents[featurePath], compID)
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
 	}
 
 	return nil
 }
 
-func (c *Context) processShortcut(sc ir.Shortcut, feature *ir.Feature, featurePath string) error {
+func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {
 	// TODO: Implement shortcut generation
 	return nil
 }
 
-func (c *Context) processExecute(exec ir.Execute, feature *ir.Feature, featurePath string) error {
+func (c *Context) processExecute(exec ir.Execute, featureID string) error {
 	// TODO: Implement custom action generation
 	return nil
 }
@@ -653,8 +780,12 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 		if file.KeyPath {
 			keyPath = " KeyPath='yes'"
 		}
-		sb.WriteString(fmt.Sprintf("%s    <File Id='%s' Name='%s' Source='%s'%s/>\n",
-			indent, file.ID, file.Name, file.SourcePath, keyPath))
+		shortName := ""
+		if file.ShortName != "" {
+			shortName = fmt.Sprintf(" ShortName='%s'", file.ShortName)
+		}
+		sb.WriteString(fmt.Sprintf("%s    <File Id='%s' Name='%s'%s Source='%s'%s/>\n",
+			indent, file.ID, file.Name, shortName, file.SourcePath, keyPath))
 	}
 
 	// Environment
@@ -698,23 +829,24 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 func (c *Context) generateAllFeatureXML() string {
 	var sb strings.Builder
 
-	for _, feature := range c.Setup.Features {
-		c.generateFeatureXML(&feature, &sb, 2, "")
+	for i := range c.Setup.Features {
+		c.generateFeatureXML(&c.Setup.Features[i], &sb, 2, "", i)
 	}
 
 	return sb.String()
 }
 
-func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, depth int, parentPath string) {
+func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, depth int, parentIndexPath string, index int) {
 	indent := strings.Repeat("    ", depth)
 
-	featurePath := feature.Name
-	if parentPath != "" {
-		featurePath = parentPath + "/" + feature.Name
+	// Build index path (matches assignFeatureIDs and processFeature)
+	indexPath := fmt.Sprintf("%d", index)
+	if parentIndexPath != "" {
+		indexPath = parentIndexPath + "/" + indexPath
 	}
 
-	// Feature attributes - use unique generated ID (msis-2.x compatible)
-	featureID := c.NextFeatureID()
+	// Get the pre-assigned feature ID (same one used for FeatureComponents)
+	featureID := c.featureIDs[indexPath]
 
 	// Level: 1 for enabled, 32767 for disabled (msis-2.x compatible)
 	level := "1"
@@ -730,16 +862,16 @@ func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, d
 	sb.WriteString(fmt.Sprintf("%s<Feature Id='%s' Title='%s' Level='%s' AllowAbsent='%s'>\n",
 		indent, featureID, feature.Name, level, allowAbsent))
 
-	// Component refs
-	if compIDs, ok := c.FeatureComponents[featurePath]; ok {
+	// Component refs (keyed by unique feature ID)
+	if compIDs, ok := c.FeatureComponents[featureID]; ok {
 		for _, compID := range compIDs {
 			sb.WriteString(fmt.Sprintf("%s    <ComponentRef Id='%s'/>\n", indent, compID))
 		}
 	}
 
 	// Sub-features
-	for _, sf := range feature.SubFeatures {
-		c.generateFeatureXML(&sf, sb, depth+1, featurePath)
+	for i := range feature.SubFeatures {
+		c.generateFeatureXML(&feature.SubFeatures[i], sb, depth+1, indexPath, i)
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</Feature>\n", indent))
