@@ -175,9 +175,14 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["FEATURES"] = r.GeneratedData.FeatureXML
 	ctx["INSTALLDIR_FILES"] = r.buildInstallDirFiles()
 	ctx["APPDATADIR_FILES"] = r.buildAppDataDirFiles()
+	ctx["ROAMINGAPPDATADIR_FILES"] = r.GeneratedData.RoamingAppDataDirXML
+	ctx["LOCALAPPDATADIR_FILES"] = r.GeneratedData.LocalAppDataDirXML
+	ctx["COMMONFILESDIR_FILES"] = r.GeneratedData.CommonFilesDirXML
+	ctx["WINDOWSDIR_FILES"] = r.GeneratedData.WindowsDirXML
+	ctx["SYSTEMDIR_FILES"] = r.GeneratedData.SystemDirXML
 	ctx["DESKTOP_FILES"] = r.buildDesktopFiles()
 	ctx["STARTMENU_FILES"] = r.buildStartMenuFiles()
-	ctx["REGISTRY_ENTRIES"] = "" // TODO: Phase 4
+	ctx["REGISTRY_ENTRIES"] = r.GeneratedData.RegistryXML
 	ctx["CUSTOM_ACTIONS"] = r.buildCustomActions()
 	ctx["INSTALL_EXECUTE_SEQUENCE"] = r.buildInstallExecuteSequence()
 
@@ -273,26 +278,37 @@ func (r *Renderer) buildInstallDirFiles() string {
 }
 
 func (r *Renderer) buildAppDataDirFiles() string {
-	// TODO: Extract APPDATADIR content from generator
-	return ""
+	return r.GeneratedData.AppDataDirXML
 }
 
 func (r *Renderer) buildDesktopFiles() string {
-	// TODO: Extract DesktopFolder content from generator
-	return ""
+	return r.GeneratedData.DesktopXML
 }
 
 func (r *Renderer) buildStartMenuFiles() string {
-	// TODO: Extract StartMenu content from generator
-	return ""
+	return r.GeneratedData.StartMenuXML
 }
 
 func (r *Renderer) buildCustomActions() string {
-	// TODO: Build custom actions from execute elements
-	return ""
+	return r.GeneratedData.CustomActionsXML
 }
 
 func (r *Renderer) buildInstallExecuteSequence() string {
-	// TODO: Build install execute sequence from execute elements
-	return ""
+	return r.GeneratedData.InstallExecuteSequence
+}
+
+// RenderString renders a template string with the given context.
+// This is a standalone function for rendering arbitrary templates.
+func RenderString(templateContent string, ctx map[string]interface{}) (string, error) {
+	tmpl, err := raymond.Parse(templateContent)
+	if err != nil {
+		return "", fmt.Errorf("parsing template: %w", err)
+	}
+
+	result, err := tmpl.Exec(ctx)
+	if err != nil {
+		return "", fmt.Errorf("executing template: %w", err)
+	}
+
+	return result, nil
 }

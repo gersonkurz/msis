@@ -266,6 +266,147 @@ func TestParseBundle(t *testing.T) {
 	}
 }
 
+func TestParseBundleWithPrerequisites(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <bundle>
+        <prerequisite type="vcredist" version="2022"/>
+        <prerequisite type="netfx" version="4.8"/>
+        <msi source_64bit="app-x64.msi" source_32bit="app-x86.msi"/>
+    </bundle>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if setup.Bundle == nil {
+		t.Fatal("expected bundle to be present")
+	}
+
+	// Check prerequisites
+	if len(setup.Bundle.Prerequisites) != 2 {
+		t.Fatalf("expected 2 prerequisites, got %d", len(setup.Bundle.Prerequisites))
+	}
+
+	if setup.Bundle.Prerequisites[0].Type != "vcredist" {
+		t.Errorf("expected 'vcredist', got %s", setup.Bundle.Prerequisites[0].Type)
+	}
+	if setup.Bundle.Prerequisites[0].Version != "2022" {
+		t.Errorf("expected '2022', got %s", setup.Bundle.Prerequisites[0].Version)
+	}
+
+	if setup.Bundle.Prerequisites[1].Type != "netfx" {
+		t.Errorf("expected 'netfx', got %s", setup.Bundle.Prerequisites[1].Type)
+	}
+	if setup.Bundle.Prerequisites[1].Version != "4.8" {
+		t.Errorf("expected '4.8', got %s", setup.Bundle.Prerequisites[1].Version)
+	}
+
+	// Check MSI
+	if setup.Bundle.MSI == nil {
+		t.Fatal("expected MSI to be present")
+	}
+	if setup.Bundle.MSI.Source64bit != "app-x64.msi" {
+		t.Errorf("expected 'app-x64.msi', got %s", setup.Bundle.MSI.Source64bit)
+	}
+	if setup.Bundle.MSI.Source32bit != "app-x86.msi" {
+		t.Errorf("expected 'app-x86.msi', got %s", setup.Bundle.MSI.Source32bit)
+	}
+}
+
+func TestParseBundleWithExePackage(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <bundle>
+        <exe id="CustomPrereq" source="prereq.exe" detect="HKLM\SOFTWARE\Prereq" args="/quiet"/>
+        <msi source="app.msi"/>
+    </bundle>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if setup.Bundle == nil {
+		t.Fatal("expected bundle to be present")
+	}
+
+	// Check exe package
+	if len(setup.Bundle.ExePackages) != 1 {
+		t.Fatalf("expected 1 exe package, got %d", len(setup.Bundle.ExePackages))
+	}
+
+	exe := setup.Bundle.ExePackages[0]
+	if exe.ID != "CustomPrereq" {
+		t.Errorf("expected 'CustomPrereq', got %s", exe.ID)
+	}
+	if exe.Source != "prereq.exe" {
+		t.Errorf("expected 'prereq.exe', got %s", exe.Source)
+	}
+	if exe.DetectCondition != "HKLM\\SOFTWARE\\Prereq" {
+		t.Errorf("expected 'HKLM\\SOFTWARE\\Prereq', got %s", exe.DetectCondition)
+	}
+	if exe.InstallArgs != "/quiet" {
+		t.Errorf("expected '/quiet', got %s", exe.InstallArgs)
+	}
+
+	// Check MSI (single source)
+	if setup.Bundle.MSI == nil {
+		t.Fatal("expected MSI to be present")
+	}
+	if setup.Bundle.MSI.Source != "app.msi" {
+		t.Errorf("expected 'app.msi', got %s", setup.Bundle.MSI.Source)
+	}
+}
+
+func TestParseBundleValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		xml     string
+		wantErr string
+	}{
+		{
+			name: "prerequisite missing type",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><bundle><prerequisite version="4.8"/></bundle></setup>`,
+			wantErr: "requires 'type' attribute",
+		},
+		{
+			name: "prerequisite missing version and source",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><bundle><prerequisite type="netfx"/></bundle></setup>`,
+			wantErr: "requires 'version' or 'source' attribute",
+		},
+		{
+			name: "msi missing source",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><bundle><msi/></bundle></setup>`,
+			wantErr: "requires 'source'",
+		},
+		{
+			name: "exe missing source",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><bundle><exe id="test"/></bundle></setup>`,
+			wantErr: "requires 'source' attribute",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseBytes([]byte(tt.xml))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
+	}
+}
+
 func TestParseTopLevelItems(t *testing.T) {
 	xml := `<?xml version="1.0" encoding="utf-8"?>
 <setup>

@@ -117,8 +117,33 @@ type xmlExecute struct {
 }
 
 type xmlBundle struct {
+	// Legacy shorthand attributes
 	Source64bit string `xml:"source_64bit,attr"`
 	Source32bit string `xml:"source_32bit,attr"`
+
+	// New nested elements
+	Prerequisites []xmlPrerequisite
+	MSI           *xmlBundleMSI
+	ExePackages   []xmlExePackage
+}
+
+type xmlPrerequisite struct {
+	Type    string `xml:"type,attr"`
+	Version string `xml:"version,attr"`
+	Source  string `xml:"source,attr"`
+}
+
+type xmlBundleMSI struct {
+	Source      string `xml:"source,attr"`
+	Source64bit string `xml:"source_64bit,attr"`
+	Source32bit string `xml:"source_32bit,attr"`
+}
+
+type xmlExePackage struct {
+	ID              string `xml:"id,attr"`
+	Source          string `xml:"source,attr"`
+	DetectCondition string `xml:"detect,attr"`
+	InstallArgs     string `xml:"args,attr"`
 }
 
 // UnmarshalXML for xmlSet - validates attributes
@@ -336,8 +361,9 @@ func (e *xmlExecute) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 	return d.Skip()
 }
 
-// UnmarshalXML for xmlBundle - validates attributes
+// UnmarshalXML for xmlBundle - supports both legacy shorthand and nested elements
 func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	// Parse attributes (legacy shorthand)
 	for _, attr := range start.Attr {
 		switch attr.Name.Local {
 		case "source_64bit":
@@ -348,7 +374,54 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 			return fmt.Errorf("unknown attribute '%s' on <bundle>", attr.Name.Local)
 		}
 	}
-	return d.Skip()
+
+	// Parse nested elements
+	for {
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "prerequisite":
+				var prereq xmlPrerequisite
+				if err := d.DecodeElement(&prereq, &t); err != nil {
+					return err
+				}
+				if prereq.Type == "" {
+					return fmt.Errorf("<prerequisite> requires 'type' attribute")
+				}
+				if prereq.Version == "" && prereq.Source == "" {
+					return fmt.Errorf("<prerequisite> requires 'version' or 'source' attribute")
+				}
+				b.Prerequisites = append(b.Prerequisites, prereq)
+			case "msi":
+				var msi xmlBundleMSI
+				if err := d.DecodeElement(&msi, &t); err != nil {
+					return err
+				}
+				if msi.Source == "" && msi.Source64bit == "" && msi.Source32bit == "" {
+					return fmt.Errorf("<msi> requires 'source', 'source_64bit', or 'source_32bit' attribute")
+				}
+				b.MSI = &msi
+			case "exe":
+				var exe xmlExePackage
+				if err := d.DecodeElement(&exe, &t); err != nil {
+					return err
+				}
+				if exe.Source == "" {
+					return fmt.Errorf("<exe> requires 'source' attribute")
+				}
+				b.ExePackages = append(b.ExePackages, exe)
+			default:
+				return fmt.Errorf("unknown element <%s> in <bundle>", t.Name.Local)
+			}
+		case xml.EndElement:
+			return nil
+		}
+	}
 }
 
 // UnmarshalXML for xmlSetup to preserve item order
@@ -591,10 +664,40 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 
 	// Convert bundle
 	if raw.Bundle != nil {
-		setup.Bundle = &ir.Bundle{
+		bundle := &ir.Bundle{
 			Source64bit: raw.Bundle.Source64bit,
 			Source32bit: raw.Bundle.Source32bit,
 		}
+
+		// Convert prerequisites
+		for _, p := range raw.Bundle.Prerequisites {
+			bundle.Prerequisites = append(bundle.Prerequisites, ir.Prerequisite{
+				Type:    p.Type,
+				Version: p.Version,
+				Source:  p.Source,
+			})
+		}
+
+		// Convert MSI element
+		if raw.Bundle.MSI != nil {
+			bundle.MSI = &ir.BundleMSI{
+				Source:      raw.Bundle.MSI.Source,
+				Source64bit: raw.Bundle.MSI.Source64bit,
+				Source32bit: raw.Bundle.MSI.Source32bit,
+			}
+		}
+
+		// Convert exe packages
+		for _, e := range raw.Bundle.ExePackages {
+			bundle.ExePackages = append(bundle.ExePackages, ir.ExePackage{
+				ID:              e.ID,
+				Source:          e.Source,
+				DetectCondition: e.DetectCondition,
+				InstallArgs:     e.InstallArgs,
+			})
+		}
+
+		setup.Bundle = bundle
 	}
 
 	return setup, nil

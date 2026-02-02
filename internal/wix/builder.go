@@ -228,3 +228,111 @@ func IsWixAvailable() bool {
 	_, err := os.Stat(wixPath)
 	return err == nil
 }
+
+// BundleBuilder handles WiX CLI invocation for Bundle (bootstrapper) generation.
+type BundleBuilder struct {
+	WxsFile         string
+	OutputFile      string
+	TemplateFolder  string
+	CustomTemplates string
+	Variables       variables.Dictionary
+	RetainWxs       bool
+}
+
+// NewBundleBuilder creates a WiX bundle builder from variables and paths.
+func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates string, retainWxs bool) *BundleBuilder {
+	// Determine output file (bundles produce .exe)
+	outputFile := vars.BuildTarget()
+	if outputFile == "" {
+		outputFile = vars.ProductName() + "-" + vars.ProductVersion()
+	}
+	outputFile = strings.TrimSuffix(outputFile, filepath.Ext(outputFile)) + ".exe"
+
+	return &BundleBuilder{
+		WxsFile:         wxsFile,
+		OutputFile:      outputFile,
+		TemplateFolder:  templateFolder,
+		CustomTemplates: customTemplates,
+		Variables:       vars,
+		RetainWxs:       retainWxs,
+	}
+}
+
+// Build invokes WiX CLI to compile the bundle WXS into an EXE.
+func (b *BundleBuilder) Build() error {
+	// Ensure EULA is accepted (reuse MSI builder logic)
+	msiBuilder := &Builder{} // Create temporary for EULA check
+	if err := msiBuilder.ensureEulaAccepted(); err != nil {
+		return fmt.Errorf("EULA check: %w", err)
+	}
+
+	// Build bundle
+	if err := b.runWixBuild(); err != nil {
+		return fmt.Errorf("wix build: %w", err)
+	}
+
+	// Cleanup
+	b.cleanup()
+
+	return nil
+}
+
+// runWixBuild executes wix build command for bundle.
+func (b *BundleBuilder) runWixBuild() error {
+	absWxsFile, _ := filepath.Abs(b.WxsFile)
+	absOutputFile, _ := filepath.Abs(b.OutputFile)
+	workDir := filepath.Dir(absWxsFile)
+
+	wxsFilename := filepath.Base(absWxsFile)
+	args := []string{"build", wxsFilename}
+
+	// Bundle-specific extensions
+	args = append(args,
+		"-ext", "WixToolset.Bal.wixext",   // Bootstrapper Application Library
+		"-ext", "WixToolset.Util.wixext",  // Utility functions
+		"-ext", "WixToolset.Netfx.wixext", // .NET Framework detection
+	)
+
+	// Bind paths
+	args = append(args, "-b", workDir)
+	if b.CustomTemplates != "" {
+		absCustomTemplates, _ := filepath.Abs(b.CustomTemplates)
+		args = append(args, "-b", absCustomTemplates)
+	}
+	if b.TemplateFolder != "" {
+		absTemplateFolder, _ := filepath.Abs(b.TemplateFolder)
+		args = append(args, "-b", absTemplateFolder)
+	}
+
+	// No PDB file
+	args = append(args, "-pdbtype", "none")
+
+	// Output file
+	args = append(args, "-o", absOutputFile)
+
+	wixPath := getWixPath()
+	fmt.Printf("  Running: %s %s\n", wixPath, strings.Join(args, " "))
+
+	cmd := exec.Command(wixPath, args...)
+	cmd.Dir = workDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+// cleanup removes temporary files unless retention is requested.
+func (b *BundleBuilder) cleanup() {
+	// Remove .wixpdb if it exists
+	wixpdb := strings.TrimSuffix(b.OutputFile, filepath.Ext(b.OutputFile)) + ".wixpdb"
+	if _, err := os.Stat(wixpdb); err == nil {
+		os.Remove(wixpdb)
+	}
+
+	// Remove .wxs unless --retainwxs
+	if !b.RetainWxs {
+		if _, err := os.Stat(b.WxsFile); err == nil {
+			os.Remove(b.WxsFile)
+		}
+	}
+}

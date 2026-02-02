@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/registry"
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
@@ -47,20 +48,52 @@ type Context struct {
 	// Target file tracking for duplicate detection (key: "dirID:lowercaseFilename")
 	// Value is the count of files targeting this location
 	targetFileSeen map[string]int
+
+	// Registry processor and components
+	registryProcessor  *registry.Processor
+	RegistryComponents []*registry.Component
+
+	// Shortcut components by target folder
+	DesktopShortcuts   []*ShortcutComponent
+	StartMenuShortcuts []*ShortcutComponent
+
+	// Custom actions
+	CustomActions []*CustomAction
+	nextActionID  int
+}
+
+// CustomAction represents a WiX custom action.
+type CustomAction struct {
+	ID        string
+	Command   string
+	Directory string
+	When      string // before-install, after-install, before-uninstall, etc.
+}
+
+// ShortcutComponent represents a WiX component containing a shortcut.
+type ShortcutComponent struct {
+	ID       string
+	GUID     string
+	Shortcut *Shortcut
 }
 
 // NewContext creates a new generation context.
 func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Context {
 	return &Context{
-		Setup:             setup,
-		Variables:         vars,
-		WorkDir:           workDir,
-		componentIDs:      make(map[string]bool),
-		DirectoryTrees:    make(map[string]*Directory),
-		ExcludedFolders:   make(map[string]bool),
-		featureIDs:        make(map[string]string),
-		FeatureComponents: make(map[string][]string),
-		targetFileSeen:    make(map[string]int),
+		Setup:              setup,
+		Variables:          vars,
+		WorkDir:            workDir,
+		componentIDs:       make(map[string]bool),
+		DirectoryTrees:     make(map[string]*Directory),
+		ExcludedFolders:    make(map[string]bool),
+		featureIDs:         make(map[string]string),
+		FeatureComponents:  make(map[string][]string),
+		targetFileSeen:     make(map[string]int),
+		registryProcessor:  registry.NewProcessor(workDir),
+		RegistryComponents: make([]*registry.Component, 0),
+		DesktopShortcuts:   make([]*ShortcutComponent, 0),
+		StartMenuShortcuts: make([]*ShortcutComponent, 0),
+		CustomActions:      make([]*CustomAction, 0),
 	}
 }
 
@@ -73,6 +106,7 @@ type Directory struct {
 	Children       map[string]*Directory // key is lowercase name
 	Components     []*Component
 	DoNotOverwrite bool
+	FeatureIDs     map[string]bool // Features that use this directory (for permission component refs)
 }
 
 // Component represents a WiX component containing files or other resources.
@@ -111,6 +145,16 @@ type Service struct {
 	Type        string
 	ErrorControl string
 	FileName    string
+}
+
+// Shortcut represents a shortcut (Desktop or StartMenu).
+type Shortcut struct {
+	ID          string
+	Name        string
+	Description string
+	Target      string // File path to execute (e.g., "[INSTALLDIR]app.exe")
+	Icon        string // Optional icon path
+	WorkingDir  string // Working directory ID (e.g., "INSTALLDIR")
 }
 
 // NextDirectoryID returns a unique directory ID.
@@ -257,10 +301,11 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 		// Get the directory name from variables (e.g., INSTALLDIR -> "NG1")
 		rootName := c.Variables[rootKey]
 		root = &Directory{
-			ID:       c.NextDirectoryID(),
-			Name:     rootName, // Will be empty if variable not set, which is fine
-			CustomID: rootKey,
-			Children: make(map[string]*Directory),
+			ID:         c.NextDirectoryID(),
+			Name:       rootName, // Will be empty if variable not set, which is fine
+			CustomID:   rootKey,
+			Children:   make(map[string]*Directory),
+			FeatureIDs: make(map[string]bool),
 		}
 		c.DirectoryTrees[rootKey] = root
 	}
@@ -285,6 +330,7 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 				Parent:         current,
 				Children:       make(map[string]*Directory),
 				DoNotOverwrite: doNotOverwrite,
+				FeatureIDs:     make(map[string]bool),
 			}
 			current.Children[key] = child
 		}
@@ -308,11 +354,12 @@ func ParseTarget(target string) (rootKey, subPath string) {
 			return rootKey, subPath
 		}
 	}
-	// Check for bare root keys (msis-2.x compatible)
+	// Check for bare root keys - these map to WiX StandardDirectory elements
 	bareKey := strings.ToUpper(target)
-	if bareKey == "INSTALLDIR" || bareKey == "APPDATADIR" || bareKey == "PROGRAMFILESDIR" ||
-		bareKey == "COMMONFILESDIR" || bareKey == "WINDOWSDIR" || bareKey == "SYSTEMDIR" {
-		return target, ""
+	switch bareKey {
+	case "INSTALLDIR", "APPDATADIR", "COMMONFILESDIR", "WINDOWSDIR", "SYSTEMDIR",
+		"ROAMINGAPPDATADIR", "LOCALAPPDATADIR":
+		return bareKey, ""
 	}
 	// Default: treat as subpath under INSTALLDIR
 	return "INSTALLDIR", target
@@ -345,10 +392,28 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		}
 	}
 
+	// Handle ADD_TO_PATH variable - adds INSTALLDIR to system PATH
+	if c.Variables.GetBool("ADD_TO_PATH") && len(c.Setup.Features) > 0 {
+		// Get the first feature's ID to associate the PATH component
+		firstFeatureID := c.featureIDs["0"]
+		c.addPathEnvironment(firstFeatureID)
+	}
+
 	// Generate output
 	output := &GeneratedOutput{
-		DirectoryXML: c.generateAllDirectoryXML(),
-		FeatureXML:   c.generateAllFeatureXML(),
+		DirectoryXML:           c.generateDirectoryXMLForRoot("INSTALLDIR"),
+		AppDataDirXML:          c.generateDirectoryXMLForRoot("APPDATADIR"),
+		RoamingAppDataDirXML:   c.generateDirectoryXMLForRoot("ROAMINGAPPDATADIR"),
+		LocalAppDataDirXML:     c.generateDirectoryXMLForRoot("LOCALAPPDATADIR"),
+		CommonFilesDirXML:      c.generateDirectoryXMLForRoot("COMMONFILESDIR"),
+		WindowsDirXML:          c.generateDirectoryXMLForRoot("WINDOWSDIR"),
+		SystemDirXML:           c.generateDirectoryXMLForRoot("SYSTEMDIR"),
+		FeatureXML:             c.generateAllFeatureXML(),
+		RegistryXML:            c.generateAllRegistryXML(),
+		DesktopXML:             c.generateShortcutsXML(c.DesktopShortcuts),
+		StartMenuXML:           c.generateShortcutsXML(c.StartMenuShortcuts),
+		CustomActionsXML:       c.generateCustomActionsXML(),
+		InstallExecuteSequence: c.generateInstallExecuteSequence(),
 	}
 
 	return output, nil
@@ -356,8 +421,19 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 
 // GeneratedOutput holds the generated WiX XML fragments.
 type GeneratedOutput struct {
-	DirectoryXML string
-	FeatureXML   string
+	DirectoryXML            string // INSTALLDIR tree (under ProgramFilesFolder)
+	AppDataDirXML           string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
+	RoamingAppDataDirXML    string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
+	LocalAppDataDirXML      string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
+	CommonFilesDirXML       string // COMMONFILESDIR tree (under CommonFilesFolder)
+	WindowsDirXML           string // WINDOWSDIR tree (under WindowsFolder)
+	SystemDirXML            string // SYSTEMDIR tree (under SystemFolder)
+	FeatureXML              string
+	RegistryXML             string
+	DesktopXML              string
+	StartMenuXML            string
+	CustomActionsXML        string
+	InstallExecuteSequence  string
 }
 
 func (c *Context) collectExcludes(items []ir.Item) {
@@ -474,8 +550,7 @@ func (c *Context) processItem(item ir.Item, featureID string) error {
 		// Already processed in first pass
 		return nil
 	case ir.Registry:
-		// Registry is out of scope for ng1-bmo (Phase 3)
-		return nil
+		return c.processRegistry(it, featureID)
 	}
 	return nil
 }
@@ -622,9 +697,22 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	// Track component for feature (keyed by unique feature ID)
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+		// Also track feature ownership of this directory and all ancestors
+		// so permission components get associated with the right features
+		c.markDirectoryFeature(dir, featureID)
 	}
 
 	return nil
+}
+
+// markDirectoryFeature marks a directory and all its ancestors as owned by a feature.
+func (c *Context) markDirectoryFeature(dir *Directory, featureID string) {
+	for d := dir; d != nil; d = d.Parent {
+		if d.FeatureIDs == nil {
+			d.FeatureIDs = make(map[string]bool)
+		}
+		d.FeatureIDs[featureID] = true
+	}
 }
 
 func (dir *Directory) getFullPath() string {
@@ -703,30 +791,176 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 }
 
 func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {
-	// TODO: Implement shortcut generation
+	// Validate target first to avoid dangling component references
+	target := strings.ToUpper(sc.Target)
+	if target != "DESKTOP" && target != "STARTMENU" {
+		return fmt.Errorf("invalid shortcut target %q for shortcut %q: must be DESKTOP or STARTMENU", sc.Target, sc.Name)
+	}
+
+	// Generate IDs
+	shortcutID := c.NextShortcutID()
+	compID := c.NextComponentID("shortcut_" + sc.Name)
+	guid := GenerateGUID(compID)
+
+	// Determine working directory from the file path
+	// e.g., "[INSTALLDIR]app.exe" -> WorkingDir = "INSTALLDIR"
+	workingDir := "INSTALLDIR"
+	if strings.HasPrefix(sc.File, "[") {
+		idx := strings.Index(sc.File, "]")
+		if idx > 0 {
+			workingDir = sc.File[1:idx]
+		}
+	}
+
+	shortcut := &Shortcut{
+		ID:          shortcutID,
+		Name:        sc.Name,
+		Description: sc.Description,
+		Target:      sc.File,
+		Icon:        sc.Icon,
+		WorkingDir:  workingDir,
+	}
+
+	shortcutComp := &ShortcutComponent{
+		ID:       compID,
+		GUID:     guid,
+		Shortcut: shortcut,
+	}
+
+	// Add to appropriate list based on target
+	if target == "DESKTOP" {
+		c.DesktopShortcuts = append(c.DesktopShortcuts, shortcutComp)
+	} else {
+		c.StartMenuShortcuts = append(c.StartMenuShortcuts, shortcutComp)
+	}
+
+	// Track component for feature
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+	}
+
+	return nil
+}
+
+func (c *Context) processRegistry(reg ir.Registry, featureID string) error {
+	// Process the registry file using the registry processor
+	components, err := c.registryProcessor.Process(reg)
+	if err != nil {
+		return err
+	}
+
+	// Add components to the list
+	c.RegistryComponents = append(c.RegistryComponents, components...)
+
+	// Track component IDs for feature association
+	for _, comp := range components {
+		if featureID != "" {
+			c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], comp.ID)
+		}
+	}
+
 	return nil
 }
 
 func (c *Context) processExecute(exec ir.Execute, featureID string) error {
-	// TODO: Implement custom action generation
+	// Validate the when value
+	if _, ok := customActionTimings[exec.When]; !ok {
+		return fmt.Errorf("invalid execute when value %q: must be one of before-install, after-install, after-install-not-patch, before-upgrade, before-uninstall", exec.When)
+	}
+
+	// Generate unique action ID
+	actionID := fmt.Sprintf("CUSTOMACTION_%05d", c.nextActionID)
+	c.nextActionID++
+
+	// Default directory to INSTALLDIR if not specified
+	directory := exec.Directory
+	if directory == "" {
+		directory = "INSTALLDIR"
+	}
+
+	ca := &CustomAction{
+		ID:        actionID,
+		Command:   exec.Cmd,
+		Directory: directory,
+		When:      exec.When,
+	}
+
+	c.CustomActions = append(c.CustomActions, ca)
 	return nil
 }
 
-func (c *Context) generateAllDirectoryXML() string {
+// shouldSetFilePermissions returns true if file permissions should be applied.
+// Returns false if DISABLE_FILE_PERMISSIONS is set to true.
+func (c *Context) shouldSetFilePermissions() bool {
+	return !c.Variables.GetBool("DISABLE_FILE_PERMISSIONS")
+}
+
+// getPermissionAttributes returns the permission attributes based on RESTRICT_FILE_PERMISSIONS.
+func (c *Context) getPermissionAttributes() string {
+	if c.Variables.GetBool("RESTRICT_FILE_PERMISSIONS") {
+		return "GenericRead='yes' Read='yes' GenericExecute='yes'"
+	}
+	return "GenericAll='yes'"
+}
+
+// generatePermissionComponent generates a CreateFolder component with permissions.
+func (c *Context) generatePermissionComponent(dir *Directory, sb *strings.Builder, depth int) {
+	indent := strings.Repeat("    ", depth)
+
+	// Generate a unique component ID for this directory's permission
+	dirID := dir.ID
+	if dir.CustomID != "" {
+		dirID = dir.CustomID
+	}
+	compID := c.NextComponentID("perm_" + dirID)
+	guid := GenerateGUID(compID)
+	permissions := c.getPermissionAttributes()
+
+	sb.WriteString(fmt.Sprintf("%s<Component Id='%s' Guid='%s'>\n", indent, compID, guid))
+	sb.WriteString(fmt.Sprintf("%s    <CreateFolder>\n", indent))
+	sb.WriteString(fmt.Sprintf("%s        <util:PermissionEx User='Users' Domain='[MachineName]' %s/>\n", indent, permissions))
+	sb.WriteString(fmt.Sprintf("%s    </CreateFolder>\n", indent))
+	sb.WriteString(fmt.Sprintf("%s</Component>\n", indent))
+
+	// Add permission component to all features that own this directory
+	for featureID := range dir.FeatureIDs {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+	}
+}
+
+// addPathEnvironment adds INSTALLDIR to the system PATH environment variable.
+func (c *Context) addPathEnvironment(featureID string) {
+	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
+
+	compID := c.NextComponentID("add_to_path")
+	envID := c.NextEnvID()
+
+	comp := &Component{
+		ID:   compID,
+		GUID: GenerateGUID(compID),
+		Environment: &Environment{
+			ID:    envID,
+			Name:  "PATH",
+			Value: "[INSTALLDIR]",
+		},
+	}
+
+	dir.Components = append(dir.Components, comp)
+
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+	}
+}
+
+// generateDirectoryXMLForRoot generates XML for a specific root key (INSTALLDIR, APPDATADIR, etc.)
+func (c *Context) generateDirectoryXMLForRoot(rootKey string) string {
+	tree, ok := c.DirectoryTrees[rootKey]
+	if !ok {
+		return ""
+	}
+
 	var sb strings.Builder
-
-	// Sort root keys for deterministic output
-	keys := make([]string, 0, len(c.DirectoryTrees))
-	for k := range c.DirectoryTrees {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		tree := c.DirectoryTrees[key]
-		c.generateDirectoryXML(tree, &sb, 2)
-	}
-
+	c.generateDirectoryXML(tree, &sb, 2)
 	return sb.String()
 }
 
@@ -744,6 +978,12 @@ func (c *Context) generateDirectoryXML(dir *Directory, sb *strings.Builder, dept
 	} else if dir.Name != "" {
 		// Regular subdirectory
 		sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.ID, dir.Name))
+	}
+
+	// Generate CreateFolder with permissions if enabled
+	// Only for directories that have a name (not the unnamed root container)
+	if (dir.Name != "" || dir.CustomID != "") && c.shouldSetFilePermissions() {
+		c.generatePermissionComponent(dir, sb, depth+1)
 	}
 
 	// Generate components
@@ -836,6 +1076,18 @@ func (c *Context) generateAllFeatureXML() string {
 	return sb.String()
 }
 
+func (c *Context) generateAllRegistryXML() string {
+	if len(c.RegistryComponents) == 0 {
+		return ""
+	}
+
+	// Check if registry permissions should be set
+	setPermissions := c.Variables.GetBool("SET_REGISTRY_PERMISSIONS")
+
+	// Generate XML using the registry processor
+	return c.registryProcessor.GenerateXML(c.RegistryComponents, setPermissions)
+}
+
 func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, depth int, parentIndexPath string, index int) {
 	indent := strings.Repeat("    ", depth)
 
@@ -875,4 +1127,114 @@ func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, d
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</Feature>\n", indent))
+}
+
+// generateShortcutsXML generates WiX XML for shortcut components.
+func (c *Context) generateShortcutsXML(shortcuts []*ShortcutComponent) string {
+	if len(shortcuts) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	productName := c.Variables["PRODUCT_NAME"]
+
+	for _, sc := range shortcuts {
+		sb.WriteString(fmt.Sprintf("            <Component Id='%s' Guid='%s'>\n", sc.ID, sc.GUID))
+
+		// Generate Shortcut element
+		shortcut := sc.Shortcut
+		if shortcut.Icon != "" {
+			// Shortcut with icon
+			sb.WriteString(fmt.Sprintf("                <Shortcut Id='%s' Name='%s' Description='%s' Target='%s' WorkingDirectory='%s'>\n",
+				shortcut.ID, escapeXMLAttr(shortcut.Name), escapeXMLAttr(shortcut.Description),
+				escapeXMLAttr(shortcut.Target), shortcut.WorkingDir))
+			sb.WriteString(fmt.Sprintf("                    <Icon Id='Icon_%s' SourceFile='%s'/>\n",
+				shortcut.ID, escapeXMLAttr(shortcut.Icon)))
+			sb.WriteString("                </Shortcut>\n")
+		} else {
+			// Shortcut without icon
+			sb.WriteString(fmt.Sprintf("                <Shortcut Id='%s' Name='%s' Description='%s' Target='%s' WorkingDirectory='%s'/>\n",
+				shortcut.ID, escapeXMLAttr(shortcut.Name), escapeXMLAttr(shortcut.Description),
+				escapeXMLAttr(shortcut.Target), shortcut.WorkingDir))
+		}
+
+		// Registry value for KeyPath (shortcuts cannot be keypaths)
+		// Use component ID as registry value name to avoid collisions when same shortcut name
+		// is used for both Desktop and StartMenu
+		sb.WriteString(fmt.Sprintf("                <RegistryValue Root='HKCU' Key='Software\\%s\\Shortcuts' Name='%s' Type='integer' Value='1' KeyPath='yes'/>\n",
+			escapeXMLAttr(productName), sc.ID))
+
+		sb.WriteString("            </Component>\n")
+	}
+
+	return sb.String()
+}
+
+// escapeXMLAttr escapes special characters for XML attribute values.
+func escapeXMLAttr(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	s = strings.ReplaceAll(s, "'", "&apos;")
+	return s
+}
+
+// generateCustomActionsXML generates WiX CustomAction elements.
+func (c *Context) generateCustomActionsXML() string {
+	if len(c.CustomActions) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, ca := range c.CustomActions {
+		// Determine execution type based on timing
+		// before-install runs immediate, others run deferred with elevated privileges
+		if ca.When == "before-install" {
+			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='immediate' Return='ignore'/>\n",
+				ca.ID, ca.Directory, escapeXMLAttr(ca.Command)))
+		} else {
+			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='deferred' Return='ignore' Impersonate='no'/>\n",
+				ca.ID, ca.Directory, escapeXMLAttr(ca.Command)))
+		}
+	}
+	return sb.String()
+}
+
+// customActionTimings maps when values to Custom element templates.
+var customActionTimings = map[string]struct {
+	position  string // After or Before
+	reference string // Reference action
+	condition string // Optional condition
+}{
+	"after-install":          {"Before", "InstallFinalize", "(NOT REMOVE = \"ALL\")"},
+	"after-install-not-patch": {"Before", "InstallFinalize", "NOT WIX_UPGRADE_DETECTED"},
+	"before-install":         {"After", "CostFinalize", ""},
+	"before-upgrade":         {"After", "CostFinalize", "WIX_UPGRADE_DETECTED"},
+	"before-uninstall":       {"After", "InstallInitialize", "(REMOVE=\"ALL\")"},
+}
+
+// generateInstallExecuteSequence generates WiX InstallExecuteSequence Custom elements.
+func (c *Context) generateInstallExecuteSequence() string {
+	if len(c.CustomActions) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, ca := range c.CustomActions {
+		timing, ok := customActionTimings[ca.When]
+		if !ok {
+			// Unknown timing - skip with warning (could also return error)
+			continue
+		}
+
+		if timing.condition != "" {
+			sb.WriteString(fmt.Sprintf("            <Custom Action='%s' %s='%s' Condition='%s'/>\n",
+				ca.ID, timing.position, timing.reference, timing.condition))
+		} else {
+			sb.WriteString(fmt.Sprintf("            <Custom Action='%s' %s='%s'/>\n",
+				ca.ID, timing.position, timing.reference))
+		}
+	}
+	return sb.String()
 }

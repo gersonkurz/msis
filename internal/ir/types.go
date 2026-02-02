@@ -101,13 +101,48 @@ type Execute struct {
 
 func (e Execute) ItemType() string { return "execute" }
 
-// Bundle represents: <bundle source_64bit="..." source_32bit="..."/>
+// Bundle represents a bootstrapper bundle configuration.
+// Supports both legacy shorthand and new nested syntax:
+//
+//	Legacy: <bundle source_64bit="..." source_32bit="..."/>
+//	New:    <bundle><prerequisite .../><msi .../></bundle>
 type Bundle struct {
+	// Legacy shorthand attributes (still supported)
 	Source64bit string
 	Source32bit string
+
+	// New nested elements
+	Prerequisites []Prerequisite
+	MSI           *BundleMSI
+	ExePackages   []ExePackage
 }
 
 func (b Bundle) ItemType() string { return "bundle" }
+
+// Prerequisite represents a well-known prerequisite like VC++ or .NET Framework.
+// Example: <prerequisite type="vcredist" version="2022"/>
+type Prerequisite struct {
+	Type    string // vcredist, netfx
+	Version string // 2022, 4.8, etc.
+	Source  string // optional override path
+}
+
+// BundleMSI represents the main MSI package(s) in a bundle.
+// Example: <msi source_64bit="app-x64.msi" source_32bit="app-x86.msi"/>
+type BundleMSI struct {
+	Source      string // single MSI (platform-neutral)
+	Source64bit string // x64 MSI
+	Source32bit string // x86 MSI
+}
+
+// ExePackage represents a custom executable package in the bundle chain.
+// Example: <exe id="..." source="..." detect="..." args="..."/>
+type ExePackage struct {
+	ID            string
+	Source        string
+	DetectCondition string
+	InstallArgs   string
+}
 
 // IsSetupBundle returns true if this setup is a bundle (multi-MSI installer).
 func (s *Setup) IsSetupBundle() bool {

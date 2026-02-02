@@ -84,6 +84,11 @@
 
         <StandardDirectory Id="DesktopFolder">{{{DESKTOP_FILES}}}</StandardDirectory>
         <StandardDirectory Id="CommonAppDataFolder">{{{APPDATADIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="AppDataFolder">{{{ROAMINGAPPDATADIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="LocalAppDataFolder">{{{LOCALAPPDATADIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="CommonFilesFolder">{{{COMMONFILESDIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="WindowsFolder">{{{WINDOWSDIR_FILES}}}</StandardDirectory>
+        <StandardDirectory Id="SystemFolder">{{{SYSTEMDIR_FILES}}}</StandardDirectory>
         <StandardDirectory Id="ProgramFilesFolder">
             {{{INSTALLDIR_FILES}}}
             <!-- Note: The next empty directory is needed so that the Default INSTALLFOLDER created by WixToolset IS NOT CREATED -->

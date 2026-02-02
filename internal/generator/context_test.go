@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -546,6 +547,8 @@ func TestDuplicateFeatureNamesGetSeparateComponents(t *testing.T) {
 		},
 	}
 	vars := variables.New()
+	// Disable file permissions for this test - we're testing feature component separation
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
 	ctx := NewContext(setup, vars, tmpDir)
 
 	output, err := ctx.Generate()
@@ -723,5 +726,837 @@ func TestDuplicateTargetFilesGetShortName(t *testing.T) {
 	}
 	if !strings.Contains(output.DirectoryXML, "ShortName='CONFIG_2.XML'") {
 		t.Errorf("expected second occurrence to have ShortName='CONFIG_2.XML', got:\n%s", output.DirectoryXML)
+	}
+}
+
+func TestProcessShortcut(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Desktop Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "DESKTOP",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Launch MyApp",
+					},
+				},
+			},
+			{
+				Name:    "Start Menu Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp Start",
+						Target:      "STARTMENU",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Launch MyApp from Start Menu",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "TestProduct"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify desktop shortcuts
+	if len(ctx.DesktopShortcuts) != 1 {
+		t.Errorf("expected 1 desktop shortcut, got %d", len(ctx.DesktopShortcuts))
+	}
+
+	// Verify start menu shortcuts
+	if len(ctx.StartMenuShortcuts) != 1 {
+		t.Errorf("expected 1 start menu shortcut, got %d", len(ctx.StartMenuShortcuts))
+	}
+
+	// Verify desktop XML contains shortcut element
+	if !strings.Contains(output.DesktopXML, "<Shortcut Id='SHORTCUT_ID") {
+		t.Error("DesktopXML should contain <Shortcut> element")
+	}
+	if !strings.Contains(output.DesktopXML, "Name='MyApp'") {
+		t.Error("DesktopXML should contain shortcut name")
+	}
+	if !strings.Contains(output.DesktopXML, "WorkingDirectory='INSTALLDIR'") {
+		t.Error("DesktopXML should contain WorkingDirectory")
+	}
+
+	// Verify registry keypath for shortcut
+	if !strings.Contains(output.DesktopXML, "<RegistryValue Root='HKCU'") {
+		t.Error("DesktopXML should contain RegistryValue for keypath")
+	}
+	if !strings.Contains(output.DesktopXML, "KeyPath='yes'") {
+		t.Error("DesktopXML should have KeyPath on RegistryValue")
+	}
+
+	// Verify start menu XML
+	if !strings.Contains(output.StartMenuXML, "<Shortcut Id='SHORTCUT_ID") {
+		t.Error("StartMenuXML should contain <Shortcut> element")
+	}
+}
+
+func TestShortcutWithIcon(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Desktop Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "DESKTOP",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Launch MyApp",
+						Icon:        "[INSTALLDIR]myapp.ico",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "TestProduct"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify icon element is present
+	if !strings.Contains(output.DesktopXML, "<Icon Id='Icon_SHORTCUT_ID") {
+		t.Error("DesktopXML should contain <Icon> element when icon is specified")
+	}
+	if !strings.Contains(output.DesktopXML, "SourceFile='[INSTALLDIR]myapp.ico'") {
+		t.Error("DesktopXML should contain icon source file")
+	}
+}
+
+func TestShortcutInvalidTarget(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Bad Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "INVALID",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "This should fail",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "TestProduct"
+	ctx := NewContext(setup, vars, ".")
+
+	_, err := ctx.Generate()
+	if err == nil {
+		t.Error("expected error for invalid shortcut target")
+	}
+	if !strings.Contains(err.Error(), "invalid shortcut target") {
+		t.Errorf("expected 'invalid shortcut target' error, got: %v", err)
+	}
+}
+
+func TestShortcutDuplicateNames(t *testing.T) {
+	// Same shortcut name for both Desktop and StartMenu should not collide
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "DESKTOP",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Desktop shortcut",
+					},
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "STARTMENU",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Start menu shortcut",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "TestProduct"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Both shortcuts should have different component IDs
+	if len(ctx.DesktopShortcuts) != 1 {
+		t.Errorf("expected 1 desktop shortcut, got %d", len(ctx.DesktopShortcuts))
+	}
+	if len(ctx.StartMenuShortcuts) != 1 {
+		t.Errorf("expected 1 start menu shortcut, got %d", len(ctx.StartMenuShortcuts))
+	}
+
+	// Registry value names should be different (use component ID, not shortcut name)
+	desktopCompID := ctx.DesktopShortcuts[0].ID
+	startMenuCompID := ctx.StartMenuShortcuts[0].ID
+
+	if desktopCompID == startMenuCompID {
+		t.Error("desktop and start menu shortcuts should have different component IDs")
+	}
+
+	// Verify registry values use component IDs
+	if !strings.Contains(output.DesktopXML, fmt.Sprintf("Name='%s'", desktopCompID)) {
+		t.Error("Desktop registry value should use component ID as name")
+	}
+	if !strings.Contains(output.StartMenuXML, fmt.Sprintf("Name='%s'", startMenuCompID)) {
+		t.Error("StartMenu registry value should use component ID as name")
+	}
+}
+
+func TestShortcutFeatureComponentRef(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Desktop Shortcuts",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Shortcut{
+						Name:        "MyApp",
+						Target:      "DESKTOP",
+						File:        "[INSTALLDIR]myapp.exe",
+						Description: "Launch MyApp",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "TestProduct"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify feature XML contains component ref for shortcut
+	if !strings.Contains(output.FeatureXML, "<ComponentRef Id='") {
+		t.Error("FeatureXML should contain ComponentRef for shortcut")
+	}
+
+	// Verify the shortcut component ID is referenced
+	if len(ctx.DesktopShortcuts) > 0 {
+		compID := ctx.DesktopShortcuts[0].ID
+		if !strings.Contains(output.FeatureXML, fmt.Sprintf("<ComponentRef Id='%s'/>", compID)) {
+			t.Errorf("FeatureXML should reference shortcut component %s", compID)
+		}
+	}
+}
+
+func TestAddToPath(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["ADD_TO_PATH"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify PATH environment component is added
+	if !strings.Contains(output.DirectoryXML, "<Environment Id='ENV_ID") {
+		t.Error("DirectoryXML should contain Environment element for PATH")
+	}
+	if !strings.Contains(output.DirectoryXML, "Name='PATH'") {
+		t.Error("DirectoryXML should contain PATH environment name")
+	}
+	if !strings.Contains(output.DirectoryXML, "Value='[INSTALLDIR]'") {
+		t.Error("DirectoryXML should set PATH value to [INSTALLDIR]")
+	}
+	if !strings.Contains(output.DirectoryXML, "Part='last'") {
+		t.Error("DirectoryXML should append to PATH with Part='last'")
+	}
+	if !strings.Contains(output.DirectoryXML, "System='yes'") {
+		t.Error("DirectoryXML should set system-level PATH")
+	}
+}
+
+func TestAddToPathNotSet(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+	}
+	vars := variables.New()
+	// ADD_TO_PATH not set
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify no PATH environment component
+	if strings.Contains(output.DirectoryXML, "Name='PATH'") {
+		t.Error("DirectoryXML should not contain PATH environment when ADD_TO_PATH is not set")
+	}
+}
+
+func TestFilePermissionsDefault(t *testing.T) {
+	// Create temp directory with test files
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create a test file
+	testDir := filepath.Join(tmpDir, "install")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: testDir, Target: "[INSTALLDIR]"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	// Default: permissions enabled
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify CreateFolder with permissions is present
+	if !strings.Contains(output.DirectoryXML, "<CreateFolder>") {
+		t.Error("DirectoryXML should contain CreateFolder element")
+	}
+	if !strings.Contains(output.DirectoryXML, "<util:PermissionEx") {
+		t.Error("DirectoryXML should contain util:PermissionEx element")
+	}
+	if !strings.Contains(output.DirectoryXML, "GenericAll='yes'") {
+		t.Error("DirectoryXML should have GenericAll='yes' by default")
+	}
+}
+
+func TestFilePermissionsDisabled(t *testing.T) {
+	// Create temp directory with test files
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testDir := filepath.Join(tmpDir, "install")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: testDir, Target: "[INSTALLDIR]"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify no CreateFolder with permissions
+	if strings.Contains(output.DirectoryXML, "<util:PermissionEx") {
+		t.Error("DirectoryXML should not contain util:PermissionEx when disabled")
+	}
+}
+
+func TestFilePermissionsFeatureRef(t *testing.T) {
+	// Verify that permission components are referenced by features
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testDir := filepath.Join(tmpDir, "install")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: testDir, Target: "[INSTALLDIR]"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify permission component exists in DirectoryXML
+	if !strings.Contains(output.DirectoryXML, "<CreateFolder>") {
+		t.Error("DirectoryXML should contain CreateFolder element")
+	}
+
+	// Extract permission component ID from DirectoryXML
+	// Look for Component Id='...' before CreateFolder
+	createFolderIdx := strings.Index(output.DirectoryXML, "<CreateFolder>")
+	if createFolderIdx == -1 {
+		t.Fatal("Could not find CreateFolder in DirectoryXML")
+	}
+	// Find the component ID before this CreateFolder
+	beforeCreateFolder := output.DirectoryXML[:createFolderIdx]
+	lastComponentIdx := strings.LastIndex(beforeCreateFolder, "<Component Id='")
+	if lastComponentIdx == -1 {
+		t.Fatal("Could not find Component before CreateFolder")
+	}
+	startIdx := lastComponentIdx + len("<Component Id='")
+	endIdx := strings.Index(beforeCreateFolder[startIdx:], "'")
+	permCompID := beforeCreateFolder[startIdx : startIdx+endIdx]
+
+	// Verify this permission component is referenced in FeatureXML
+	expectedRef := fmt.Sprintf("<ComponentRef Id='%s'/>", permCompID)
+	if !strings.Contains(output.FeatureXML, expectedRef) {
+		t.Errorf("FeatureXML should reference permission component %s, got:\n%s", permCompID, output.FeatureXML)
+	}
+}
+
+func TestFilePermissionsRestricted(t *testing.T) {
+	// Create temp directory with test files
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	testDir := filepath.Join(tmpDir, "install")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
+		t.Fatalf("failed to create test dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(testDir, "test.txt"), []byte("test"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: testDir, Target: "[INSTALLDIR]"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["RESTRICT_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify restricted permissions
+	if !strings.Contains(output.DirectoryXML, "<util:PermissionEx") {
+		t.Error("DirectoryXML should contain util:PermissionEx element")
+	}
+	if !strings.Contains(output.DirectoryXML, "GenericRead='yes'") {
+		t.Error("DirectoryXML should have GenericRead='yes' when restricted")
+	}
+	if !strings.Contains(output.DirectoryXML, "GenericExecute='yes'") {
+		t.Error("DirectoryXML should have GenericExecute='yes' when restricted")
+	}
+	if strings.Contains(output.DirectoryXML, "GenericAll='yes'") {
+		t.Error("DirectoryXML should not have GenericAll='yes' when restricted")
+	}
+}
+
+func TestProcessExecute(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+		Items: []ir.Item{
+			ir.Execute{
+				Cmd:       "[INSTALLDIR]setup.exe /post-install",
+				When:      "after-install",
+				Directory: "INSTALLDIR",
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Verify custom action is generated
+	if !strings.Contains(output.CustomActionsXML, "<CustomAction Id='CUSTOMACTION_00000'") {
+		t.Error("CustomActionsXML should contain CustomAction element")
+	}
+	if !strings.Contains(output.CustomActionsXML, "Directory='INSTALLDIR'") {
+		t.Error("CustomActionsXML should contain Directory attribute")
+	}
+	if !strings.Contains(output.CustomActionsXML, "Execute='deferred'") {
+		t.Error("CustomActionsXML should use deferred execution for after-install")
+	}
+	if !strings.Contains(output.CustomActionsXML, "Impersonate='no'") {
+		t.Error("CustomActionsXML should have Impersonate='no' for deferred actions")
+	}
+
+	// Verify install execute sequence
+	if !strings.Contains(output.InstallExecuteSequence, "<Custom Action='CUSTOMACTION_00000'") {
+		t.Error("InstallExecuteSequence should contain Custom element")
+	}
+	if !strings.Contains(output.InstallExecuteSequence, "Before='InstallFinalize'") {
+		t.Error("InstallExecuteSequence should schedule after-install before InstallFinalize")
+	}
+}
+
+func TestExecuteBeforeInstall(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+		Items: []ir.Item{
+			ir.Execute{
+				Cmd:  "[INSTALLDIR]check.exe",
+				When: "before-install",
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// before-install should use immediate execution
+	if !strings.Contains(output.CustomActionsXML, "Execute='immediate'") {
+		t.Error("before-install should use immediate execution")
+	}
+	// Should not have Impersonate for immediate
+	if strings.Contains(output.CustomActionsXML, "Impersonate='no'") {
+		t.Error("immediate actions should not have Impersonate attribute")
+	}
+
+	// Verify sequence timing
+	if !strings.Contains(output.InstallExecuteSequence, "After='CostFinalize'") {
+		t.Error("before-install should be After CostFinalize")
+	}
+}
+
+func TestExecuteMultipleTimings(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+		Items: []ir.Item{
+			ir.Execute{Cmd: "cmd1", When: "before-install"},
+			ir.Execute{Cmd: "cmd2", When: "after-install"},
+			ir.Execute{Cmd: "cmd3", When: "before-uninstall"},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should have 3 custom actions
+	if len(ctx.CustomActions) != 3 {
+		t.Errorf("expected 3 custom actions, got %d", len(ctx.CustomActions))
+	}
+
+	// Verify each timing has correct condition
+	if !strings.Contains(output.InstallExecuteSequence, "After='CostFinalize'") {
+		t.Error("before-install should have After='CostFinalize'")
+	}
+	if !strings.Contains(output.InstallExecuteSequence, "Before='InstallFinalize'") {
+		t.Error("after-install should have Before='InstallFinalize'")
+	}
+	if !strings.Contains(output.InstallExecuteSequence, "After='InstallInitialize'") {
+		t.Error("before-uninstall should have After='InstallInitialize'")
+	}
+	if !strings.Contains(output.InstallExecuteSequence, "(REMOVE=\"ALL\")") {
+		t.Error("before-uninstall should have REMOVE=ALL condition")
+	}
+}
+
+func TestExecuteInvalidWhen(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+		Items: []ir.Item{
+			ir.Execute{
+				Cmd:  "test.exe",
+				When: "invalid-timing",
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	_, err := ctx.Generate()
+	if err == nil {
+		t.Error("expected error for invalid when value")
+	}
+	if !strings.Contains(err.Error(), "invalid execute when value") {
+		t.Errorf("expected 'invalid execute when value' error, got: %v", err)
+	}
+}
+
+func TestExecuteDefaultDirectory(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items:   []ir.Item{},
+			},
+		},
+		Items: []ir.Item{
+			ir.Execute{
+				Cmd:  "test.exe",
+				When: "after-install",
+				// Directory not specified - should default to INSTALLDIR
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should default to INSTALLDIR
+	if !strings.Contains(output.CustomActionsXML, "Directory='INSTALLDIR'") {
+		t.Error("Execute without directory should default to INSTALLDIR")
+	}
+}
+
+func TestAppDataDirFiles(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "[APPDATADIR]MyApp/config.json",
+						Target: "[APPDATADIR]MyApp/config.json",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// APPDATADIR content should be in AppDataDirXML, not DirectoryXML
+	if !strings.Contains(output.AppDataDirXML, "Directory Id='APPDATADIR'") {
+		t.Error("AppDataDirXML should contain APPDATADIR directory")
+	}
+	if !strings.Contains(output.AppDataDirXML, "MyApp") {
+		t.Error("AppDataDirXML should contain MyApp subdirectory")
+	}
+
+	// DirectoryXML should not contain APPDATADIR
+	if strings.Contains(output.DirectoryXML, "APPDATADIR") {
+		t.Error("DirectoryXML should not contain APPDATADIR content")
+	}
+}
+
+func TestMixedDirectoryRoots(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "[INSTALLDIR]bin/app.exe",
+						Target: "[INSTALLDIR]bin/app.exe",
+					},
+					ir.Files{
+						Source: "[APPDATADIR]config/settings.json",
+						Target: "[APPDATADIR]config/settings.json",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// INSTALLDIR in DirectoryXML
+	if !strings.Contains(output.DirectoryXML, "Directory Id='INSTALLDIR'") {
+		t.Error("DirectoryXML should contain INSTALLDIR")
+	}
+	if !strings.Contains(output.DirectoryXML, "bin") {
+		t.Error("DirectoryXML should contain bin subdirectory")
+	}
+
+	// APPDATADIR in AppDataDirXML
+	if !strings.Contains(output.AppDataDirXML, "Directory Id='APPDATADIR'") {
+		t.Error("AppDataDirXML should contain APPDATADIR")
+	}
+	if !strings.Contains(output.AppDataDirXML, "config") {
+		t.Error("AppDataDirXML should contain config subdirectory")
+	}
+}
+
+func TestAllDirectoryRoots(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: "[INSTALLDIR]app.exe", Target: "[INSTALLDIR]app.exe"},
+					ir.Files{Source: "[APPDATADIR]data.json", Target: "[APPDATADIR]data.json"},
+					ir.Files{Source: "[ROAMINGAPPDATADIR]roaming.json", Target: "[ROAMINGAPPDATADIR]roaming.json"},
+					ir.Files{Source: "[LOCALAPPDATADIR]local.json", Target: "[LOCALAPPDATADIR]local.json"},
+					ir.Files{Source: "[COMMONFILESDIR]shared.dll", Target: "[COMMONFILESDIR]shared.dll"},
+					ir.Files{Source: "[WINDOWSDIR]win.ini", Target: "[WINDOWSDIR]win.ini"},
+					ir.Files{Source: "[SYSTEMDIR]sys.dll", Target: "[SYSTEMDIR]sys.dll"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Each root should have its own output field
+	if !strings.Contains(output.DirectoryXML, "INSTALLDIR") {
+		t.Error("DirectoryXML should contain INSTALLDIR")
+	}
+	if !strings.Contains(output.AppDataDirXML, "APPDATADIR") {
+		t.Error("AppDataDirXML should contain APPDATADIR")
+	}
+	if !strings.Contains(output.RoamingAppDataDirXML, "ROAMINGAPPDATADIR") {
+		t.Error("RoamingAppDataDirXML should contain ROAMINGAPPDATADIR")
+	}
+	if !strings.Contains(output.LocalAppDataDirXML, "LOCALAPPDATADIR") {
+		t.Error("LocalAppDataDirXML should contain LOCALAPPDATADIR")
+	}
+	if !strings.Contains(output.CommonFilesDirXML, "COMMONFILESDIR") {
+		t.Error("CommonFilesDirXML should contain COMMONFILESDIR")
+	}
+	if !strings.Contains(output.WindowsDirXML, "WINDOWSDIR") {
+		t.Error("WindowsDirXML should contain WINDOWSDIR")
+	}
+	if !strings.Contains(output.SystemDirXML, "SYSTEMDIR") {
+		t.Error("SystemDirXML should contain SYSTEMDIR")
 	}
 }

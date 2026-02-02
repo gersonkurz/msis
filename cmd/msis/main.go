@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/bundle"
 	"github.com/gersonkurz/msis/internal/generator"
+	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/parser"
 	"github.com/gersonkurz/msis/internal/template"
 	"github.com/gersonkurz/msis/internal/variables"
@@ -59,8 +61,10 @@ func processFile(filename string, args *cliArgs) error {
 	fmt.Printf("  Parsed: %d sets, %d features, %d top-level items\n",
 		len(setup.Sets), len(setup.Features), len(setup.Items))
 
-	if setup.IsSetupBundle() {
-		fmt.Println("  Type: Bundle (multi-MSI installer)")
+	// Check if this is a bundle
+	isBundle := setup.IsSetupBundle()
+	if isBundle {
+		fmt.Println("  Type: Bundle (bootstrapper)")
 	}
 
 	// Milestone 3.2 - Variable resolution
@@ -73,8 +77,30 @@ func processFile(filename string, args *cliArgs) error {
 	fmt.Printf("  Product: %s v%s (%s)\n",
 		vars.ProductName(), vars.ProductVersion(), vars.Platform())
 
-	// Milestone 3.3 - WXS generation
 	workDir := filepath.Dir(filename)
+
+	// Determine template folder
+	templateFolder := args.templateFolder
+	if templateFolder == "" {
+		// Default: look for templates in executable directory or standard location
+		exePath, _ := os.Executable()
+		templateFolder = filepath.Join(filepath.Dir(exePath), "templates")
+		if _, err := os.Stat(templateFolder); os.IsNotExist(err) {
+			// Try relative to working directory
+			templateFolder = "templates"
+		}
+	}
+
+	// Branch based on bundle vs MSI
+	if isBundle {
+		return processBundleFile(setup, vars, workDir, templateFolder, args)
+	}
+	return processMSIFile(setup, vars, workDir, templateFolder, filename, args)
+}
+
+// processMSIFile generates a standard MSI package.
+func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, filename string, args *cliArgs) error {
+	// Milestone 3.3 - WXS generation
 	ctx := generator.NewContext(setup, vars, workDir)
 	output, err := ctx.Generate()
 	if err != nil {
@@ -95,17 +121,6 @@ func processFile(filename string, args *cliArgs) error {
 	}
 
 	// Milestone 3.4 - Template rendering
-	templateFolder := args.templateFolder
-	if templateFolder == "" {
-		// Default: look for templates in executable directory or standard location
-		exePath, _ := os.Executable()
-		templateFolder = filepath.Join(filepath.Dir(exePath), "templates")
-		if _, err := os.Stat(templateFolder); os.IsNotExist(err) {
-			// Try relative to working directory
-			templateFolder = "templates"
-		}
-	}
-
 	renderer := template.NewRenderer(vars, templateFolder, args.customTemplates, output)
 
 	// Support custom template override via --template flag
@@ -162,6 +177,93 @@ func processFile(filename string, args *cliArgs) error {
 	}
 
 	return nil
+}
+
+// processBundleFile generates a WiX Bundle (bootstrapper).
+func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder string, args *cliArgs) error {
+	// Generate bundle chain
+	gen := bundle.NewGenerator(setup, vars, workDir)
+	bundleOutput, err := gen.Generate()
+	if err != nil {
+		return fmt.Errorf("generating bundle: %w", err)
+	}
+
+	prereqCount := len(setup.Bundle.Prerequisites)
+	exeCount := len(setup.Bundle.ExePackages)
+	fmt.Printf("  Generated: %d prerequisites, %d exe packages\n", prereqCount, exeCount)
+
+	if args.dryRun {
+		fmt.Println("  [dry-run] Parse and validate complete")
+		return nil
+	}
+
+	// Render bundle template
+	wxsContent, err := renderBundleTemplate(vars, templateFolder, args.customTemplates, bundleOutput, setup.Silent)
+	if err != nil {
+		return fmt.Errorf("rendering bundle template: %w", err)
+	}
+
+	// Determine output filename (bundle produces .exe)
+	baseName := vars.BuildTarget()
+	if baseName == "" {
+		baseName = vars.ProductName() + "-" + vars.ProductVersion()
+	}
+	baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
+	wxsFile := baseName + "-bundle.wxs"
+
+	// Write WXS file
+	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+		return fmt.Errorf("writing bundle WXS file: %w", err)
+	}
+	fmt.Printf("  Written: %s\n", wxsFile)
+
+	// Build bundle
+	if args.build {
+		if !wix.IsWixAvailable() {
+			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
+		}
+
+		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, args.customTemplates, args.retainWxs)
+		if err := builder.Build(); err != nil {
+			return fmt.Errorf("building bundle: %w", err)
+		}
+
+		fmt.Printf("  Built: %s.exe\n", baseName)
+	}
+
+	return nil
+}
+
+// renderBundleTemplate renders the bundle WXS template.
+func renderBundleTemplate(vars variables.Dictionary, templateFolder, customTemplates string, bundleOutput *bundle.GeneratedBundle, silent bool) (string, error) {
+	// Read bundle template
+	templateName := "bundle.wxs"
+	if silent {
+		templateName = "bundle-silent.wxs"
+	}
+
+	templatePath := filepath.Join(templateFolder, templateName)
+	if customTemplates != "" {
+		customPath := filepath.Join(customTemplates, templateName)
+		if _, err := os.Stat(customPath); err == nil {
+			templatePath = customPath
+		}
+	}
+
+	tmplContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("reading bundle template: %w", err)
+	}
+
+	// Build context for template
+	ctx := make(map[string]interface{})
+	for k, v := range vars {
+		ctx[k] = v
+	}
+	ctx["CHAIN"] = bundleOutput.ChainXML
+
+	// Render using raymond (same as MSI templates)
+	return template.RenderString(string(tmplContent), ctx)
 }
 
 func parseArgs() *cliArgs {
