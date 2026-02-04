@@ -30,11 +30,17 @@ type cliArgs struct {
 	templateFolder  string
 	customTemplates string
 	dryRun          bool
+	status          bool
 	files           []string
 }
 
 func main() {
 	args := parseArgs()
+
+	if args.status {
+		printStatus(args)
+		os.Exit(0)
+	}
 
 	if len(args.files) == 0 {
 		printUsage()
@@ -82,24 +88,24 @@ func processFile(filename string, args *cliArgs) error {
 	// Determine template folder
 	templateFolder := args.templateFolder
 	if templateFolder == "" {
-		// Default: look for templates in executable directory or standard location
-		exePath, _ := os.Executable()
-		templateFolder = filepath.Join(filepath.Dir(exePath), "templates")
-		if _, err := os.Stat(templateFolder); os.IsNotExist(err) {
-			// Try relative to working directory
-			templateFolder = "templates"
-		}
+		templateFolder = getDefaultTemplateFolder()
+	}
+
+	// Determine custom templates folder
+	customTemplates := args.customTemplates
+	if customTemplates == "" {
+		customTemplates = getDefaultCustomTemplates()
 	}
 
 	// Branch based on bundle vs MSI
 	if isBundle {
-		return processBundleFile(setup, vars, workDir, templateFolder, args)
+		return processBundleFile(setup, vars, workDir, templateFolder, customTemplates, args)
 	}
-	return processMSIFile(setup, vars, workDir, templateFolder, filename, args)
+	return processMSIFile(setup, vars, workDir, templateFolder, customTemplates, filename, args)
 }
 
 // processMSIFile generates a standard MSI package.
-func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, filename string, args *cliArgs) error {
+func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, filename string, args *cliArgs) error {
 	// Milestone 3.3 - WXS generation
 	ctx := generator.NewContext(setup, vars, workDir)
 	output, err := ctx.Generate()
@@ -121,7 +127,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	}
 
 	// Milestone 3.4 - Template rendering
-	renderer := template.NewRenderer(vars, templateFolder, args.customTemplates, output)
+	renderer := template.NewRenderer(vars, templateFolder, customTemplates, output)
 
 	// Support custom template override via --template flag
 	if args.template != "" {
@@ -168,7 +174,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
 		}
 
-		builder := wix.NewBuilder(vars, wxsFile, templateFolder, args.customTemplates, args.retainWxs)
+		builder := wix.NewBuilder(vars, wxsFile, templateFolder, customTemplates, workDir, args.retainWxs)
 		if err := builder.Build(); err != nil {
 			return fmt.Errorf("building MSI: %w", err)
 		}
@@ -180,7 +186,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 }
 
 // processBundleFile generates a WiX Bundle (bootstrapper).
-func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder string, args *cliArgs) error {
+func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates string, args *cliArgs) error {
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
 	bundleOutput, err := gen.Generate()
@@ -198,7 +204,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	}
 
 	// Render bundle template
-	wxsContent, err := renderBundleTemplate(vars, templateFolder, args.customTemplates, bundleOutput, setup.Silent)
+	wxsContent, err := renderBundleTemplate(vars, templateFolder, customTemplates, bundleOutput, setup.Silent)
 	if err != nil {
 		return fmt.Errorf("rendering bundle template: %w", err)
 	}
@@ -223,7 +229,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
 		}
 
-		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, args.customTemplates, args.retainWxs)
+		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
 		if err := builder.Build(); err != nil {
 			return fmt.Errorf("building bundle: %w", err)
 		}
@@ -296,6 +302,7 @@ func parseArgs() *cliArgs {
 	flag.StringVar(&args.templateFolder, "templatefolder", "", "template folder path (base)")
 	flag.StringVar(&args.customTemplates, "customtemplates", "", "custom templates overlay (takes precedence)")
 	flag.BoolVar(&args.dryRun, "dry-run", false, "parse and validate only, no output")
+	flag.BoolVar(&args.status, "status", false, "show configuration status")
 
 	// Help flags
 	var showHelp bool
@@ -314,6 +321,44 @@ func parseArgs() *cliArgs {
 	return args
 }
 
+// getDefaultTemplateFolder returns the default template folder path.
+// Search order:
+// 1. %LOCALAPPDATA%\msis\templates (installed location)
+// 2. Executable directory\templates (portable/dev)
+// 3. Current directory\templates (fallback)
+func getDefaultTemplateFolder() string {
+	// 1. Check installed location: %LOCALAPPDATA%\msis\templates
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		installedPath := filepath.Join(localAppData, "msis", "templates")
+		if _, err := os.Stat(installedPath); err == nil {
+			return installedPath
+		}
+	}
+
+	// 2. Check executable directory
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		exeTemplates := filepath.Join(exeDir, "templates")
+		if _, err := os.Stat(exeTemplates); err == nil {
+			return exeTemplates
+		}
+	}
+
+	// 3. Fallback to relative path
+	return "templates"
+}
+
+// getDefaultCustomTemplates returns the default custom templates folder path.
+func getDefaultCustomTemplates() string {
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		customPath := filepath.Join(localAppData, "msis", "custom")
+		if _, err := os.Stat(customPath); err == nil {
+			return customPath
+		}
+	}
+	return ""
+}
+
 func printUsage() {
 	fmt.Printf("MSIS - Version %s\n", Version)
 	fmt.Printf("MSI-Simplified installer generator [%s/%s]\n", runtime.GOOS, runtime.GOARCH)
@@ -328,7 +373,13 @@ func printUsage() {
 	fmt.Println("  /TEMPLATEFOLDER:PATH   Base template folder (public defaults)")
 	fmt.Println("  /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)")
 	fmt.Println("  /DRY-RUN            Parse and validate only, no output")
+	fmt.Println("  /STATUS             Show configuration status")
 	fmt.Println("  /?, /HELP           Show this help message")
+	fmt.Println()
+	fmt.Println("Template folder search order:")
+	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
+	fmt.Println("  2. <executable-dir>\\templates (portable)")
+	fmt.Println("  3. .\\templates (current directory)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  msis setup.msis                          Generate .wxs file")
@@ -336,4 +387,91 @@ func printUsage() {
 	fmt.Println("  msis /BUILD /RETAINWXS setup.msis        Build and keep .wxs")
 	fmt.Println("  msis /TEMPLATEFOLDER:templates /BUILD setup.msis")
 	fmt.Println("  msis /DRY-RUN setup.msis                 Validate only")
+}
+
+func printStatus(args *cliArgs) {
+	fmt.Printf("MSIS - Version %s\n", Version)
+	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Println()
+
+	// WiX information
+	fmt.Println("WiX Toolset:")
+	wixPath := wix.GetWixPath()
+	if wix.IsWixAvailable() {
+		fmt.Printf("  Location: %s\n", wixPath)
+		fmt.Printf("  Version:  %s\n", wix.GetWixVersion())
+
+		// Show installed extensions
+		extensions := wix.GetInstalledExtensions()
+		if len(extensions) > 0 {
+			fmt.Println("  Extensions:")
+			for _, ext := range extensions {
+				fmt.Printf("    - %s\n", ext)
+			}
+		}
+	} else {
+		fmt.Printf("  Location: (not found)\n")
+		fmt.Println("  Install with: dotnet tool install --global wix")
+	}
+	fmt.Println()
+
+	// Template folders
+	fmt.Println("Template Folders:")
+
+	// Determine effective template folder
+	templateFolder := args.templateFolder
+	if templateFolder == "" {
+		templateFolder = getDefaultTemplateFolder()
+	}
+	fmt.Printf("  Base templates: %s", templateFolder)
+	if _, err := os.Stat(templateFolder); err != nil {
+		fmt.Print(" (not found)")
+	}
+	fmt.Println()
+
+	// Custom templates
+	customTemplates := args.customTemplates
+	if customTemplates == "" {
+		customTemplates = getDefaultCustomTemplates()
+	}
+	if customTemplates != "" {
+		fmt.Printf("  Custom templates: %s", customTemplates)
+		if _, err := os.Stat(customTemplates); err != nil {
+			fmt.Print(" (not found)")
+		}
+		fmt.Println()
+	} else {
+		fmt.Println("  Custom templates: (none)")
+	}
+	fmt.Println()
+
+	// Show search paths
+	fmt.Println("Template Search Order:")
+	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		installedPath := filepath.Join(localAppData, "msis", "templates")
+		if _, err := os.Stat(installedPath); err == nil {
+			fmt.Printf("     -> %s (found)\n", installedPath)
+		} else {
+			fmt.Printf("     -> %s (not found)\n", installedPath)
+		}
+	}
+
+	fmt.Println("  2. <executable-dir>\\templates (portable)")
+	if exePath, err := os.Executable(); err == nil {
+		exeTemplates := filepath.Join(filepath.Dir(exePath), "templates")
+		if _, err := os.Stat(exeTemplates); err == nil {
+			fmt.Printf("     -> %s (found)\n", exeTemplates)
+		} else {
+			fmt.Printf("     -> %s (not found)\n", exeTemplates)
+		}
+	}
+
+	fmt.Println("  3. .\\templates (current directory)")
+	if _, err := os.Stat("templates"); err == nil {
+		cwd, _ := os.Getwd()
+		fmt.Printf("     -> %s (found)\n", filepath.Join(cwd, "templates"))
+	} else {
+		fmt.Println("     -> (not found)")
+	}
 }

@@ -208,11 +208,10 @@ The C# version is at `../msis-2.x/`. Key files:
 - `msi-simplified/SetupItem/` - XML element parsers
 - `msi-simplified/WxsItem/` - WiX XML generators
 
-## Decision Documents
+## Schema
 
-- `docs/decisions/005-phase-3-plan-decisions.md` - XSD validation, templates, scope
-- `docs/phase-3-plan.md` - Detailed milestone breakdown
-- `docs/msis.xsd` - .msis schema (authoritative)
+- `docs/msis.xsd` - .msis XML schema (authoritative)
+- `docs/Bundle.md` - Bundle (bootstrapper) documentation
 
 ## WiX 6 Integration
 

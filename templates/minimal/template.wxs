@@ -1,0 +1,72 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <!--
+    Minimal WiX Template for simple installers
+    No VC++ runtime, no custom DLLs
+  -->
+  <Package Name="{{PRODUCT_NAME}}" UpgradeCode="{{UPGRADE_CODE}}" Language="{{LCID}}" Codepage="{{CODEPAGE}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" InstallerVersion="500">
+    <SummaryInformation Keywords="Installer" Description="{{PRODUCT_NAME}}" Manufacturer="{{MANUFACTURER}}" Codepage="{{CODEPAGE}}" />
+    <Media Id="1" Cabinet="setup.cab" EmbedCab="yes" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed." />
+
+    {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
+    {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}
+    {{#if LICENSE_FILE}}<WixVariable Id="WixUILicenseRtf" Value="{{LICENSE_FILE}}" />{{/if}}
+
+    {{#if SETUP_ICON}}
+    <Icon Id="setup_icon.ico" SourceFile="{{SETUP_ICON}}" />
+    <Property Id="ARPPRODUCTICON" Value="setup_icon.ico" />
+    {{/if}}
+
+    {{{FEATURES}}}
+
+    <!-- Minimal UI with install directory selection -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <UI>
+      <UIRef Id="WixUI_Common" />
+      <UIRef Id="WixUI_ErrorProgressText" />
+
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="WelcomeDlg" />
+      <DialogRef Id="InstallDirDlg" />
+      <DialogRef Id="VerifyReadyDlg" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="2" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+      <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" />
+    </UI>
+
+    {{{CUSTOM_ACTIONS}}}
+
+    <InstallExecuteSequence>
+      {{{INSTALL_EXECUTE_SEQUENCE}}}
+    </InstallExecuteSequence>
+
+    <StandardDirectory Id="DesktopFolder">{{{DESKTOP_FILES}}}</StandardDirectory>
+    <StandardDirectory Id="LocalAppDataFolder">{{{LOCALAPPDATADIR_FILES}}}</StandardDirectory>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      {{{INSTALLDIR_FILES}}}
+      <Directory Id="INSTALLFOLDER" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">{{{STARTMENU_FILES}}}</StandardDirectory>
+
+    {{{REGISTRY_ENTRIES}}}
+  </Package>
+</Wix>

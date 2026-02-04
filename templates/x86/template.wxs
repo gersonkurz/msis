@@ -4,8 +4,8 @@
         <Media Id="1" Cabinet="setupthis.cab" EmbedCab="yes" />
         <SetProperty Id="COMPUTERNAME" Before="InstallInitialize" Sequence="execute" Value="[%COMPUTERNAME]" />
         <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed. Setup will now exit." />
-        <WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />
-        <WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />
+        {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
+        {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}
         <util:QueryWindowsWellKnownSIDs />
 		<Binary Id="binary.dll" SourceFile="{{TEMPLATE_FOLDER}}/x86/{{DLL_ENTRY}}" />
         {{#if SETUP_ICON }}

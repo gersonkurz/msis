@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIS Bundle Setup - Combines x86 and x64 installers
+  Automatically selects the correct architecture for the target system
+-->
+<setup>
+  <!-- Product identification -->
+  <set name="PRODUCT_NAME" value="MSIS"/>
+  <set name="PRODUCT_VERSION" value="3.0.0"/>
+  <set name="MANUFACTURER" value="NG Branch Technology GmbH"/>
+  <set name="UPGRADE_CODE" value="{E7A3B8C1-5D2F-4A9E-B6C4-8F1D3E2A7B5C}"/>
+
+  <!-- Build configuration -->
+  <set name="BUILD_TARGET" value="dist\msis-{{PRODUCT_VERSION}}-setup.exe"/>
+
+  <!-- Install folder name (under Program Files) -->
+  <set name="INSTALLDIR" value="MSIS"/>
+
+  <!-- License -->
+  <set name="LICENSE_URL" value="https://github.com/gersonkurz/msis/blob/main/LICENSE"/>
+
+  <!-- Bundle: combine x64, x86, and ARM64 MSIs -->
+  <!-- Note: paths are relative to where the .wxs is generated (dist folder) -->
+  <bundle>
+    <msi source_64bit="msis-{{PRODUCT_VERSION}}-x64.msi"
+         source_32bit="msis-{{PRODUCT_VERSION}}-x86.msi"
+         source_arm64="msis-{{PRODUCT_VERSION}}-arm64.msi"/>
+  </bundle>
+</setup>

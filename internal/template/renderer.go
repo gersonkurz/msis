@@ -154,21 +154,29 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["LCID"] = r.getLCID()
 	ctx["CODEPAGE"] = r.getCodepage()
 
-	// Apply logo defaults if not set (msis-2.x compatible)
-	// Use overlay resolution to find logos in custom folder first, then base
+	// Apply logo defaults only if LOGO_PREFIX is explicitly set or logo files are specified
+	// Without explicit logos, WiX will use its built-in defaults
 	logoPrefix := r.Variables["LOGO_PREFIX"]
-	if logoPrefix == "" {
-		logoPrefix = "NGBT"
-	}
-
-	if r.Variables["LOGO_BANNER"] == "" {
-		ctx["LOGO_BANNER"] = r.resolveTemplatePath(logoPrefix + "_WixUiBanner.bmp")
-	}
-	if r.Variables["LOGO_DIALOG"] == "" {
-		ctx["LOGO_DIALOG"] = r.resolveTemplatePath(logoPrefix + "_WixUiDialog.bmp")
-	}
-	if r.Variables["LOGO_BOOTSTRAP"] == "" {
-		ctx["LOGO_BOOTSTRAP"] = r.resolveTemplatePath(logoPrefix + "_LogoBootstrap.bmp")
+	if logoPrefix != "" {
+		// User specified a logo prefix, resolve paths
+		if r.Variables["LOGO_BANNER"] == "" {
+			logoPath := r.resolveTemplatePath(logoPrefix + "_WixUiBanner.bmp")
+			if _, err := os.Stat(logoPath); err == nil {
+				ctx["LOGO_BANNER"] = logoPath
+			}
+		}
+		if r.Variables["LOGO_DIALOG"] == "" {
+			logoPath := r.resolveTemplatePath(logoPrefix + "_WixUiDialog.bmp")
+			if _, err := os.Stat(logoPath); err == nil {
+				ctx["LOGO_DIALOG"] = logoPath
+			}
+		}
+		if r.Variables["LOGO_BOOTSTRAP"] == "" {
+			logoPath := r.resolveTemplatePath(logoPrefix + "_LogoBootstrap.bmp")
+			if _, err := os.Stat(logoPath); err == nil {
+				ctx["LOGO_BOOTSTRAP"] = logoPath
+			}
+		}
 	}
 
 	// Add generated content (triple-braced in template for unescaped output)

@@ -6,8 +6,13 @@
 
   <Bundle Name="{{PRODUCT_NAME}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" UpgradeCode="{{UPGRADE_CODE}}">
 
+    <!-- Install folder - SetVariable resolves [ProgramFiles6432Folder] at runtime -->
+    <Variable Name="InstallFolder" Type="string" Value="" bal:Overridable="yes"/>
+    <SetVariable Id="SetInstallFolder" Variable="InstallFolder"
+        Value="[ProgramFiles6432Folder]{{INSTALLDIR}}"/>
+
     <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}" LogoFile="{{LOGO_BOOTSTRAP}}" Theme="hyperlinkLicense"/>
+      <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}"{{#if LOGO_BOOTSTRAP}} LogoFile="{{LOGO_BOOTSTRAP}}"{{/if}} Theme="hyperlinkLicense"/>
     </BootstrapperApplication>
 
     <Chain>

@@ -1,7 +1,7 @@
 # Bundle (Bootstrapper) Support
 
 msis-3.x supports WiX Bundle (bootstrapper) generation for creating multi-MSI installers that can:
-- Ship both x86 and x64 MSI packages in a single executable
+- Ship x86, x64, and ARM64 MSI packages in a single executable
 - Install prerequisites (VC++ Redistributable, .NET Framework) before the main application
 - Chain multiple installers in a defined sequence
 
@@ -18,7 +18,7 @@ For single-platform, no-prerequisites scenarios, a regular MSI is simpler and pr
 
 ### Legacy Shorthand (Simple Multi-Arch)
 
-The simplest bundle combines x86 and x64 MSI packages:
+The simplest bundle combines MSI packages for multiple architectures:
 
 ```xml
 <setup>
@@ -27,9 +27,11 @@ The simplest bundle combines x86 and x64 MSI packages:
   <set name="MANUFACTURER" value="My Company"/>
   <set name="UPGRADE_CODE" value="{GUID-HERE}"/>
 
-  <bundle source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi"/>
+  <bundle source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi" source_arm64="MyApp-arm64.msi"/>
 </setup>
 ```
+
+You can omit any architecture you don't need (e.g., omit `source_32bit` for 64-bit only).
 
 ### New Nested Syntax (Full Control)
 
@@ -45,7 +47,7 @@ For more control, use nested elements:
   <bundle>
     <prerequisite type="vcredist" version="2022"/>
     <prerequisite type="netfx" version="4.8"/>
-    <msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi"/>
+    <msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi" source_arm64="MyApp-arm64.msi"/>
   </bundle>
 </setup>
 ```
@@ -101,10 +103,10 @@ When a custom source is provided, only a single ExePackage is emitted (you handl
 ### Platform-Specific MSIs
 
 ```xml
-<msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi"/>
+<msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi" source_arm64="MyApp-arm64.msi"/>
 ```
 
-The installer automatically selects the correct MSI based on the target platform using `VersionNT64` condition.
+The installer automatically selects the correct MSI based on the target platform. All attributes are optional - include only the architectures you support.
 
 ### Single MSI
 
@@ -186,9 +188,15 @@ Packages are installed in this order:
 
 ## Architecture Detection
 
-The bundle uses WiX conditions to select the correct packages:
-- `InstallCondition='VersionNT64'` - Install on 64-bit Windows
-- `InstallCondition='NOT VersionNT64'` - Install on 32-bit Windows
+The bundle uses WiX Burn conditions to select the correct packages:
+
+| Architecture | Condition | Description |
+|--------------|-----------|-------------|
+| ARM64 | `NativeMachine = 43620` | ARM64 Windows (0xAA64) |
+| x64 | `VersionNT64 AND NOT NativeMachine = 43620` | 64-bit Windows (excludes ARM64) |
+| x86 | `NOT VersionNT64` | 32-bit Windows |
+
+`NativeMachine` is a built-in Burn variable containing the `IMAGE_FILE_MACHINE_*` value for the native OS architecture.
 
 ## Example: Complete Bundle
 
@@ -215,7 +223,7 @@ The bundle uses WiX conditions to select the correct packages:
          args="/quiet"/>
 
     <!-- Main application MSIs -->
-    <msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi"/>
+    <msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi" source_arm64="MyApp-arm64.msi"/>
   </bundle>
 </setup>
 ```
@@ -241,7 +249,7 @@ The WiX bundle provides:
 ## WiX Extensions
 
 Bundle builds automatically include these WiX extensions:
-- `WixToolset.Bal.wixext` - Bootstrapper Application Library
+- `WixToolset.BootstrapperApplications.wixext` - Bootstrapper Application Library (WiX 6)
 - `WixToolset.Util.wixext` - Utility functions
 - `WixToolset.Netfx.wixext` - .NET Framework detection
 

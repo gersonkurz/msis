@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIS Self-Packaging Setup
+  Installs msis.exe to Program Files, templates to LocalAppData
+
+  Build with: msis /BUILD setup.msis
+  Or use: just release
+-->
+<setup>
+  <!-- Product identification -->
+  <set name="PRODUCT_NAME" value="MSIS"/>
+  <set name="PRODUCT_VERSION" value="3.0.0"/>
+  <set name="MANUFACTURER" value="NG Branch Technology GmbH"/>
+  <set name="UPGRADE_CODE" value="{E7A3B8C1-5D2F-4A9E-B6C4-8F1D3E2A7B5C}"/>
+
+  <!-- Build configuration -->
+  <set name="PLATFORM" value="x64"/>
+  <set name="BUILD_TARGET" value="dist\msis-{{PRODUCT_VERSION}}-x64.msi"/>
+
+  <!-- Install folder name (under Program Files) -->
+  <set name="INSTALLDIR" value="MSIS"/>
+
+  <!-- Add install directory to PATH -->
+  <set name="ADD_TO_PATH" value="True"/>
+
+  <!-- License -->
+  <set name="LICENSE_URL" value="https://github.com/gersonkurz/msis/blob/main/LICENSE"/>
+
+  <!-- Main feature -->
+  <feature name="MSIS">
+    <!-- Executable to Program Files\MSIS (template creates MSIS folder) -->
+    <files source="dist\msis.exe" target="[INSTALLDIR]"/>
+
+    <!-- Templates to %LOCALAPPDATA%\msis\templates -->
+    <files source="templates\x64" target="[LOCALAPPDATADIR]msis\templates\x64"/>
+    <files source="templates\x86" target="[LOCALAPPDATADIR]msis\templates\x86"/>
+    <files source="templates\minimal" target="[LOCALAPPDATADIR]msis\templates\minimal"/>
+    <files source="templates\bundle.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
+    <files source="templates\bundle-silent.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
+    <files source="templates\wixlib" target="[LOCALAPPDATADIR]msis\templates\wixlib"/>
+
+    <!-- Create empty custom folder for user templates -->
+    <files source="templates\custom" target="[LOCALAPPDATADIR]msis\custom"/>
+  </feature>
+</setup>

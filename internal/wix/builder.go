@@ -14,18 +14,20 @@ import (
 
 // Builder handles WiX CLI invocation for MSI generation.
 type Builder struct {
-	WxsFile        string
-	OutputFile     string
-	Platform       string
+	WxsFile         string
+	OutputFile      string
+	Platform        string
 	Language        string
 	TemplateFolder  string
 	CustomTemplates string
+	SourceDir       string // Directory of the original .msis file (for resolving source paths)
 	Variables       variables.Dictionary
 	RetainWxs       bool
 }
 
 // NewBuilder creates a WiX builder from variables and paths.
-func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates string, retainWxs bool) *Builder {
+// sourceDir is the directory of the original .msis file, used for resolving source paths.
+func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates, sourceDir string, retainWxs bool) *Builder {
 	// Determine output file
 	outputFile := vars.BuildTarget()
 	if outputFile == "" {
@@ -40,6 +42,7 @@ func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTempla
 		Language:        vars["LANGUAGE"],
 		TemplateFolder:  templateFolder,
 		CustomTemplates: customTemplates,
+		SourceDir:       sourceDir,
 		Variables:       vars,
 		RetainWxs:       retainWxs,
 	}
@@ -65,7 +68,7 @@ func (b *Builder) Build() error {
 
 // ensureEulaAccepted checks if WiX EULA has been accepted and accepts it if needed.
 func (b *Builder) ensureEulaAccepted() error {
-	wixPath := getWixPath()
+	wixPath := GetWixPath()
 
 	// Try running a simple wix command to see if EULA is already accepted
 	cmd := exec.Command(wixPath, "--version")
@@ -127,8 +130,17 @@ func (b *Builder) runWixBuild() error {
 		args = append(args, "-culture", b.Language)
 	}
 
-	// Bind path (for file resolution) - use absolute path
+	// Bind paths (for file resolution) - use absolute paths
+	// Order: workDir, sourceDir (msis file location), custom templates, template folder
 	args = append(args, "-b", workDir)
+
+	// Source directory (where .msis file is) for resolving source paths
+	if b.SourceDir != "" {
+		absSourceDir, _ := filepath.Abs(b.SourceDir)
+		if absSourceDir != workDir {
+			args = append(args, "-b", absSourceDir)
+		}
+	}
 
 	// Template folder bind paths (use absolute paths)
 	// Custom templates first (takes precedence), then base folder
@@ -147,7 +159,7 @@ func (b *Builder) runWixBuild() error {
 	// Output file - use absolute path
 	args = append(args, "-o", absOutputFile)
 
-	wixPath := getWixPath()
+	wixPath := GetWixPath()
 	fmt.Printf("  Running: %s %s\n", wixPath, strings.Join(args, " "))
 
 	cmd := exec.Command(wixPath, args...)
@@ -198,9 +210,9 @@ func (b *Builder) cleanup() {
 	}
 }
 
-// getWixPath returns the path to the WiX 6 CLI.
+// GetWixPath returns the path to the WiX 6 CLI.
 // Prefers dotnet tools installation over system PATH.
-func getWixPath() string {
+func GetWixPath() string {
 	// Check dotnet tools location first (WiX 6)
 	home, _ := os.UserHomeDir()
 	dotnetWix := filepath.Join(home, ".dotnet", "tools", "wix.exe")
@@ -220,13 +232,43 @@ func getWixPath() string {
 
 // IsWixAvailable checks if wix CLI is available.
 func IsWixAvailable() bool {
-	wixPath := getWixPath()
+	wixPath := GetWixPath()
 	if wixPath == "wix" {
 		_, err := exec.LookPath("wix")
 		return err == nil
 	}
 	_, err := os.Stat(wixPath)
 	return err == nil
+}
+
+// GetWixVersion returns the WiX version string, or an error message if unavailable.
+func GetWixVersion() string {
+	wixPath := GetWixPath()
+	cmd := exec.Command(wixPath, "--version")
+	output, err := cmd.Output()
+	if err != nil {
+		return "(unavailable)"
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// GetInstalledExtensions returns a list of installed WiX extensions.
+func GetInstalledExtensions() []string {
+	wixPath := GetWixPath()
+	cmd := exec.Command(wixPath, "extension", "list")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	var extensions []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			extensions = append(extensions, line)
+		}
+	}
+	return extensions
 }
 
 // BundleBuilder handles WiX CLI invocation for Bundle (bootstrapper) generation.
@@ -288,9 +330,9 @@ func (b *BundleBuilder) runWixBuild() error {
 
 	// Bundle-specific extensions
 	args = append(args,
-		"-ext", "WixToolset.Bal.wixext",   // Bootstrapper Application Library
-		"-ext", "WixToolset.Util.wixext",  // Utility functions
-		"-ext", "WixToolset.Netfx.wixext", // .NET Framework detection
+		"-ext", "WixToolset.BootstrapperApplications.wixext", // Bootstrapper Application Library (renamed from Bal in WiX 6)
+		"-ext", "WixToolset.Util.wixext",                     // Utility functions
+		"-ext", "WixToolset.Netfx.wixext",                    // .NET Framework detection
 	)
 
 	// Bind paths
@@ -310,7 +352,7 @@ func (b *BundleBuilder) runWixBuild() error {
 	// Output file
 	args = append(args, "-o", absOutputFile)
 
-	wixPath := getWixPath()
+	wixPath := GetWixPath()
 	fmt.Printf("  Running: %s %s\n", wixPath, strings.Join(args, " "))
 
 	cmd := exec.Command(wixPath, args...)

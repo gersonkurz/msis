@@ -104,12 +104,13 @@ func (e Execute) ItemType() string { return "execute" }
 // Bundle represents a bootstrapper bundle configuration.
 // Supports both legacy shorthand and new nested syntax:
 //
-//	Legacy: <bundle source_64bit="..." source_32bit="..."/>
+//	Legacy: <bundle source_64bit="..." source_32bit="..." source_arm64="..."/>
 //	New:    <bundle><prerequisite .../><msi .../></bundle>
 type Bundle struct {
 	// Legacy shorthand attributes (still supported)
 	Source64bit string
 	Source32bit string
+	SourceArm64 string
 
 	// New nested elements
 	Prerequisites []Prerequisite
@@ -128,11 +129,12 @@ type Prerequisite struct {
 }
 
 // BundleMSI represents the main MSI package(s) in a bundle.
-// Example: <msi source_64bit="app-x64.msi" source_32bit="app-x86.msi"/>
+// Example: <msi source_64bit="app-x64.msi" source_32bit="app-x86.msi" source_arm64="app-arm64.msi"/>
 type BundleMSI struct {
 	Source      string // single MSI (platform-neutral)
 	Source64bit string // x64 MSI
 	Source32bit string // x86 MSI
+	SourceArm64 string // ARM64 MSI
 }
 
 // ExePackage represents a custom executable package in the bundle chain.

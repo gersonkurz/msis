@@ -139,7 +139,7 @@ func TestBuildContext(t *testing.T) {
 	}
 }
 
-func TestLogoDefaults(t *testing.T) {
+func TestLogoDefaultsNoPrefix(t *testing.T) {
 	// Create temp directory to avoid platform-specific path issues
 	tmpDir, err := os.MkdirTemp("", "logo-test-*")
 	if err != nil {
@@ -149,35 +149,43 @@ func TestLogoDefaults(t *testing.T) {
 
 	vars := variables.New()
 	// No LOGO_BANNER, LOGO_DIALOG, LOGO_BOOTSTRAP set
-	// No LOGO_PREFIX set (should default to "NGBT")
+	// No LOGO_PREFIX set - logos should be empty (WiX uses its defaults)
 
 	data := &generator.GeneratedOutput{}
 	r := NewRenderer(vars, tmpDir, "", data)
 	ctx := r.buildContext()
 
-	// Should use default NGBT prefix - check suffix since path is absolute
-	bannerStr, _ := ctx["LOGO_BANNER"].(string)
-	dialogStr, _ := ctx["LOGO_DIALOG"].(string)
-	bootstrapStr, _ := ctx["LOGO_BOOTSTRAP"].(string)
-
-	if !strings.HasSuffix(filepath.ToSlash(bannerStr), "NGBT_WixUiBanner.bmp") {
-		t.Errorf("LOGO_BANNER = %v, want suffix NGBT_WixUiBanner.bmp", bannerStr)
+	// Without LOGO_PREFIX, no logo defaults should be set
+	if ctx["LOGO_BANNER"] != nil {
+		t.Errorf("LOGO_BANNER = %v, want nil (no default)", ctx["LOGO_BANNER"])
 	}
-	if !strings.HasSuffix(filepath.ToSlash(dialogStr), "NGBT_WixUiDialog.bmp") {
-		t.Errorf("LOGO_DIALOG = %v, want suffix NGBT_WixUiDialog.bmp", dialogStr)
+	if ctx["LOGO_DIALOG"] != nil {
+		t.Errorf("LOGO_DIALOG = %v, want nil (no default)", ctx["LOGO_DIALOG"])
 	}
-	if !strings.HasSuffix(filepath.ToSlash(bootstrapStr), "NGBT_LogoBootstrap.bmp") {
-		t.Errorf("LOGO_BOOTSTRAP = %v, want suffix NGBT_LogoBootstrap.bmp", bootstrapStr)
+	if ctx["LOGO_BOOTSTRAP"] != nil {
+		t.Errorf("LOGO_BOOTSTRAP = %v, want nil (no default)", ctx["LOGO_BOOTSTRAP"])
 	}
 }
 
 func TestLogoDefaultsWithPrefix(t *testing.T) {
-	// Create temp directory to avoid platform-specific path issues
+	// Create temp directory and logo files
 	tmpDir, err := os.MkdirTemp("", "logo-prefix-test-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
+
+	// Create the logo files so they can be found
+	logoFiles := []string{
+		"CUSTOM_WixUiBanner.bmp",
+		"CUSTOM_WixUiDialog.bmp",
+		"CUSTOM_LogoBootstrap.bmp",
+	}
+	for _, f := range logoFiles {
+		if err := os.WriteFile(filepath.Join(tmpDir, f), []byte("dummy"), 0644); err != nil {
+			t.Fatalf("failed to create logo file %s: %v", f, err)
+		}
+	}
 
 	vars := variables.New()
 	vars["LOGO_PREFIX"] = "CUSTOM"

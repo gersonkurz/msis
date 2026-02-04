@@ -120,6 +120,7 @@ type xmlBundle struct {
 	// Legacy shorthand attributes
 	Source64bit string `xml:"source_64bit,attr"`
 	Source32bit string `xml:"source_32bit,attr"`
+	SourceArm64 string `xml:"source_arm64,attr"`
 
 	// New nested elements
 	Prerequisites []xmlPrerequisite
@@ -137,6 +138,7 @@ type xmlBundleMSI struct {
 	Source      string `xml:"source,attr"`
 	Source64bit string `xml:"source_64bit,attr"`
 	Source32bit string `xml:"source_32bit,attr"`
+	SourceArm64 string `xml:"source_arm64,attr"`
 }
 
 type xmlExePackage struct {
@@ -370,6 +372,8 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 			b.Source64bit = attr.Value
 		case "source_32bit":
 			b.Source32bit = attr.Value
+		case "source_arm64":
+			b.SourceArm64 = attr.Value
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <bundle>", attr.Name.Local)
 		}
@@ -402,8 +406,8 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				if err := d.DecodeElement(&msi, &t); err != nil {
 					return err
 				}
-				if msi.Source == "" && msi.Source64bit == "" && msi.Source32bit == "" {
-					return fmt.Errorf("<msi> requires 'source', 'source_64bit', or 'source_32bit' attribute")
+				if msi.Source == "" && msi.Source64bit == "" && msi.Source32bit == "" && msi.SourceArm64 == "" {
+					return fmt.Errorf("<msi> requires 'source', 'source_64bit', 'source_32bit', or 'source_arm64' attribute")
 				}
 				b.MSI = &msi
 			case "exe":
@@ -667,6 +671,7 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 		bundle := &ir.Bundle{
 			Source64bit: raw.Bundle.Source64bit,
 			Source32bit: raw.Bundle.Source32bit,
+			SourceArm64: raw.Bundle.SourceArm64,
 		}
 
 		// Convert prerequisites
@@ -684,6 +689,7 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 				Source:      raw.Bundle.MSI.Source,
 				Source64bit: raw.Bundle.MSI.Source64bit,
 				Source32bit: raw.Bundle.MSI.Source32bit,
+				SourceArm64: raw.Bundle.MSI.SourceArm64,
 			}
 		}
 

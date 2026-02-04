@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <xs:annotation>
+    <xs:documentation>
+      msis schema for msis-2.x and msis-3.x.
+      Based on DescriptionReader.cs (2.x) and internal/parser (3.x).
+      This captures tag inventory and attribute names; values are minimally constrained.
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:simpleType name="msisBoolean">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]|[Oo][Nn]|[Oo][Ff][Ff]|1|0)"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="SetType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="FilesType">
+    <xs:attribute name="source" type="xs:string" use="required"/>
+    <xs:attribute name="target" type="xs:string" use="required"/>
+    <xs:attribute name="do-not-overwrite" type="msisBoolean" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="RegistryType">
+    <xs:attribute name="file" type="xs:string" use="required"/>
+    <xs:attribute name="sddl" type="xs:string" use="optional"/>
+    <xs:attribute name="preserve" type="msisBoolean" use="optional"/>
+    <xs:attribute name="permanent" type="msisBoolean" use="optional"/>
+    <xs:attribute name="condition" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="SetEnvType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="ShortcutType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="target" type="xs:string" use="required"/>
+    <xs:attribute name="file" type="xs:string" use="required"/>
+    <xs:attribute name="description" type="xs:string" use="optional"/>
+    <xs:attribute name="icon" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="ServiceType">
+    <xs:attribute name="file-name" type="xs:string" use="required"/>
+    <xs:attribute name="service-name" type="xs:string" use="required"/>
+    <xs:attribute name="service-display-name" type="xs:string" use="optional"/>
+    <xs:attribute name="start" type="xs:string" use="optional"/>
+    <xs:attribute name="description" type="xs:string" use="optional"/>
+    <xs:attribute name="service-type" type="xs:string" use="optional"/>
+    <xs:attribute name="error-control" type="xs:string" use="optional"/>
+    <xs:attribute name="restart" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="ExcludeType">
+    <xs:attribute name="folder" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="ExecuteType">
+    <xs:attribute name="cmd" type="xs:string" use="required"/>
+    <xs:attribute name="when" type="xs:string" use="required"/>
+    <xs:attribute name="directory" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="PrerequisiteType">
+    <xs:attribute name="type" type="xs:string" use="required"/>
+    <xs:attribute name="version" type="xs:string" use="optional"/>
+    <xs:attribute name="source" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="BundleMsiType">
+    <xs:attribute name="source" type="xs:string" use="optional"/>
+    <xs:attribute name="source_64bit" type="xs:string" use="optional"/>
+    <xs:attribute name="source_32bit" type="xs:string" use="optional"/>
+    <xs:attribute name="source_arm64" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="BundleExeType">
+    <xs:attribute name="id" type="xs:string" use="optional"/>
+    <xs:attribute name="source" type="xs:string" use="required"/>
+    <xs:attribute name="detect" type="xs:string" use="optional"/>
+    <xs:attribute name="args" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="BundleType">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="prerequisite" type="PrerequisiteType"/>
+        <xs:element name="msi" type="BundleMsiType"/>
+        <xs:element name="exe" type="BundleExeType"/>
+      </xs:choice>
+    </xs:sequence>
+    <!-- Legacy shorthand attributes (still supported) -->
+    <xs:attribute name="source_64bit" type="xs:string" use="optional"/>
+    <xs:attribute name="source_32bit" type="xs:string" use="optional"/>
+    <xs:attribute name="source_arm64" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="FeatureType">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="feature" type="FeatureType"/>
+        <xs:element name="files" type="FilesType"/>
+        <xs:element name="registry" type="RegistryType"/>
+        <xs:element name="set-env" type="SetEnvType"/>
+        <xs:element name="shortcut" type="ShortcutType"/>
+        <xs:element name="service" type="ServiceType"/>
+        <xs:element name="exclude" type="ExcludeType"/>
+        <xs:element name="execute" type="ExecuteType"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="enabled" type="msisBoolean" use="optional"/>
+    <xs:attribute name="condition" type="xs:string" use="optional"/>
+    <xs:attribute name="allowed" type="msisBoolean" use="optional"/>
+  </xs:complexType>
+
+  <xs:element name="setup">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element name="set" type="SetType"/>
+          <xs:element name="feature" type="FeatureType"/>
+          <xs:element name="files" type="FilesType"/>
+          <xs:element name="registry" type="RegistryType"/>
+          <xs:element name="set-env" type="SetEnvType"/>
+          <xs:element name="shortcut" type="ShortcutType"/>
+          <xs:element name="service" type="ServiceType"/>
+          <xs:element name="exclude" type="ExcludeType"/>
+          <xs:element name="execute" type="ExecuteType"/>
+          <xs:element name="bundle" type="BundleType"/>
+        </xs:choice>
+      </xs:sequence>
+      <xs:attribute name="silent" type="msisBoolean" use="optional"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

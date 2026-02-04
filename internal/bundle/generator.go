@@ -162,39 +162,108 @@ func (g *Generator) generateExePackage(exe ir.ExePackage) string {
 }
 
 // generateMSIPackages generates MsiPackage elements for the main application.
+// Architecture detection uses NativeMachine property (available in WiX 6):
+//   - ARM64: NativeMachine = 43620 (0xAA64)
+//   - x64:   VersionNT64 AND NOT NativeMachine = 43620
+//   - x86:   NOT VersionNT64
 func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 	var sb strings.Builder
+
+	// Determine if ARM64 is specified (affects x64 condition)
+	hasArm64 := (bundle.MSI != nil && bundle.MSI.SourceArm64 != "") || bundle.SourceArm64 != ""
 
 	// Check for nested MSI element first
 	if bundle.MSI != nil {
 		if bundle.MSI.Source != "" {
 			// Single platform-neutral MSI
-			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s'/>\n",
-				escapeXMLAttr(bundle.MSI.Source)))
+			source, err := g.Variables.Resolve(bundle.MSI.Source)
+			if err != nil {
+				return "", fmt.Errorf("resolving MSI source: %w", err)
+			}
+			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s'>\n"+
+				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+				"      </MsiPackage>\n",
+				escapeXMLAttr(source)))
 		} else {
 			// Platform-specific MSIs
+			if bundle.MSI.SourceArm64 != "" {
+				source, err := g.Variables.Resolve(bundle.MSI.SourceArm64)
+				if err != nil {
+					return "", fmt.Errorf("resolving MSI source_arm64: %w", err)
+				}
+				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_arm64' SourceFile='%s' "+
+					"InstallCondition='NativeMachine = 43620'>\n"+
+					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+					"      </MsiPackage>\n",
+					escapeXMLAttr(source)))
+			}
 			if bundle.MSI.Source64bit != "" {
+				source, err := g.Variables.Resolve(bundle.MSI.Source64bit)
+				if err != nil {
+					return "", fmt.Errorf("resolving MSI source_64bit: %w", err)
+				}
+				// If ARM64 is also specified, exclude ARM64 from x64 condition
+				condition := "VersionNT64"
+				if hasArm64 {
+					condition = "VersionNT64 AND NOT NativeMachine = 43620"
+				}
 				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x64' SourceFile='%s' "+
-					"InstallCondition='VersionNT64'/>\n",
-					escapeXMLAttr(bundle.MSI.Source64bit)))
+					"InstallCondition='%s'>\n"+
+					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+					"      </MsiPackage>\n",
+					escapeXMLAttr(source), condition))
 			}
 			if bundle.MSI.Source32bit != "" {
+				source, err := g.Variables.Resolve(bundle.MSI.Source32bit)
+				if err != nil {
+					return "", fmt.Errorf("resolving MSI source_32bit: %w", err)
+				}
 				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x86' SourceFile='%s' "+
-					"InstallCondition='NOT VersionNT64'/>\n",
-					escapeXMLAttr(bundle.MSI.Source32bit)))
+					"InstallCondition='NOT VersionNT64'>\n"+
+					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+					"      </MsiPackage>\n",
+					escapeXMLAttr(source)))
 			}
 		}
-	} else if bundle.Source64bit != "" || bundle.Source32bit != "" {
+	} else if bundle.Source64bit != "" || bundle.Source32bit != "" || bundle.SourceArm64 != "" {
 		// Legacy shorthand syntax
+		if bundle.SourceArm64 != "" {
+			source, err := g.Variables.Resolve(bundle.SourceArm64)
+			if err != nil {
+				return "", fmt.Errorf("resolving source_arm64: %w", err)
+			}
+			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_arm64' SourceFile='%s' "+
+				"InstallCondition='NativeMachine = 43620'>\n"+
+				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+				"      </MsiPackage>\n",
+				escapeXMLAttr(source)))
+		}
 		if bundle.Source64bit != "" {
+			source, err := g.Variables.Resolve(bundle.Source64bit)
+			if err != nil {
+				return "", fmt.Errorf("resolving source_64bit: %w", err)
+			}
+			// If ARM64 is also specified, exclude ARM64 from x64 condition
+			condition := "VersionNT64"
+			if hasArm64 {
+				condition = "VersionNT64 AND NOT NativeMachine = 43620"
+			}
 			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x64' SourceFile='%s' "+
-				"InstallCondition='VersionNT64'/>\n",
-				escapeXMLAttr(bundle.Source64bit)))
+				"InstallCondition='%s'>\n"+
+				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+				"      </MsiPackage>\n",
+				escapeXMLAttr(source), condition))
 		}
 		if bundle.Source32bit != "" {
+			source, err := g.Variables.Resolve(bundle.Source32bit)
+			if err != nil {
+				return "", fmt.Errorf("resolving source_32bit: %w", err)
+			}
 			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x86' SourceFile='%s' "+
-				"InstallCondition='NOT VersionNT64'/>\n",
-				escapeXMLAttr(bundle.Source32bit)))
+				"InstallCondition='NOT VersionNT64'>\n"+
+				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
+				"      </MsiPackage>\n",
+				escapeXMLAttr(source)))
 		}
 	} else {
 		return "", fmt.Errorf("bundle has no MSI source specified")

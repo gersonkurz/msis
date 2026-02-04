@@ -15,7 +15,7 @@ func TestNewBuilder(t *testing.T) {
 	vars["PLATFORM"] = "x64"
 	vars["LANGUAGE"] = "en-us"
 
-	b := NewBuilder(vars, "test.wxs", "/templates", "", false)
+	b := NewBuilder(vars, "test.wxs", "/templates", "", "", false)
 
 	if b.WxsFile != "test.wxs" {
 		t.Errorf("WxsFile = %q, want %q", b.WxsFile, "test.wxs")
@@ -38,7 +38,7 @@ func TestNewBuilderWithRetainWxs(t *testing.T) {
 	vars := variables.New()
 	vars["BUILD_TARGET"] = "output.msi"
 
-	b := NewBuilder(vars, "test.wxs", "/templates", "", true)
+	b := NewBuilder(vars, "test.wxs", "/templates", "", "", true)
 
 	if b.RetainWxs != true {
 		t.Error("RetainWxs should be true")
@@ -69,7 +69,7 @@ func TestGetLocalizationFile(t *testing.T) {
 	vars["BUILD_TARGET"] = "output.msi"
 	vars["LANGUAGE"] = "en-us"
 
-	b := NewBuilder(vars, "test.wxs", tmpDir, "", false)
+	b := NewBuilder(vars, "test.wxs", tmpDir, "", "", false)
 
 	result := b.getLocalizationFile()
 	if result != locFile {
@@ -82,7 +82,7 @@ func TestGetLocalizationFileNotFound(t *testing.T) {
 	vars["BUILD_TARGET"] = "output.msi"
 	vars["LANGUAGE"] = "nonexistent"
 
-	b := NewBuilder(vars, "test.wxs", "/nonexistent/path", "", false)
+	b := NewBuilder(vars, "test.wxs", "/nonexistent/path", "", "", false)
 
 	result := b.getLocalizationFile()
 	if result != "" {
@@ -94,7 +94,7 @@ func TestGetLocalizationFileNoLanguage(t *testing.T) {
 	vars := variables.New()
 	vars["BUILD_TARGET"] = "output.msi"
 
-	b := NewBuilder(vars, "test.wxs", "/templates", "", false)
+	b := NewBuilder(vars, "test.wxs", "/templates", "", "", false)
 
 	result := b.getLocalizationFile()
 	if result != "" {
@@ -121,7 +121,7 @@ func TestCleanupWithRetainWxs(t *testing.T) {
 	vars := variables.New()
 	vars["BUILD_TARGET"] = msiFile
 
-	b := NewBuilder(vars, wxsFile, tmpDir, "", true) // retain wxs
+	b := NewBuilder(vars, wxsFile, tmpDir, "", "", true) // retain wxs
 	b.cleanup()
 
 	// WXS should still exist (retained)
@@ -154,7 +154,7 @@ func TestCleanupWithoutRetainWxs(t *testing.T) {
 	vars := variables.New()
 	vars["BUILD_TARGET"] = msiFile
 
-	b := NewBuilder(vars, wxsFile, tmpDir, "", false) // don't retain wxs
+	b := NewBuilder(vars, wxsFile, tmpDir, "", "", false) // don't retain wxs
 	b.cleanup()
 
 	// WXS should be deleted
@@ -181,7 +181,7 @@ func TestPlatformLowercase(t *testing.T) {
 	vars["BUILD_TARGET"] = "output.msi"
 	vars["PLATFORM"] = "X64" // uppercase
 
-	b := NewBuilder(vars, "test.wxs", "/templates", "", false)
+	b := NewBuilder(vars, "test.wxs", "/templates", "", "", false)
 
 	// Platform should be stored as-is
 	if b.Platform != "X64" {
