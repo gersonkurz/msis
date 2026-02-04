@@ -7,7 +7,7 @@
         {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
         {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}
         <util:QueryWindowsWellKnownSIDs />
-		<Binary Id="binary.dll" SourceFile="{{TEMPLATE_FOLDER}}/x64/{{DLL_ENTRY}}" />
+		{{#if USE_INSTALLER_HOOKS}}<Binary Id="binary.dll" SourceFile="x64/{{DLL_ENTRY}}" />{{/if}}
         {{#if SETUP_ICON }}
         <Icon Id="ngbt_setup_icon.ico" SourceFile="{{SETUP_ICON}}" />
         <Property Id="ARPPRODUCTICON" Value="ngbt_setup_icon.ico" />
@@ -35,16 +35,18 @@
         <Launch Condition="NOT OLDPRODUCTISINSTALLED OR Installed" Message="older version of ProAKT cannot be upgraded" />
         {{/unless}}
         {{/if}}
+		{{#if INCLUDE_VCREDIST}}
 		<DirectoryRef Id="INSTALLDIR">
-			<Merge Id="VCRedist_141" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC141_CRT_x64.msm" DiskId="1" Language="0" />
-            <Merge Id="VCRedist_140" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC140_CRT_x64.msm" DiskId="1" Language="0" />
-            <Merge Id="VCRedist_100" SourceFile="{{TEMPLATE_FOLDER}}\mergemodules\Microsoft_VC100_CRT_x64.msm" DiskId="1" Language="0" />
+			<Merge Id="VCRedist_141" SourceFile="mergemodules/Microsoft_VC141_CRT_x64.msm" DiskId="1" Language="0" />
+            <Merge Id="VCRedist_140" SourceFile="mergemodules/Microsoft_VC140_CRT_x64.msm" DiskId="1" Language="0" />
+            <Merge Id="VCRedist_100" SourceFile="mergemodules/Microsoft_VC100_CRT_x64.msm" DiskId="1" Language="0" />
         </DirectoryRef>
         <Feature Id="VCRedist" Title="Visual C++ Runtime" AllowAdvertise="no" Display="hidden" Level="1">
 			<MergeRef Id="VCRedist_141" />
             <MergeRef Id="VCRedist_140" />
             <MergeRef Id="VCRedist_100" />
         </Feature>
+		{{/if}}
         <Property Id="WIXUI_FEATURETREENOLICENSE" Value="INSTALLDIR" />
         {{{FEATURES}}}
         <UI Id="WixUI_FeatureTreeNoLicense">
@@ -87,11 +89,15 @@
         <UIRef Id="WixUI_Common" />
         <UIRef Id="WixUI_ErrorProgressText" />
         {{#if REMOVE_FOLDERS_ON_UNINSTALL }}
+        {{#if USE_INSTALLER_HOOKS}}
         <CustomAction Id="RemoveAllFoldersOnUninstall" Return="check" Execute="immediate" DllEntry="RemoveAllFoldersOnUninstall" BinaryRef="binary.dll" />
         {{/if}}
+        {{/if}}
         {{#if REMOVE_REGISTRY_TREE }}
+        {{#if USE_INSTALLER_HOOKS}}
         <CustomAction Id="RemoveRegistryTreeOnUninstallPrep" Property="RemoveRegistryTreeOnUninstall" Value="[REMOVE_REGISTRY_TREE]" />
         <CustomAction Id="RemoveRegistryTreeOnUninstall" Return="check" Execute="deferred" Impersonate="no" DllEntry="RemoveRegistryTreeOnUninstall" BinaryRef="binary.dll" />
+        {{/if}}
         {{/if}}
 
         {{#if DLL_CUSTOM }}
@@ -102,16 +108,14 @@
         {{/if}}
 
         {{{CUSTOM_ACTIONS}}}
+        {{#if USE_INSTALLER_HOOKS}}
         <CustomAction Id="BeforeInstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeInstall" BinaryRef="binary.dll" />
         <CustomAction Id="AfterInstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterInstall" BinaryRef="binary.dll" />
         <CustomAction Id="BeforeUpgrade" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeUpgrade" BinaryRef="binary.dll" />
         <CustomAction Id="AfterUpgrade" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterUpgrade" BinaryRef="binary.dll" />
         <CustomAction Id="BeforeUninstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="BeforeUninstall" BinaryRef="binary.dll" />
         <CustomAction Id="AfterUninstall" Return="ignore" Execute="commit" Impersonate="no" DllEntry="AfterUninstall" BinaryRef="binary.dll" />
-        <!-- debugging
-        <CustomAction Id="ListAllKnownPropertiesPrep" Property="ListAllKnownProperties" Value="REMOVE_REGISTRY_TREE=[REMOVE_REGISTRY_TREE]"/>
-        <CustomAction Id="ListAllKnownProperties" Return="ignore" Execute="deferred" Impersonate="no" BinaryKey="binary.dll" DllEntry="ListAllKnownProperties" />
-        -->
+        {{/if}}
 
 		<InstallExecuteSequence>
             {{{INSTALL_EXECUTE_SEQUENCE}}}
@@ -120,21 +124,12 @@
             <Custom Action="AfterInstallAction" After="InstallFinalize" Condition="NOT Installed" />
             <Custom Action="BeforeUninstallAction" After="CostFinalize" Condition="(REMOVE = &quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
             {{/if}}
+            {{#if USE_INSTALLER_HOOKS}}
             <Custom Action="BeforeInstall" After="InstallInitialize" Condition="NOT Installed" />
             <Custom Action="AfterInstall" Before="InstallFinalize" Condition="NOT Installed" />
-            <!-- UPGRADINGPRODUCTCODE - only set for RemoveExistingProducts - so it is set in the Uninstaller of the previous version - upgrade is detected via WIX_UPGRADE_DETECTED or WIX_DOWNGRADE_DETECTED
-            <Custom Action="BeforeUpgrade" After="InstallInitialize">UPGRADINGPRODUCTCODE</Custom>
-            <Custom Action="AfterUpgrade" Before="InstallFinalize">UPGRADINGPRODUCTCODE</Custom>
-            <Custom Action="BeforeUninstall" After="InstallInitialize"> (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
-            <Custom Action="AfterUninstall" Before="InstallFinalize"> (NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
-            -->
             <Custom Action="BeforeUpgrade" After="InstallInitialize" Condition="WIX_UPGRADE_DETECTED" />
             <Custom Action="AfterUpgrade" Before="InstallFinalize" Condition="WIX_UPGRADE_DETECTED" />
             <Custom Action="BeforeUninstall" After="InstallInitialize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
-            <!-- debugging
-            <Custom Action="ListAllKnownPropertiesPrep" Before="ListAllKnownProperties">(NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
-            <Custom Action="ListAllKnownProperties" Before="InstallFinalize">(NOT UPGRADINGPRODUCTCODE) AND (REMOVE="ALL")</Custom>
-            -->
             {{#if REMOVE_FOLDERS_ON_UNINSTALL }}
             <Custom Action="RemoveAllFoldersOnUninstall" After="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
             {{/if}}
@@ -142,11 +137,11 @@
             <Custom Action="RemoveRegistryTreeOnUninstallPrep" Before="RemoveRegistryTreeOnUninstall" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
             <Custom Action="RemoveRegistryTreeOnUninstall" Before="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
             {{/if}}
-
             {{#if DLL_CUSTOM }}
-            <Custom Action="AfterUninstallAction" After="RemoveAllFoldersOnUninstall" Condition="(REMOVE = &quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
+            <Custom Action="AfterUninstallAction" After="InstallFinalize" Condition="(REMOVE = &quot;ALL&quot;) AND NOT UPGRADINGPRODUCTCODE" />
             {{/if}}
             <Custom Action="AfterUninstall" Before="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
+            {{/if}}
             {{#if SCHEDULE_REBOOT }}
             <ScheduleReboot After="InstallFinalize" Condition="(NOT UPGRADINGPRODUCTCODE) AND (REMOVE=&quot;ALL&quot;)" />
             {{/if}}
@@ -167,5 +162,6 @@
         </StandardDirectory>
         <StandardDirectory Id="ProgramMenuFolder">{{{STARTMENU_FILES}}}</StandardDirectory>
         {{{REGISTRY_ENTRIES}}}
+        {{{REMOVE_ON_UNINSTALL}}}
     </Package>
 </Wix>

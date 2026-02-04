@@ -374,9 +374,10 @@ func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder
 	sb.WriteString(fmt.Sprintf("%s<RegistryKey Root='%s' Key='%s' ForceCreateOnInstall='yes'>\n",
 		indent, key.Root, escapeXML(key.Key)))
 
-	// Add permissions if enabled (use util: namespace for WiX 6)
+	// Add permissions if enabled
+	// Note: Use core WiX PermissionEx (not util:PermissionEx) for Sddl attribute on registry keys
 	if setPermissions && sddl != "" {
-		sb.WriteString(fmt.Sprintf("%s    <util:PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
+		sb.WriteString(fmt.Sprintf("%s    <PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
 	}
 
 	// Generate values (skip removals, they're at component level)
@@ -410,9 +411,9 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 	sb.WriteString(fmt.Sprintf("%s<RegistryKey Key='%s' ForceCreateOnInstall='yes'>\n",
 		indent, escapeXML(keyName)))
 
-	// Add permissions if enabled (use util: namespace for WiX 6)
+	// Add permissions if enabled (core WiX PermissionEx, not util:PermissionEx)
 	if setPermissions && sddl != "" {
-		sb.WriteString(fmt.Sprintf("%s    <util:PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
+		sb.WriteString(fmt.Sprintf("%s    <PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
 	}
 
 	// Generate values (skip removals, they're at component level)

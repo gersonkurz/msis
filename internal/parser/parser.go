@@ -44,14 +44,15 @@ type xmlSetup struct {
 
 // xmlItem holds any item type with its original position
 type xmlItem struct {
-	Type    string // "files", "registry", "set-env", etc.
-	Files   *xmlFiles
-	Registry *xmlRegistry
-	SetEnv   *xmlSetEnv
-	Shortcut *xmlShortcut
-	Service  *xmlService
-	Exclude  *xmlExclude
-	Execute  *xmlExecute
+	Type              string // "files", "registry", "set-env", etc.
+	Files             *xmlFiles
+	Registry          *xmlRegistry
+	SetEnv            *xmlSetEnv
+	Shortcut          *xmlShortcut
+	Service           *xmlService
+	Exclude           *xmlExclude
+	Execute           *xmlExecute
+	RemoveOnUninstall *xmlRemoveOnUninstall
 }
 
 type xmlSet struct {
@@ -114,6 +115,11 @@ type xmlExecute struct {
 	Cmd       string `xml:"cmd,attr"`
 	When      string `xml:"when,attr"`
 	Directory string `xml:"directory,attr"`
+}
+
+type xmlRemoveOnUninstall struct {
+	Registry string `xml:"registry,attr"`
+	Folder   string `xml:"folder,attr"`
 }
 
 type xmlBundle struct {
@@ -520,6 +526,13 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				s.Items = append(s.Items, xmlItem{Type: "execute", Execute: &exec})
 
+			case "remove-on-uninstall":
+				var rem xmlRemoveOnUninstall
+				if err := d.DecodeElement(&rem, &t); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, xmlItem{Type: "remove-on-uninstall", RemoveOnUninstall: &rem})
+
 			default:
 				return fmt.Errorf("unknown element <%s> in <setup>", t.Name.Local)
 			}
@@ -622,6 +635,13 @@ func (f *xmlFeature) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 					return err
 				}
 				f.Items = append(f.Items, xmlItem{Type: "execute", Execute: &exec})
+
+			case "remove-on-uninstall":
+				var rem xmlRemoveOnUninstall
+				if err := d.DecodeElement(&rem, &t); err != nil {
+					return err
+				}
+				f.Items = append(f.Items, xmlItem{Type: "remove-on-uninstall", RemoveOnUninstall: &rem})
 
 			default:
 				return fmt.Errorf("unknown element <%s> in <feature>", t.Name.Local)
@@ -794,6 +814,12 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 				Cmd:       raw.Execute.Cmd,
 				When:      raw.Execute.When,
 				Directory: raw.Execute.Directory,
+			})
+
+		case "remove-on-uninstall":
+			items = append(items, ir.RemoveOnUninstall{
+				Registry: raw.RemoveOnUninstall.Registry,
+				Folder:   raw.RemoveOnUninstall.Folder,
 			})
 		}
 	}

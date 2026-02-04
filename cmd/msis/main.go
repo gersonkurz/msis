@@ -274,51 +274,98 @@ func renderBundleTemplate(vars variables.Dictionary, templateFolder, customTempl
 
 func parseArgs() *cliArgs {
 	// Convert /FLAG syntax to --flag for flag package compatibility
-	newArgs := make([]string, 0, len(os.Args))
-	newArgs = append(newArgs, os.Args[0])
+	// Keep track of original args for error messages
+	originalArgs := make(map[string]string)
+
+	// Separate flags and files so flags can appear anywhere on command line
+	// (Go's flag package stops parsing at first non-flag argument)
+	var flags []string
+	var files []string
 
 	for _, arg := range os.Args[1:] {
 		if strings.HasPrefix(arg, "/") && !strings.Contains(arg, "\\") && !strings.Contains(arg, ":") {
 			// /FLAG -> --flag (but not paths like /c/foo or /flag:value)
-			newArgs = append(newArgs, "--"+strings.ToLower(arg[1:]))
+			converted := "--" + strings.ToLower(arg[1:])
+			originalArgs[converted] = arg
+			flags = append(flags, converted)
 		} else if strings.HasPrefix(arg, "/") && strings.Contains(arg, ":") && !strings.HasPrefix(arg, "/c/") {
 			// /FLAG:value -> --flag=value
 			parts := strings.SplitN(arg, ":", 2)
 			key := strings.ToLower(parts[0][1:])
 			val := parts[1]
-			newArgs = append(newArgs, "--"+key+"="+val)
+			converted := "--" + key + "=" + val
+			originalArgs["--"+key] = "/" + strings.ToUpper(key)
+			flags = append(flags, converted)
+		} else if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
+			// Unix-style flags (pass through)
+			flags = append(flags, arg)
 		} else {
-			newArgs = append(newArgs, arg)
+			// Not a flag - it's a file
+			files = append(files, arg)
 		}
 	}
 
-	os.Args = newArgs
+	// Combine: flags first, then files
+	newArgs := append(flags, files...)
 
 	args := &cliArgs{}
 
-	flag.BoolVar(&args.build, "build", false, "run WiX build tools automatically")
-	flag.BoolVar(&args.retainWxs, "retainwxs", false, "retain WXS file after build")
-	flag.StringVar(&args.template, "template", "", "custom template to use")
-	flag.StringVar(&args.templateFolder, "templatefolder", "", "template folder path (base)")
-	flag.StringVar(&args.customTemplates, "customtemplates", "", "custom templates overlay (takes precedence)")
-	flag.BoolVar(&args.dryRun, "dry-run", false, "parse and validate only, no output")
-	flag.BoolVar(&args.status, "status", false, "show configuration status")
+	// Create a custom flag set to control error handling
+	fs := flag.NewFlagSet("msis", flag.ContinueOnError)
+
+	// Suppress default error output - we'll handle it ourselves
+	fs.SetOutput(&discardWriter{})
+
+	fs.BoolVar(&args.build, "build", false, "")
+	fs.BoolVar(&args.retainWxs, "retainwxs", false, "")
+	fs.StringVar(&args.template, "template", "", "")
+	fs.StringVar(&args.templateFolder, "templatefolder", "", "")
+	fs.StringVar(&args.customTemplates, "customtemplates", "", "")
+	fs.BoolVar(&args.dryRun, "dry-run", false, "")
+	fs.BoolVar(&args.status, "status", false, "")
 
 	// Help flags
 	var showHelp bool
-	flag.BoolVar(&showHelp, "help", false, "show help")
-	flag.BoolVar(&showHelp, "h", false, "show help")
-	flag.BoolVar(&showHelp, "?", false, "show help")
+	fs.BoolVar(&showHelp, "help", false, "")
+	fs.BoolVar(&showHelp, "h", false, "")
+	fs.BoolVar(&showHelp, "?", false, "")
 
-	flag.Parse()
+	if err := fs.Parse(newArgs); err != nil {
+		// Extract the unknown flag from the error message
+		errStr := err.Error()
+		if strings.Contains(errStr, "flag provided but not defined:") {
+			// Parse out the flag name
+			parts := strings.SplitN(errStr, ":", 2)
+			if len(parts) == 2 {
+				badFlag := strings.TrimSpace(parts[1])
+				// Convert back to Windows-style for the error message
+				if orig, ok := originalArgs[badFlag]; ok {
+					fmt.Fprintf(os.Stderr, "Unknown option: %s\n\n", orig)
+				} else {
+					fmt.Fprintf(os.Stderr, "Unknown option: %s\n\n", badFlag)
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %s\n\n", err)
+		}
+		printUsage()
+		os.Exit(2)
+	}
 
 	if showHelp {
 		printUsage()
 		os.Exit(0)
 	}
 
-	args.files = flag.Args()
+	args.files = fs.Args()
 	return args
+}
+
+// discardWriter discards all writes (used to suppress flag package output)
+type discardWriter struct{}
+
+func (d *discardWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
 }
 
 // getDefaultTemplateFolder returns the default template folder path.

@@ -80,8 +80,10 @@ That's it. Your installer is ready at `setup.msi`.
 | Document | Description |
 |----------|-------------|
 | **[Tutorial](docs/tutorial.md)** | Step-by-step guides: files, shortcuts, registry, services, and more |
+| **[Templates & Customization](docs/templates.md)** | Template locations, logo branding, custom templates |
 | **[Bundle Guide](docs/Bundle.md)** | Multi-architecture installers and prerequisites |
 | **[Schema](docs/msis.xsd)** | Complete XML element and attribute reference |
+| **[Roadmap](docs/roadmap.md)** | Planned features and future direction |
 | **[Developer Overview](docs/overview.md)** | Architecture, code structure, and internals |
 
 ## Command Line

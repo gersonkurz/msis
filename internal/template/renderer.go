@@ -193,6 +193,7 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["REGISTRY_ENTRIES"] = r.GeneratedData.RegistryXML
 	ctx["CUSTOM_ACTIONS"] = r.buildCustomActions()
 	ctx["INSTALL_EXECUTE_SEQUENCE"] = r.buildInstallExecuteSequence()
+	ctx["REMOVE_ON_UNINSTALL"] = r.GeneratedData.RemoveOnUninstallXML
 
 	// Add boolean flags for conditional rendering
 	ctx["SETUP_ICON"] = r.Variables["SETUP_ICON"]
@@ -205,6 +206,8 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["DO_NOT_UPGRADE_MESSAGE"] = r.Variables["DO_NOT_UPGRADE_MESSAGE"]
 	ctx["START_EXE"] = r.Variables["START_EXE"]
 	ctx["SCHEDULE_REBOOT"] = r.Variables.GetBool("SCHEDULE_REBOOT")
+	ctx["USE_INSTALLER_HOOKS"] = r.Variables.GetBool("USE_INSTALLER_HOOKS")
+	ctx["INCLUDE_VCREDIST"] = r.Variables.GetBool("INCLUDE_VCREDIST")
 
 	return ctx
 }

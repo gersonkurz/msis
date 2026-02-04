@@ -17,9 +17,6 @@ func New() Dictionary {
 		// Default platform (can be overridden by .msis)
 		"PLATFORM": "x64",
 
-		// Legacy custom action DLL entry
-		"DLL_ENTRY": "msi-proakt.dll",
-
 		// AppData directory prefix (empty by default)
 		"APPDATADIR_PREFIX": "",
 
@@ -29,8 +26,9 @@ func New() Dictionary {
 		// Whether to remove registry tree on uninstall
 		"REMOVE_REGISTRY_TREE": "False",
 
-		// Logo prefix for UI customization
-		"LOGO_PREFIX": "NGBT",
+		// Logo prefix for UI customization (empty = use WiX defaults)
+		// Set to e.g. "MyCompany" to use MyCompany_WixUiBanner.bmp, etc.
+		"LOGO_PREFIX": "",
 	}
 }
 

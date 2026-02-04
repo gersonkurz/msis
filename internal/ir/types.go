@@ -146,6 +146,17 @@ type ExePackage struct {
 	InstallArgs   string
 }
 
+// RemoveOnUninstall represents items to remove during uninstall.
+// Can specify either a registry key or a folder path (not both).
+// Example: <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>
+// Example: <remove-on-uninstall folder="[COMMONAPPDATA]MyCompany\MyApp"/>
+type RemoveOnUninstall struct {
+	Registry string // Registry path like "HKLM\Software\MyCompany\MyApp"
+	Folder   string // Folder path like "[COMMONAPPDATA]MyCompany\MyApp"
+}
+
+func (r RemoveOnUninstall) ItemType() string { return "remove-on-uninstall" }
+
 // IsSetupBundle returns true if this setup is a bundle (multi-MSI installer).
 func (s *Setup) IsSetupBundle() bool {
 	return s.Bundle != nil

@@ -60,6 +60,17 @@ type Context struct {
 	// Custom actions
 	CustomActions []*CustomAction
 	nextActionID  int
+
+	// Remove on uninstall items
+	RemoveOnUninstallItems []*RemoveOnUninstallItem
+	nextRemoveID           int
+}
+
+// RemoveOnUninstallItem represents an item to remove during uninstall.
+type RemoveOnUninstallItem struct {
+	ID       string
+	Registry string // e.g., "HKLM\Software\MyCompany\MyApp"
+	Folder   string // e.g., "[COMMONAPPDATA]MyCompany\MyApp"
 }
 
 // CustomAction represents a WiX custom action.
@@ -91,9 +102,10 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		targetFileSeen:     make(map[string]int),
 		registryProcessor:  registry.NewProcessor(workDir),
 		RegistryComponents: make([]*registry.Component, 0),
-		DesktopShortcuts:   make([]*ShortcutComponent, 0),
-		StartMenuShortcuts: make([]*ShortcutComponent, 0),
-		CustomActions:      make([]*CustomAction, 0),
+		DesktopShortcuts:       make([]*ShortcutComponent, 0),
+		StartMenuShortcuts:     make([]*ShortcutComponent, 0),
+		CustomActions:          make([]*CustomAction, 0),
+		RemoveOnUninstallItems: make([]*RemoveOnUninstallItem, 0),
 	}
 }
 
@@ -414,6 +426,7 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		StartMenuXML:           c.generateShortcutsXML(c.StartMenuShortcuts),
 		CustomActionsXML:       c.generateCustomActionsXML(),
 		InstallExecuteSequence: c.generateInstallExecuteSequence(),
+		RemoveOnUninstallXML:   c.generateRemoveOnUninstallXML(),
 	}
 
 	return output, nil
@@ -421,19 +434,20 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 
 // GeneratedOutput holds the generated WiX XML fragments.
 type GeneratedOutput struct {
-	DirectoryXML            string // INSTALLDIR tree (under ProgramFilesFolder)
-	AppDataDirXML           string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
-	RoamingAppDataDirXML    string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
-	LocalAppDataDirXML      string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
-	CommonFilesDirXML       string // COMMONFILESDIR tree (under CommonFilesFolder)
-	WindowsDirXML           string // WINDOWSDIR tree (under WindowsFolder)
-	SystemDirXML            string // SYSTEMDIR tree (under SystemFolder)
-	FeatureXML              string
-	RegistryXML             string
-	DesktopXML              string
-	StartMenuXML            string
-	CustomActionsXML        string
-	InstallExecuteSequence  string
+	DirectoryXML           string // INSTALLDIR tree (under ProgramFilesFolder)
+	AppDataDirXML          string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
+	RoamingAppDataDirXML   string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
+	LocalAppDataDirXML     string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
+	CommonFilesDirXML      string // COMMONFILESDIR tree (under CommonFilesFolder)
+	WindowsDirXML          string // WINDOWSDIR tree (under WindowsFolder)
+	SystemDirXML           string // SYSTEMDIR tree (under SystemFolder)
+	FeatureXML             string
+	RegistryXML            string
+	DesktopXML             string
+	StartMenuXML           string
+	CustomActionsXML       string
+	InstallExecuteSequence string
+	RemoveOnUninstallXML   string
 }
 
 func (c *Context) collectExcludes(items []ir.Item) {
@@ -551,6 +565,8 @@ func (c *Context) processItem(item ir.Item, featureID string) error {
 		return nil
 	case ir.Registry:
 		return c.processRegistry(it, featureID)
+	case ir.RemoveOnUninstall:
+		return c.processRemoveOnUninstall(it)
 	}
 	return nil
 }
@@ -1081,8 +1097,9 @@ func (c *Context) generateAllRegistryXML() string {
 		return ""
 	}
 
-	// Check if registry permissions should be set
-	setPermissions := c.Variables.GetBool("SET_REGISTRY_PERMISSIONS")
+	// Apply registry permissions unless explicitly disabled
+	// (msis-2.x always applies SDDL from registry entries)
+	setPermissions := !c.Variables.GetBool("DISABLE_REGISTRY_PERMISSIONS")
 
 	// Generate XML using the registry processor
 	return c.registryProcessor.GenerateXML(c.RegistryComponents, setPermissions)
@@ -1237,4 +1254,98 @@ func (c *Context) generateInstallExecuteSequence() string {
 		}
 	}
 	return sb.String()
+}
+
+// processRemoveOnUninstall handles a remove-on-uninstall item.
+func (c *Context) processRemoveOnUninstall(item ir.RemoveOnUninstall) error {
+	id := fmt.Sprintf("RemoveOnUninstall_%04d", c.nextRemoveID)
+	c.nextRemoveID++
+
+	c.RemoveOnUninstallItems = append(c.RemoveOnUninstallItems, &RemoveOnUninstallItem{
+		ID:       id,
+		Registry: item.Registry,
+		Folder:   item.Folder,
+	})
+	return nil
+}
+
+// generateRemoveOnUninstallXML generates WiX XML for remove-on-uninstall items.
+// For registry: generates RemoveRegistryKey element
+// For folders: generates util:RemoveFolderEx element with SetProperty
+func (c *Context) generateRemoveOnUninstallXML() string {
+	if len(c.RemoveOnUninstallItems) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	for _, item := range c.RemoveOnUninstallItems {
+		if item.Registry != "" {
+			// Parse registry path: HKLM\Software\MyApp -> root=HKLM, key=Software\MyApp
+			root, key := parseRegistryPath(item.Registry)
+			if root != "" && key != "" {
+				// RemoveRegistryKey needs to be in a Component
+				compID := fmt.Sprintf("C_%s", item.ID)
+				sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
+				sb.WriteString(fmt.Sprintf("            <RemoveRegistryKey Id='%s' Root='%s' Key='%s' Action='removeOnUninstall'/>\n",
+					item.ID, root, key))
+				// Need a keypath - use a registry value
+				sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveOnUninstall_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
+					c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
+				sb.WriteString("        </Component>\n")
+			}
+		}
+
+		if item.Folder != "" {
+			// Generate util:RemoveFolderEx for folder removal
+			// Need to set a property with the folder path, then use RemoveFolderEx
+			propID := fmt.Sprintf("REMOVE_FOLDER_%s", item.ID)
+			compID := fmt.Sprintf("C_%s", item.ID)
+
+			// SetProperty to define the folder path
+			sb.WriteString(fmt.Sprintf("        <SetProperty Id='%s' Value='%s' Before='CostFinalize' Sequence='first'/>\n",
+				propID, item.Folder))
+
+			// Component with RemoveFolderEx
+			sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
+			sb.WriteString(fmt.Sprintf("            <util:RemoveFolderEx On='uninstall' Property='%s'/>\n", propID))
+			// Need a keypath - use a registry value
+			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveFolder_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
+				c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
+			sb.WriteString("        </Component>\n")
+		}
+	}
+
+	return sb.String()
+}
+
+// parseRegistryPath splits a registry path like "HKLM\Software\MyApp" into root and key.
+func parseRegistryPath(path string) (root, key string) {
+	// Normalize separators
+	path = strings.ReplaceAll(path, "/", "\\")
+
+	// Find first backslash
+	idx := strings.Index(path, "\\")
+	if idx == -1 {
+		return "", ""
+	}
+
+	rootPart := strings.ToUpper(path[:idx])
+	key = path[idx+1:]
+
+	// Map common abbreviations to WiX root names
+	switch rootPart {
+	case "HKLM", "HKEY_LOCAL_MACHINE":
+		root = "HKLM"
+	case "HKCU", "HKEY_CURRENT_USER":
+		root = "HKCU"
+	case "HKCR", "HKEY_CLASSES_ROOT":
+		root = "HKCR"
+	case "HKU", "HKEY_USERS":
+		root = "HKU"
+	default:
+		return "", ""
+	}
+
+	return root, key
 }
