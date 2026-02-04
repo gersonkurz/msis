@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MSIS Bundle Setup - Combines x86 and x64 installers
+  MSIS Bundle Setup - Combines x64, x86, and ARM64 installers
   Automatically selects the correct architecture for the target system
 -->
 <setup>
@@ -20,7 +20,7 @@
   <set name="LICENSE_URL" value="https://github.com/gersonkurz/msis/blob/main/LICENSE"/>
 
   <!-- Bundle: combine x64, x86, and ARM64 MSIs -->
-  <!-- Note: paths are relative to where the .wxs is generated (dist folder) -->
+  <!-- Note: MSI paths are relative to bootstrap/dist/ where bundle wxs is generated -->
   <bundle>
     <msi source_64bit="msis-{{PRODUCT_VERSION}}-x64.msi"
          source_32bit="msis-{{PRODUCT_VERSION}}-x86.msi"

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MSIS Self-Packaging Setup
+  MSIS Self-Packaging Setup (x64)
   Installs msis.exe to Program Files, templates to LocalAppData
 
-  Build with: msis /BUILD setup.msis
+  Build with: msis /BUILD bootstrap/setup.msis
   Or use: just release
 -->
 <setup>
@@ -28,18 +28,18 @@
 
   <!-- Main feature -->
   <feature name="MSIS">
-    <!-- Executable to Program Files\MSIS (template creates MSIS folder) -->
-    <files source="dist\msis.exe" target="[INSTALLDIR]"/>
+    <!-- Executable to Program Files\MSIS -->
+    <files source="msis.exe" target="[INSTALLDIR]"/>
 
     <!-- Templates to %LOCALAPPDATA%\msis\templates -->
-    <files source="templates\x64" target="[LOCALAPPDATADIR]msis\templates\x64"/>
-    <files source="templates\x86" target="[LOCALAPPDATADIR]msis\templates\x86"/>
-    <files source="templates\minimal" target="[LOCALAPPDATADIR]msis\templates\minimal"/>
-    <files source="templates\bundle.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
-    <files source="templates\bundle-silent.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
-    <files source="templates\wixlib" target="[LOCALAPPDATADIR]msis\templates\wixlib"/>
+    <files source="..\templates\x64" target="[LOCALAPPDATADIR]msis\templates\x64"/>
+    <files source="..\templates\x86" target="[LOCALAPPDATADIR]msis\templates\x86"/>
+    <files source="..\templates\minimal" target="[LOCALAPPDATADIR]msis\templates\minimal"/>
+    <files source="..\templates\bundle.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
+    <files source="..\templates\bundle-silent.wxs" target="[LOCALAPPDATADIR]msis\templates"/>
+    <files source="..\templates\wixlib" target="[LOCALAPPDATADIR]msis\templates\wixlib"/>
 
     <!-- Create empty custom folder for user templates -->
-    <files source="templates\custom" target="[LOCALAPPDATADIR]msis\custom"/>
+    <files source="..\templates\custom" target="[LOCALAPPDATADIR]msis\custom"/>
   </feature>
 </setup>

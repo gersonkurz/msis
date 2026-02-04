@@ -31,29 +31,21 @@ msis-3.x/
 │   └── main.go
 ├── internal/
 │   ├── ir/             # Intermediate Representation types
-│   │   └── types.go
 │   ├── parser/         # .msis XML parsing → IR
-│   │   ├── parser.go
-│   │   └── parser_test.go
 │   ├── variables/      # Variable dictionary with Handlebars
-│   │   ├── variables.go
-│   │   └── variables_test.go
 │   ├── generator/      # IR → WiX XML generation
-│   │   ├── context.go
-│   │   └── context_test.go
 │   ├── bundle/         # Bundle (bootstrapper) generation
-│   │   ├── generator.go
-│   │   └── prerequisites.go
 │   ├── template/       # Handlebars template rendering
-│   │   └── renderer.go
 │   ├── registry/       # .reg file processing
-│   │   └── processor.go
 │   └── wix/            # WiX CLI integration
-│       ├── builder.go
-│       └── builder_test.go
 ├── templates/          # WiX 6.x Handlebars templates
+├── bootstrap/          # Self-packaging scripts
+│   ├── setup.msis      # x64 MSI
+│   ├── setup-x86.msis  # x86 MSI
+│   ├── setup-arm64.msis # ARM64 MSI
+│   ├── setup-bundle.msis # Universal bundle
+│   └── dist/           # Built installers (not in git)
 ├── docs/               # Documentation
-│   └── Bundle.md
 ├── go.mod
 └── justfile
 ```

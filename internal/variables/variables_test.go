@@ -9,8 +9,8 @@ import (
 func TestNewDictionaryHasDefaults(t *testing.T) {
 	d := New()
 
-	if d.Get("PLATFORM") != "x86" {
-		t.Errorf("expected PLATFORM=x86, got %s", d.Get("PLATFORM"))
+	if d.Get("PLATFORM") != "x64" {
+		t.Errorf("expected PLATFORM=x64, got %s", d.Get("PLATFORM"))
 	}
 
 	if d.Get("ADD_TO_PATH") != "False" {
@@ -25,7 +25,7 @@ func TestLoadFromSetup(t *testing.T) {
 		Sets: []ir.Set{
 			{Name: "PRODUCT_NAME", Value: "Test Product"},
 			{Name: "PRODUCT_VERSION", Value: "1.0.0"},
-			{Name: "PLATFORM", Value: "x64"}, // Override default
+			{Name: "PLATFORM", Value: "x86"}, // Override default
 		},
 	}
 
@@ -35,8 +35,8 @@ func TestLoadFromSetup(t *testing.T) {
 		t.Errorf("expected 'Test Product', got %s", d.Get("PRODUCT_NAME"))
 	}
 
-	if d.Get("PLATFORM") != "x64" {
-		t.Errorf("expected PLATFORM=x64 (overridden), got %s", d.Get("PLATFORM"))
+	if d.Get("PLATFORM") != "x86" {
+		t.Errorf("expected PLATFORM=x86 (overridden), got %s", d.Get("PLATFORM"))
 	}
 }
 

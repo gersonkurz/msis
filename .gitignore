@@ -8,7 +8,12 @@
 *.so
 *.dylib
 
-dist/
+bootstrap/dist/
+
+# Generated installer files
+*.msi
+*.wxs
+*.wixpdb
 
 # Test binary, built with `go test -c`
 *.test

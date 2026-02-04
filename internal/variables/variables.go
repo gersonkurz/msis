@@ -15,7 +15,7 @@ type Dictionary map[string]string
 func New() Dictionary {
 	return Dictionary{
 		// Default platform (can be overridden by .msis)
-		"PLATFORM": "x86",
+		"PLATFORM": "x64",
 
 		// Legacy custom action DLL entry
 		"DLL_ENTRY": "msi-proakt.dll",

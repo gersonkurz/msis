@@ -3,7 +3,7 @@
 version := "3.0.0"
 binary := "msis"
 cmd_path := "./cmd/msis"
-dist_dir := "dist"
+bootstrap_dir := "bootstrap"
 
 # Default recipe: show available commands
 default:
@@ -15,19 +15,19 @@ build:
 
 # Build for Windows x64 (amd64)
 build-windows-x64:
-    GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{dist_dir}}/{{binary}}-x64.exe {{cmd_path}}
+    GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-x64.exe {{cmd_path}}
 
 # Build for Windows x86 (32-bit)
 build-windows-x86:
-    GOOS=windows GOARCH=386 go build -ldflags "-s -w -X main.Version={{version}}" -o {{dist_dir}}/{{binary}}-x86.exe {{cmd_path}}
+    GOOS=windows GOARCH=386 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-x86.exe {{cmd_path}}
 
 # Build for Windows ARM64
 build-windows-arm64:
-    GOOS=windows GOARCH=arm64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{dist_dir}}/{{binary}}-arm64.exe {{cmd_path}}
+    GOOS=windows GOARCH=arm64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-arm64.exe {{cmd_path}}
 
 # Build all Windows targets (x64 + x86 + arm64)
-build-all: clean-dist build-windows-x64 build-windows-x86 build-windows-arm64
-    @echo "Built all targets in {{dist_dir}}/"
+build-all: build-windows-x64 build-windows-x86 build-windows-arm64
+    @echo "Built all targets in {{bootstrap_dir}}/"
 
 # Run tests
 test:
@@ -41,13 +41,14 @@ test-verbose:
 clean:
     rm -f {{binary}} {{binary}}.exe
 
-# Clean dist directory
-clean-dist:
-    rm -rf {{dist_dir}}
-    mkdir -p {{dist_dir}}
+# Clean bootstrap directory (binaries and dist)
+clean-bootstrap:
+    rm -f {{bootstrap_dir}}/*.exe
+    rm -rf {{bootstrap_dir}}/dist
+    mkdir -p {{bootstrap_dir}}/dist
 
 # Clean everything
-clean-all: clean clean-dist
+clean-all: clean clean-bootstrap
 
 # Format code
 fmt:
@@ -68,28 +69,28 @@ check: fmt-check vet test
 ext := if os() == "windows" { ".exe" } else { "" }
 
 # Build release MSI package (x64 only)
-release: build-windows-x64
+release: clean-bootstrap build-windows-x64
     @echo "Preparing x64 release build..."
-    cp {{dist_dir}}/{{binary}}-x64.exe {{dist_dir}}/msis.exe
+    cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     @echo "Building x64 MSI package..."
-    {{dist_dir}}/msis.exe --build --templatefolder=templates --template=templates/minimal/template.wxs setup.msis
-    @echo "Release build complete: dist/msis-{{version}}-x64.msi"
+    cd {{bootstrap_dir}} && ./msis.exe --build --templatefolder=../templates --template=../templates/minimal/template.wxs setup.msis
+    @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 # Build release for x86, x64, and arm64, then create bundle
-release-all: build-all
+release-all: clean-bootstrap build-all
     @echo "=== Building x64 MSI ==="
-    cp {{dist_dir}}/{{binary}}-x64.exe {{dist_dir}}/msis.exe
-    {{dist_dir}}/msis.exe --build --templatefolder=templates --template=templates/minimal/template.wxs setup.msis
+    cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
+    cd {{bootstrap_dir}} && ./msis.exe --build --templatefolder=../templates --template=../templates/minimal/template.wxs setup.msis
     @echo "=== Building x86 MSI ==="
-    cp {{dist_dir}}/{{binary}}-x86.exe {{dist_dir}}/msis.exe
-    {{dist_dir}}/{{binary}}-x64.exe --build --templatefolder=templates --template=templates/minimal-x86/template.wxs setup-x86.msis
+    cp {{bootstrap_dir}}/{{binary}}-x86.exe {{bootstrap_dir}}/msis.exe
+    cd {{bootstrap_dir}} && ./{{binary}}-x64.exe --build --templatefolder=../templates --template=../templates/minimal-x86/template.wxs setup-x86.msis
     @echo "=== Building ARM64 MSI ==="
-    cp {{dist_dir}}/{{binary}}-arm64.exe {{dist_dir}}/msis.exe
-    {{dist_dir}}/{{binary}}-x64.exe --build --templatefolder=templates --template=templates/minimal/template.wxs setup-arm64.msis
+    cp {{bootstrap_dir}}/{{binary}}-arm64.exe {{bootstrap_dir}}/msis.exe
+    cd {{bootstrap_dir}} && ./{{binary}}-x64.exe --build --templatefolder=../templates --template=../templates/minimal/template.wxs setup-arm64.msis
     @echo "=== Building Bundle ==="
-    {{dist_dir}}/{{binary}}-x64.exe --build --templatefolder=templates setup-bundle.msis
+    cd {{bootstrap_dir}} && ./{{binary}}-x64.exe --build --templatefolder=../templates setup-bundle.msis
     @echo "=== All release builds complete ==="
-    @echo "  - dist/msis-{{version}}-x64.msi"
-    @echo "  - dist/msis-{{version}}-x86.msi"
-    @echo "  - dist/msis-{{version}}-arm64.msi"
-    @echo "  - dist/msis-{{version}}-setup.exe"
+    @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
+    @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-x86.msi"
+    @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-arm64.msi"
+    @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
