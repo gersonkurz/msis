@@ -37,6 +37,7 @@ type xmlSetup struct {
 	Silent  string   `xml:"silent,attr"`
 	// Children captured in document order via custom UnmarshalXML
 	Sets     []xmlSet
+	Requires []xmlRequires // Top-level runtime requirements
 	Features []xmlFeature
 	Items    []xmlItem // Preserves document order
 	Bundle   *xmlBundle
@@ -152,6 +153,13 @@ type xmlExePackage struct {
 	Source          string `xml:"source,attr"`
 	DetectCondition string `xml:"detect,attr"`
 	InstallArgs     string `xml:"args,attr"`
+}
+
+// xmlRequires represents a top-level runtime requirement
+type xmlRequires struct {
+	Type    string `xml:"type,attr"`
+	Version string `xml:"version,attr"`
+	Source  string `xml:"source,attr"`
 }
 
 // UnmarshalXML for xmlSet - validates attributes
@@ -369,6 +377,31 @@ func (e *xmlExecute) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 	return d.Skip()
 }
 
+// UnmarshalXML for xmlRequires - validates attributes
+func (r *xmlRequires) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	hasType := false
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "type":
+			r.Type = strings.ToLower(attr.Value) // Normalize to lowercase
+			hasType = true
+		case "version":
+			r.Version = attr.Value
+		case "source":
+			r.Source = attr.Value
+		default:
+			return fmt.Errorf("unknown attribute '%s' on <requires>", attr.Name.Local)
+		}
+	}
+	if !hasType {
+		return fmt.Errorf("<requires> requires 'type' attribute")
+	}
+	if r.Version == "" && r.Source == "" {
+		return fmt.Errorf("<requires> requires 'version' or 'source' attribute")
+	}
+	return d.Skip()
+}
+
 // UnmarshalXML for xmlBundle - supports both legacy shorthand and nested elements
 func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	// Parse attributes (legacy shorthand)
@@ -476,6 +509,13 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 					return err
 				}
 				s.Bundle = &bundle
+
+			case "requires":
+				var req xmlRequires
+				if err := d.DecodeElement(&req, &t); err != nil {
+					return err
+				}
+				s.Requires = append(s.Requires, req)
 
 			case "files":
 				var files xmlFiles
@@ -667,6 +707,15 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 		setup.Sets = append(setup.Sets, ir.Set{
 			Name:  s.Name,
 			Value: s.Value,
+		})
+	}
+
+	// Convert requirements
+	for _, r := range raw.Requires {
+		setup.Requires = append(setup.Requires, ir.Requirement{
+			Type:    r.Type,
+			Version: r.Version,
+			Source:  r.Source,
 		})
 	}
 

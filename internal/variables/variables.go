@@ -152,3 +152,41 @@ func (d Dictionary) InstallDir() string {
 func (d Dictionary) BuildTarget() string {
 	return d.Get("BUILD_TARGET")
 }
+
+// DeprecatedVariable describes a deprecated variable with migration guidance.
+type DeprecatedVariable struct {
+	Name    string
+	Message string
+}
+
+// DeprecatedVariables is the list of deprecated variables with migration hints.
+var DeprecatedVariables = []DeprecatedVariable{
+	{
+		Name:    "INCLUDE_VCREDIST",
+		Message: "INCLUDE_VCREDIST is deprecated. Use <requires type=\"vcredist\" version=\"2022\"/> instead.",
+	},
+	{
+		Name:    "INCLUDE_VC100",
+		Message: "INCLUDE_VC100 (VC++ 2010) is deprecated. Note: VC++ 2010 is obsolete; migrate to <requires type=\"vcredist\" version=\"2022\"/> which provides a newer runtime.",
+	},
+	{
+		Name:    "INCLUDE_VC140",
+		Message: "INCLUDE_VC140 (VC++ 2015) is deprecated. Use <requires type=\"vcredist\" version=\"2022\"/> instead (2022 is backward-compatible with 2015-2019).",
+	},
+	{
+		Name:    "INCLUDE_MFC",
+		Message: "INCLUDE_MFC is deprecated. Merge modules are no longer supported in msis 3.x.",
+	},
+}
+
+// CheckDeprecated checks for deprecated variables and returns warnings.
+// Returns a slice of warning messages for any deprecated variables that are set.
+func (d Dictionary) CheckDeprecated() []string {
+	var warnings []string
+	for _, dep := range DeprecatedVariables {
+		if d.GetBool(dep.Name) {
+			warnings = append(warnings, dep.Message)
+		}
+	}
+	return warnings
+}

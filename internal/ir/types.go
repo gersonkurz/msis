@@ -6,9 +6,18 @@ package ir
 type Setup struct {
 	Silent   bool
 	Sets     []Set
+	Requires []Requirement // Top-level runtime requirements
 	Features []Feature
 	Items    []Item // Top-level items outside features
 	Bundle   *Bundle
+}
+
+// Requirement represents a runtime dependency declaration.
+// Example: <requires type="vcredist" version="2022"/>
+type Requirement struct {
+	Type    string // vcredist, netfx
+	Version string // 2022, 4.8, etc.
+	Source  string // optional override path for offline/custom scenarios
 }
 
 // Set represents a variable definition: <set name="..." value="..."/>

@@ -175,3 +175,64 @@ func TestContainsTemplate(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckDeprecated(t *testing.T) {
+	// Test with no deprecated variables
+	d := New()
+	warnings := d.CheckDeprecated()
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for new dictionary, got %d", len(warnings))
+	}
+
+	// Test with INCLUDE_VCREDIST set
+	d.Set("INCLUDE_VCREDIST", "True")
+	warnings = d.CheckDeprecated()
+	if len(warnings) != 1 {
+		t.Errorf("expected 1 warning for INCLUDE_VCREDIST, got %d", len(warnings))
+	}
+	if len(warnings) > 0 && !contains(warnings[0], "INCLUDE_VCREDIST") {
+		t.Errorf("expected warning about INCLUDE_VCREDIST, got: %s", warnings[0])
+	}
+	if len(warnings) > 0 && !contains(warnings[0], "<requires") {
+		t.Errorf("expected migration hint to <requires>, got: %s", warnings[0])
+	}
+
+	// Test with multiple deprecated variables
+	d.Set("INCLUDE_VC140", "True")
+	warnings = d.CheckDeprecated()
+	if len(warnings) != 2 {
+		t.Errorf("expected 2 warnings, got %d", len(warnings))
+	}
+	// Check that VC140 warning mentions backward compatibility
+	foundVC140Warning := false
+	for _, w := range warnings {
+		if contains(w, "INCLUDE_VC140") && contains(w, "backward-compatible") {
+			foundVC140Warning = true
+			break
+		}
+	}
+	if !foundVC140Warning {
+		t.Error("expected VC140 warning to mention backward compatibility")
+	}
+
+	// Test with deprecated variable set to False (should not warn)
+	d2 := New()
+	d2.Set("INCLUDE_VCREDIST", "False")
+	warnings = d2.CheckDeprecated()
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for deprecated variable set to False, got %d", len(warnings))
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

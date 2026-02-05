@@ -256,10 +256,10 @@ func TestGenerateXMLWithPermissions(t *testing.T) {
 		t.Error("XML without permissions should not contain PermissionEx")
 	}
 
-	// With permissions (uses util: namespace for WiX 6)
+	// With permissions (uses core PermissionEx for SDDL support in WiX 6)
 	xmlWithPerm := proc.GenerateXML(components, true)
-	if !strings.Contains(xmlWithPerm, "<util:PermissionEx") {
-		t.Error("XML with permissions should contain <util:PermissionEx>")
+	if !strings.Contains(xmlWithPerm, "<PermissionEx") {
+		t.Error("XML with permissions should contain <PermissionEx>")
 	}
 	if !strings.Contains(xmlWithPerm, "D:(A;;GA;;;WD)") {
 		t.Error("XML should contain the SDDL string")

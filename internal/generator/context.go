@@ -12,6 +12,7 @@ import (
 
 	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/registry"
+	"github.com/gersonkurz/msis/internal/requirements"
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
@@ -411,43 +412,70 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		c.addPathEnvironment(firstFeatureID)
 	}
 
+	// Generate launch conditions for requirements
+	launchSearchXML, launchCondXML := c.generateLaunchConditions()
+
 	// Generate output
 	output := &GeneratedOutput{
-		DirectoryXML:           c.generateDirectoryXMLForRoot("INSTALLDIR"),
-		AppDataDirXML:          c.generateDirectoryXMLForRoot("APPDATADIR"),
-		RoamingAppDataDirXML:   c.generateDirectoryXMLForRoot("ROAMINGAPPDATADIR"),
-		LocalAppDataDirXML:     c.generateDirectoryXMLForRoot("LOCALAPPDATADIR"),
-		CommonFilesDirXML:      c.generateDirectoryXMLForRoot("COMMONFILESDIR"),
-		WindowsDirXML:          c.generateDirectoryXMLForRoot("WINDOWSDIR"),
-		SystemDirXML:           c.generateDirectoryXMLForRoot("SYSTEMDIR"),
-		FeatureXML:             c.generateAllFeatureXML(),
-		RegistryXML:            c.generateAllRegistryXML(),
-		DesktopXML:             c.generateShortcutsXML(c.DesktopShortcuts),
-		StartMenuXML:           c.generateShortcutsXML(c.StartMenuShortcuts),
-		CustomActionsXML:       c.generateCustomActionsXML(),
-		InstallExecuteSequence: c.generateInstallExecuteSequence(),
-		RemoveOnUninstallXML:   c.generateRemoveOnUninstallXML(),
+		DirectoryXML:             c.generateDirectoryXMLForRoot("INSTALLDIR"),
+		AppDataDirXML:            c.generateDirectoryXMLForRoot("APPDATADIR"),
+		RoamingAppDataDirXML:     c.generateDirectoryXMLForRoot("ROAMINGAPPDATADIR"),
+		LocalAppDataDirXML:       c.generateDirectoryXMLForRoot("LOCALAPPDATADIR"),
+		CommonFilesDirXML:        c.generateDirectoryXMLForRoot("COMMONFILESDIR"),
+		WindowsDirXML:            c.generateDirectoryXMLForRoot("WINDOWSDIR"),
+		SystemDirXML:             c.generateDirectoryXMLForRoot("SYSTEMDIR"),
+		FeatureXML:               c.generateAllFeatureXML(),
+		RegistryXML:              c.generateAllRegistryXML(),
+		DesktopXML:               c.generateShortcutsXML(c.DesktopShortcuts),
+		StartMenuXML:             c.generateShortcutsXML(c.StartMenuShortcuts),
+		CustomActionsXML:         c.generateCustomActionsXML(),
+		InstallExecuteSequence:   c.generateInstallExecuteSequence(),
+		RemoveOnUninstallXML:     c.generateRemoveOnUninstallXML(),
+		LaunchConditionSearchXML: launchSearchXML,
+		LaunchConditionsXML:      launchCondXML,
 	}
 
 	return output, nil
 }
 
+// generateLaunchConditions creates WiX XML for runtime requirement checks.
+func (c *Context) generateLaunchConditions() (searchXML, conditionsXML string) {
+	if len(c.Setup.Requires) == 0 {
+		return "", ""
+	}
+
+	// Determine architecture from PLATFORM variable
+	arch := "x64" // Default
+	platform := c.Variables.Platform()
+	if strings.EqualFold(platform, "x86") {
+		arch = "x86"
+	} else if strings.EqualFold(platform, "arm64") {
+		arch = "arm64"
+	}
+
+	// Generate launch conditions
+	conditions := requirements.GenerateLaunchConditions(c.Setup.Requires, arch)
+	return requirements.GenerateXML(conditions)
+}
+
 // GeneratedOutput holds the generated WiX XML fragments.
 type GeneratedOutput struct {
-	DirectoryXML           string // INSTALLDIR tree (under ProgramFilesFolder)
-	AppDataDirXML          string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
-	RoamingAppDataDirXML   string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
-	LocalAppDataDirXML     string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
-	CommonFilesDirXML      string // COMMONFILESDIR tree (under CommonFilesFolder)
-	WindowsDirXML          string // WINDOWSDIR tree (under WindowsFolder)
-	SystemDirXML           string // SYSTEMDIR tree (under SystemFolder)
-	FeatureXML             string
-	RegistryXML            string
-	DesktopXML             string
-	StartMenuXML           string
-	CustomActionsXML       string
-	InstallExecuteSequence string
-	RemoveOnUninstallXML   string
+	DirectoryXML             string // INSTALLDIR tree (under ProgramFilesFolder)
+	AppDataDirXML            string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
+	RoamingAppDataDirXML     string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
+	LocalAppDataDirXML       string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
+	CommonFilesDirXML        string // COMMONFILESDIR tree (under CommonFilesFolder)
+	WindowsDirXML            string // WINDOWSDIR tree (under WindowsFolder)
+	SystemDirXML             string // SYSTEMDIR tree (under SystemFolder)
+	FeatureXML               string
+	RegistryXML              string
+	DesktopXML               string
+	StartMenuXML             string
+	CustomActionsXML         string
+	InstallExecuteSequence   string
+	RemoveOnUninstallXML     string
+	LaunchConditionSearchXML string // Registry searches for launch conditions
+	LaunchConditionsXML      string // Launch condition elements
 }
 
 func (c *Context) collectExcludes(items []ir.Item) {

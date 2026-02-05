@@ -171,6 +171,98 @@ msis-3.x/
   - Variable reference ✅
   - Migration guide from C++ bundler ✅
 
+- **Milestone 6.0**: IR and Parser for `<requires>` ✅
+  - Added `ir.Requirement` type (Type, Version, Source) ✅
+  - Added `Requires []Requirement` field to `ir.Setup` ✅
+  - Parser handles `<requires>` elements at setup level ✅
+  - Validation: type required, version or source required ✅
+  - Type normalized to lowercase (Codex review feedback) ✅
+  - Unknown attribute rejection ✅
+  - Updated `msis.xsd` schema with RequiresType ✅
+  - Tests: 5 new requires parser tests ✅
+
+- **Milestone 6.1**: Launch Conditions for Standalone MSI ✅
+  - Created `internal/requirements/` package ✅
+  - VC++ 2015-2022 detection via registry (HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\{x64|x86|arm64}) ✅
+  - .NET Framework 4.6.2-4.8.1 detection via Release DWORD value ✅
+  - `GenerateLaunchConditions()` generates Property+RegistrySearch XML ✅
+  - `GenerateXML()` produces Launch Condition elements ✅
+  - Friendly error messages for missing runtimes ✅
+  - Integrated into generator (`LaunchConditionSearchXML`, `LaunchConditionsXML`) ✅
+  - Added to template context and all templates (x64, x86, minimal, minimal-x86) ✅
+  - ARM64 platform support (Codex review feedback) ✅
+  - Tests: 11 requirements tests + 4 generator integration tests ✅
+
+- **Milestone 6.2**: Auto-Bundle Generation ✅
+  - Added `/STANDALONE` flag to skip auto-bundling ✅
+  - `AutoBundleGenerator` for creating bundle wrappers from requirements ✅
+  - `RequirementsToPrerequisites()` converts ir.Requirement to ir.Prerequisite ✅
+  - Two-phase build: First MSI, then bundle containing MSI ✅
+  - `processAutoBundle()` handles bundle wrapper generation ✅
+  - Automatic detection: auto-bundle when `<requires>` present and not standalone ✅
+  - Tests: 3 new auto-bundle tests ✅
+
+- **Milestone 6.3**: Prerequisite Source Management ✅
+  - Created `internal/prereqcache/` package ✅
+  - Global cache location: `%LOCALAPPDATA%\msis\prerequisites\` ✅
+  - `PrerequisiteURL` struct with Type, Version, Arch, URL, FileName, SHA256 ✅
+  - Download URLs for VC++ 2019/2022 (x64, x86, arm64) ✅
+  - Download URLs for .NET Framework 4.7.2, 4.8, 4.8.1 ✅
+  - `Cache.EnsurePrerequisite()` downloads if not cached ✅
+  - `Cache.GetCachedPath()` returns cached file path ✅
+  - `Cache.ListCached()` lists all cached files ✅
+  - `downloadFile()` with temp file + rename for atomicity ✅
+  - `verifyHash()` for SHA256 verification (optional) ✅
+  - Bundle generator integration via `SetCache()` and `EnsurePrerequisites()` ✅
+  - CLI integration with progress output during downloads ✅
+  - `/STATUS` shows cached prerequisites ✅
+  - HTTP timeout (5 minutes) for downloads ✅
+  - Warning when downloading without SHA256 hash ✅
+  - ARM64 prerequisite caching and bundle generation ✅
+  - `NewCacheReadOnly()` for status queries without side effects ✅
+  - Tests: 10 prereqcache tests + 4 bundle integration tests ✅
+
+- **Milestone 6.4**: Cleanup and Migration ✅
+  - Removed `templates/mergemodules/` directory (54 .msm files) ✅
+  - Removed `INCLUDE_VCREDIST` from template context ✅
+  - Added `DeprecatedVariables` list with migration hints ✅
+  - `CheckDeprecated()` function returns warnings for deprecated variables ✅
+  - CLI displays deprecation warnings after loading variables ✅
+  - Deprecation warnings for: INCLUDE_VCREDIST, INCLUDE_VC100, INCLUDE_VC140, INCLUDE_MFC ✅
+  - Clarified VC100/VC140 migration guidance (runtime change, not drop-in replacement) ✅
+  - Tests: 1 new deprecation warning test ✅
+
+- **Milestone 6.5**: CLI Output Enhancements (ANSI Colors) ✅
+  - Created `internal/cli/colors.go` with ANSI color helpers ✅
+  - Color functions: `Error()`, `Success()`, `Warning()`, `Info()`, `Bold()`, `Filename()`, `Number()` ✅
+  - Terminal detection via `golang.org/x/term` ✅
+  - Respects `NO_COLOR` environment variable (https://no-color.org/) ✅
+  - Added `/NO-COLOR` flag to disable colors ✅
+  - Applied colors to CLI output:
+    - Red: Errors
+    - Green: Success messages ("Built:")
+    - Yellow: Warnings, deprecation notices
+    - Cyan: Info, progress, filenames
+    - Magenta: Numbers (counts)
+    - Bold: Product name emphasis
+  - Fixed EnableColors() to re-check VT support on Windows ✅
+  - Tests: 4 color tests ✅
+
+- **Milestone 6.6**: Documentation ✅
+  - Created `docs/Prerequisites.md` with:
+    - Supported runtimes reference (vcredist, netfx) ✅
+    - Usage examples and quick start ✅
+    - Build modes (auto-bundle vs standalone) ✅
+    - Prerequisite caching explanation ✅
+    - Custom/offline source instructions ✅
+    - Detection logic details ✅
+    - Migration guide from MSIS 2.x ✅
+    - Troubleshooting section ✅
+  - Updated `docs/Bundle.md`:
+    - Added auto-bundling with `<requires>` section ✅
+    - Added automatic prerequisite downloads section ✅
+    - Cross-reference to Prerequisites.md ✅
+
 ## Supported Directory Roots
 
 | Root Key | WiX Folder | Typical Path |

@@ -7,6 +7,8 @@
     <SummaryInformation Keywords="Installer" Description="{{PRODUCT_NAME}}" Manufacturer="{{MANUFACTURER}}" Codepage="{{CODEPAGE}}" />
     <Media Id="1" Cabinet="setup.cab" EmbedCab="yes" />
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed." />
+{{{LAUNCH_CONDITION_SEARCHES}}}
+{{{LAUNCH_CONDITIONS}}}
 
     {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
     {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}

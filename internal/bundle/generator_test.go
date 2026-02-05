@@ -277,3 +277,197 @@ func TestPrerequisiteCustomSourceSinglePackage(t *testing.T) {
 		t.Error("should use custom source path")
 	}
 }
+
+func TestAutoBundleGenerator(t *testing.T) {
+	prereqs := []ir.Prerequisite{
+		{Type: "vcredist", Version: "2022"},
+		{Type: "netfx", Version: "4.8"},
+	}
+	vars := variables.New()
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi", prereqs)
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should have prerequisite packages
+	if !strings.Contains(result.ChainXML, "Prereq_vcredist_2022") {
+		t.Error("expected vcredist prerequisite package")
+	}
+	if !strings.Contains(result.ChainXML, "Prereq_netfx_4_8") {
+		t.Error("expected netfx prerequisite package")
+	}
+
+	// Should have main MSI package
+	if !strings.Contains(result.ChainXML, "MainPackage") {
+		t.Error("expected MainPackage for MSI")
+	}
+	if !strings.Contains(result.ChainXML, "MyApp.msi") {
+		t.Error("expected MSI path in output")
+	}
+}
+
+func TestAutoBundleGenerator_NoPrereqs(t *testing.T) {
+	prereqs := []ir.Prerequisite{}
+	vars := variables.New()
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi", prereqs)
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should only have main MSI package
+	if !strings.Contains(result.ChainXML, "MainPackage") {
+		t.Error("expected MainPackage for MSI")
+	}
+	// Should not have prerequisite packages
+	if strings.Contains(result.ChainXML, "Prereq_") {
+		t.Error("should not have prerequisite packages when none specified")
+	}
+}
+
+func TestRequirementsToPrerequisites(t *testing.T) {
+	requirements := []ir.Requirement{
+		{Type: "vcredist", Version: "2022", Source: ""},
+		{Type: "netfx", Version: "4.8", Source: "custom.exe"},
+	}
+
+	prereqs := RequirementsToPrerequisites(requirements)
+
+	if len(prereqs) != 2 {
+		t.Fatalf("expected 2 prerequisites, got %d", len(prereqs))
+	}
+
+	if prereqs[0].Type != "vcredist" || prereqs[0].Version != "2022" {
+		t.Error("first prerequisite should be vcredist 2022")
+	}
+	if prereqs[1].Type != "netfx" || prereqs[1].Version != "4.8" || prereqs[1].Source != "custom.exe" {
+		t.Error("second prerequisite should be netfx 4.8 with custom source")
+	}
+}
+
+func TestGeneratorWithCachedPaths(t *testing.T) {
+	setup := &ir.Setup{
+		Bundle: &ir.Bundle{
+			Prerequisites: []ir.Prerequisite{
+				{Type: "vcredist", Version: "2022"},
+			},
+			MSI: &ir.BundleMSI{Source: "app.msi"},
+		},
+	}
+	vars := variables.New()
+	gen := NewGenerator(setup, vars, ".")
+
+	// Simulate cached paths (without actual cache)
+	gen.CachedPaths["vcredist/2022/x64"] = "/cache/vcredist/2022/vc_redist.x64.exe"
+	gen.CachedPaths["vcredist/2022/x86"] = "/cache/vcredist/2022/vc_redist.x86.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use cached paths
+	if !strings.Contains(result.ChainXML, "/cache/vcredist/2022/vc_redist.x64.exe") {
+		t.Error("expected cached x64 path")
+	}
+	if !strings.Contains(result.ChainXML, "/cache/vcredist/2022/vc_redist.x86.exe") {
+		t.Error("expected cached x86 path")
+	}
+}
+
+func TestGeneratorWithCachedPathsNetfx(t *testing.T) {
+	setup := &ir.Setup{
+		Bundle: &ir.Bundle{
+			Prerequisites: []ir.Prerequisite{
+				{Type: "netfx", Version: "4.8"},
+			},
+			MSI: &ir.BundleMSI{Source: "app.msi"},
+		},
+	}
+	vars := variables.New()
+	gen := NewGenerator(setup, vars, ".")
+
+	// Simulate cached path for arch-neutral netfx
+	gen.CachedPaths["netfx/4.8/"] = "/cache/netfx/4.8/ndp48-x86-x64-allos-enu.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use cached path (single package, no arch variants)
+	if !strings.Contains(result.ChainXML, "/cache/netfx/4.8/ndp48-x86-x64-allos-enu.exe") {
+		t.Error("expected cached netfx path")
+	}
+	// Should not have arch-specific suffixes for netfx
+	if strings.Contains(result.ChainXML, "Prereq_netfx_4_8_x64") {
+		t.Error("netfx should not have arch-specific packages when path is same")
+	}
+}
+
+func TestAutoBundleGeneratorWithCachedPaths(t *testing.T) {
+	prereqs := []ir.Prerequisite{
+		{Type: "vcredist", Version: "2022"},
+	}
+	vars := variables.New()
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi", prereqs)
+
+	// Simulate cached paths
+	gen.CachedPaths["vcredist/2022/x64"] = "/cache/vc_redist.x64.exe"
+	gen.CachedPaths["vcredist/2022/x86"] = "/cache/vc_redist.x86.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use cached paths
+	if !strings.Contains(result.ChainXML, "/cache/vc_redist.x64.exe") {
+		t.Error("expected cached x64 path")
+	}
+	if !strings.Contains(result.ChainXML, "/cache/vc_redist.x86.exe") {
+		t.Error("expected cached x86 path")
+	}
+}
+
+func TestGeneratorWithCachedPathsArm64(t *testing.T) {
+	setup := &ir.Setup{
+		Bundle: &ir.Bundle{
+			Prerequisites: []ir.Prerequisite{
+				{Type: "vcredist", Version: "2022"},
+			},
+			MSI: &ir.BundleMSI{Source: "app.msi"},
+		},
+	}
+	vars := variables.New()
+	gen := NewGenerator(setup, vars, ".")
+
+	// Simulate cached paths including ARM64
+	gen.CachedPaths["vcredist/2022/x64"] = "/cache/vcredist/2022/vc_redist.x64.exe"
+	gen.CachedPaths["vcredist/2022/x86"] = "/cache/vcredist/2022/vc_redist.x86.exe"
+	gen.CachedPaths["vcredist/2022/arm64"] = "/cache/vcredist/2022/vc_redist.arm64.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should have ARM64 package
+	if !strings.Contains(result.ChainXML, "Prereq_vcredist_2022_arm64") {
+		t.Error("expected ARM64 package ID")
+	}
+	if !strings.Contains(result.ChainXML, "/cache/vcredist/2022/vc_redist.arm64.exe") {
+		t.Error("expected cached ARM64 path")
+	}
+	// ARM64 condition: NativeMachine = 43620
+	if !strings.Contains(result.ChainXML, "NativeMachine = 43620") {
+		t.Error("expected ARM64 install condition")
+	}
+	// x64 should exclude ARM64 when ARM64 is present
+	if !strings.Contains(result.ChainXML, "VersionNT64 AND NOT NativeMachine = 43620") {
+		t.Error("expected x64 condition to exclude ARM64")
+	}
+}

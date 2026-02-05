@@ -73,6 +73,31 @@
     <xs:attribute name="source" type="xs:string" use="optional"/>
   </xs:complexType>
 
+  <!-- Top-level requires element for declaring runtime dependencies -->
+  <xs:complexType name="RequiresType">
+    <xs:annotation>
+      <xs:documentation>
+        Declares a runtime dependency that must be present on the target system.
+        MSIS will automatically handle installation via bundle or launch conditions.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="type" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>Type of requirement: vcredist, netfx</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="version" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Version of the requirement: 2022, 4.8, etc.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="source" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>Optional path to prerequisite installer for offline/custom scenarios</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
   <xs:complexType name="BundleMsiType">
     <xs:attribute name="source" type="xs:string" use="optional"/>
     <xs:attribute name="source_64bit" type="xs:string" use="optional"/>
@@ -125,6 +150,7 @@
       <xs:sequence>
         <xs:choice minOccurs="0" maxOccurs="unbounded">
           <xs:element name="set" type="SetType"/>
+          <xs:element name="requires" type="RequiresType"/>
           <xs:element name="feature" type="FeatureType"/>
           <xs:element name="files" type="FilesType"/>
           <xs:element name="registry" type="RegistryType"/>

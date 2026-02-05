@@ -12,9 +12,11 @@ import (
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/bundle"
+	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/generator"
 	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/parser"
+	"github.com/gersonkurz/msis/internal/prereqcache"
 	"github.com/gersonkurz/msis/internal/template"
 	"github.com/gersonkurz/msis/internal/variables"
 	"github.com/gersonkurz/msis/internal/wix"
@@ -31,11 +33,18 @@ type cliArgs struct {
 	customTemplates string
 	dryRun          bool
 	status          bool
+	standalone      bool // Skip auto-bundling, use launch conditions only
+	noColor         bool // Disable colored output
 	files           []string
 }
 
 func main() {
 	args := parseArgs()
+
+	// Apply --no-color flag
+	if args.noColor {
+		cli.DisableColors()
+	}
 
 	if args.status {
 		printStatus(args)
@@ -49,14 +58,14 @@ func main() {
 
 	for _, filename := range args.files {
 		if err := processFile(filename, args); err != nil {
-			fmt.Fprintf(os.Stderr, "Error processing %s: %v\n", filename, err)
+			fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error processing"), cli.Filename(filename), err)
 			os.Exit(1)
 		}
 	}
 }
 
 func processFile(filename string, args *cliArgs) error {
-	fmt.Printf("Processing %s...\n", filename)
+	fmt.Printf("Processing %s...\n", cli.Filename(filename))
 
 	// Milestone 3.1 - Parse .msis into IR
 	setup, err := parser.Parse(filename)
@@ -64,13 +73,15 @@ func processFile(filename string, args *cliArgs) error {
 		return fmt.Errorf("parsing: %w", err)
 	}
 
-	fmt.Printf("  Parsed: %d sets, %d features, %d top-level items\n",
-		len(setup.Sets), len(setup.Features), len(setup.Items))
+	fmt.Printf("  Parsed: %s sets, %s features, %s top-level items\n",
+		cli.Number(fmt.Sprintf("%d", len(setup.Sets))),
+		cli.Number(fmt.Sprintf("%d", len(setup.Features))),
+		cli.Number(fmt.Sprintf("%d", len(setup.Items))))
 
 	// Check if this is a bundle
 	isBundle := setup.IsSetupBundle()
 	if isBundle {
-		fmt.Println("  Type: Bundle (bootstrapper)")
+		fmt.Printf("  Type: %s\n", cli.Info("Bundle (bootstrapper)"))
 	}
 
 	// Milestone 3.2 - Variable resolution
@@ -81,9 +92,24 @@ func processFile(filename string, args *cliArgs) error {
 	}
 
 	fmt.Printf("  Product: %s v%s (%s)\n",
-		vars.ProductName(), vars.ProductVersion(), vars.Platform())
+		cli.Bold(vars.ProductName()), vars.ProductVersion(), vars.Platform())
+
+	// Check for deprecated variables
+	deprecatedWarnings := vars.CheckDeprecated()
+	if len(deprecatedWarnings) > 0 {
+		for _, warning := range deprecatedWarnings {
+			fmt.Printf("  %s\n", cli.Warning("Warning: "+warning))
+		}
+	}
 
 	workDir := filepath.Dir(filename)
+
+	// Warn when VC++ runtime files appear to be bundled without <requires>.
+	if len(setup.Requires) == 0 && len(deprecatedWarnings) == 0 {
+		if hasVCRedistSources(setup) || hasVCRedistFolder(workDir) {
+			fmt.Printf("  %s\n", cli.Warning("Warning: VC++ runtime files detected but no <requires> element. msis-3.x no longer bundles VC runtimes implicitly (msis-2.x did). Add <requires type=\"vcredist\" version=\"2022\"/> or provide prerequisites."))
+		}
+	}
 
 	// Determine template folder
 	templateFolder := args.templateFolder
@@ -106,6 +132,15 @@ func processFile(filename string, args *cliArgs) error {
 
 // processMSIFile generates a standard MSI package.
 func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, filename string, args *cliArgs) error {
+	// Determine if auto-bundling is needed
+	needsAutoBundle := len(setup.Requires) > 0 && !args.standalone
+
+	if needsAutoBundle {
+		fmt.Printf("  Requirements: %s (will auto-bundle)\n", cli.Number(fmt.Sprintf("%d", len(setup.Requires))))
+	} else if len(setup.Requires) > 0 {
+		fmt.Printf("  Requirements: %s (standalone mode, using launch conditions)\n", cli.Number(fmt.Sprintf("%d", len(setup.Requires))))
+	}
+
 	// Milestone 3.3 - WXS generation
 	ctx := generator.NewContext(setup, vars, workDir)
 	output, err := ctx.Generate()
@@ -118,11 +153,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	for _, compIDs := range ctx.FeatureComponents {
 		componentCount += len(compIDs)
 	}
-	fmt.Printf("  Generated: %d directories, %d components\n",
-		len(ctx.DirectoryTrees), componentCount)
+	fmt.Printf("  Generated: %s directories, %s components\n",
+		cli.Number(fmt.Sprintf("%d", len(ctx.DirectoryTrees))),
+		cli.Number(fmt.Sprintf("%d", componentCount)))
 
 	if args.dryRun {
-		fmt.Println("  [dry-run] Parse and validate complete")
+		fmt.Printf("  %s\n", cli.Info("[dry-run] Parse and validate complete"))
 		return nil
 	}
 
@@ -166,7 +202,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
 		return fmt.Errorf("writing WXS file: %w", err)
 	}
-	fmt.Printf("  Written: %s\n", wxsFile)
+	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
 
 	// Milestone 3.5 - WiX CLI integration
 	if args.build {
@@ -179,16 +215,155 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 			return fmt.Errorf("building MSI: %w", err)
 		}
 
-		fmt.Printf("  Built: %s\n", vars.BuildTarget())
+		// Compute actual MSI output path (same logic as wix.NewBuilder)
+		msiPath := vars.BuildTarget()
+		if msiPath == "" {
+			msiPath = strings.TrimSuffix(wxsFile, filepath.Ext(wxsFile)) + ".msi"
+		}
+		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(msiPath))
+
+		// Milestone 6.2 - Auto-bundle if requirements present
+		if needsAutoBundle {
+			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath, args)
+		}
 	}
 
 	return nil
+}
+
+// processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
+func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs) error {
+	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
+
+	// Convert requirements to prerequisites
+	prereqs := bundle.RequirementsToPrerequisites(setup.Requires)
+
+	// Generate bundle chain
+	gen := bundle.NewAutoBundleGenerator(vars, workDir, msiPath, prereqs)
+
+	// Enable caching - download prerequisites if needed
+	cache, err := prereqcache.NewCache()
+	if err != nil {
+		fmt.Printf("  %s: could not initialize prerequisite cache: %v\n", cli.Warning("Warning"), err)
+		fmt.Printf("  %s\n", cli.Info("Prerequisites will be expected in local 'prerequisites' folder"))
+	} else {
+		gen.SetCache(cache)
+
+		// Ensure all prerequisites are cached (download if needed)
+		fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
+		progress := func(msg string) {
+			fmt.Printf("    %s\n", cli.Info(msg))
+		}
+		if err := gen.EnsurePrerequisites(progress); err != nil {
+			return fmt.Errorf("ensuring prerequisites: %w", err)
+		}
+	}
+
+	bundleOutput, err := gen.Generate()
+	if err != nil {
+		return fmt.Errorf("generating auto-bundle: %w", err)
+	}
+
+	fmt.Printf("  Auto-bundle: %s prerequisites + MSI\n", cli.Number(fmt.Sprintf("%d", len(prereqs))))
+
+	// Render bundle template
+	wxsContent, err := renderBundleTemplate(vars, templateFolder, customTemplates, bundleOutput, setup.Silent)
+	if err != nil {
+		return fmt.Errorf("rendering bundle template: %w", err)
+	}
+
+	// Determine output filename (bundle produces .exe)
+	baseName := strings.TrimSuffix(msiPath, filepath.Ext(msiPath))
+	wxsFile := baseName + "-bundle.wxs"
+
+	// Write WXS file
+	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+		return fmt.Errorf("writing bundle WXS file: %w", err)
+	}
+	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
+
+	// Build bundle
+	bundleBuilder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
+	if err := bundleBuilder.Build(); err != nil {
+		return fmt.Errorf("building bundle: %w", err)
+	}
+
+	fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
+
+	return nil
+}
+
+func hasVCRedistSources(setup *ir.Setup) bool {
+	if scanItemsForVCRedist(setup.Items) {
+		return true
+	}
+	return scanFeaturesForVCRedist(setup.Features)
+}
+
+func scanFeaturesForVCRedist(features []ir.Feature) bool {
+	for _, feature := range features {
+		if scanItemsForVCRedist(feature.Items) {
+			return true
+		}
+		if scanFeaturesForVCRedist(feature.SubFeatures) {
+			return true
+		}
+	}
+	return false
+}
+
+func scanItemsForVCRedist(items []ir.Item) bool {
+	for _, item := range items {
+		files, ok := item.(ir.Files)
+		if !ok {
+			continue
+		}
+		source := strings.ToLower(files.Source)
+		if strings.Contains(source, "vc_redist") || strings.Contains(source, "vcredist") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVCRedistFolder(workDir string) bool {
+	candidates := []string{
+		filepath.Join(workDir, "Setup", "Tools", "vc_redist"),
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return true
+		}
+	}
+	return false
 }
 
 // processBundleFile generates a WiX Bundle (bootstrapper).
 func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates string, args *cliArgs) error {
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
+
+	// Enable caching if building (download prerequisites if needed)
+	if args.build && len(setup.Bundle.Prerequisites) > 0 {
+		cache, err := prereqcache.NewCache()
+		if err != nil {
+			fmt.Printf("  %s: could not initialize prerequisite cache: %v\n", cli.Warning("Warning"), err)
+			fmt.Printf("  %s\n", cli.Info("Prerequisites will be expected in local 'prerequisites' folder"))
+		} else {
+			gen.SetCache(cache)
+
+			// Ensure all prerequisites are cached (download if needed)
+			fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
+			progress := func(msg string) {
+				fmt.Printf("    %s\n", cli.Info(msg))
+			}
+			if err := gen.EnsurePrerequisites(progress); err != nil {
+				return fmt.Errorf("ensuring prerequisites: %w", err)
+			}
+		}
+	}
+
 	bundleOutput, err := gen.Generate()
 	if err != nil {
 		return fmt.Errorf("generating bundle: %w", err)
@@ -196,10 +371,12 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 	prereqCount := len(setup.Bundle.Prerequisites)
 	exeCount := len(setup.Bundle.ExePackages)
-	fmt.Printf("  Generated: %d prerequisites, %d exe packages\n", prereqCount, exeCount)
+	fmt.Printf("  Generated: %s prerequisites, %s exe packages\n",
+		cli.Number(fmt.Sprintf("%d", prereqCount)),
+		cli.Number(fmt.Sprintf("%d", exeCount)))
 
 	if args.dryRun {
-		fmt.Println("  [dry-run] Parse and validate complete")
+		fmt.Printf("  %s\n", cli.Info("[dry-run] Parse and validate complete"))
 		return nil
 	}
 
@@ -221,7 +398,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
 		return fmt.Errorf("writing bundle WXS file: %w", err)
 	}
-	fmt.Printf("  Written: %s\n", wxsFile)
+	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
 
 	// Build bundle
 	if args.build {
@@ -234,7 +411,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			return fmt.Errorf("building bundle: %w", err)
 		}
 
-		fmt.Printf("  Built: %s.exe\n", baseName)
+		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
 	}
 
 	return nil
@@ -323,6 +500,8 @@ func parseArgs() *cliArgs {
 	fs.StringVar(&args.customTemplates, "customtemplates", "", "")
 	fs.BoolVar(&args.dryRun, "dry-run", false, "")
 	fs.BoolVar(&args.status, "status", false, "")
+	fs.BoolVar(&args.standalone, "standalone", false, "")
+	fs.BoolVar(&args.noColor, "no-color", false, "")
 
 	// Help flags
 	var showHelp bool
@@ -420,6 +599,8 @@ func printUsage() {
 	fmt.Println("  /TEMPLATEFOLDER:PATH   Base template folder (public defaults)")
 	fmt.Println("  /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)")
 	fmt.Println("  /DRY-RUN            Parse and validate only, no output")
+	fmt.Println("  /STANDALONE         Skip auto-bundling, use launch conditions only")
+	fmt.Println("  /NO-COLOR           Disable colored output")
 	fmt.Println("  /STATUS             Show configuration status")
 	fmt.Println("  /?, /HELP           Show this help message")
 	fmt.Println()
@@ -432,6 +613,7 @@ func printUsage() {
 	fmt.Println("  msis setup.msis                          Generate .wxs file")
 	fmt.Println("  msis /BUILD setup.msis                   Generate and build MSI")
 	fmt.Println("  msis /BUILD /RETAINWXS setup.msis        Build and keep .wxs")
+	fmt.Println("  msis /BUILD /STANDALONE setup.msis       Build MSI only (no auto-bundle)")
 	fmt.Println("  msis /TEMPLATEFOLDER:templates /BUILD setup.msis")
 	fmt.Println("  msis /DRY-RUN setup.msis                 Validate only")
 }
@@ -439,6 +621,24 @@ func printUsage() {
 func printStatus(args *cliArgs) {
 	fmt.Printf("MSIS - Version %s\n", Version)
 	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	fmt.Println()
+
+	// Prerequisite cache information
+	fmt.Println("Prerequisite Cache:")
+	cacheDir := prereqcache.GetDefaultCacheDir()
+	fmt.Printf("  Location: %s\n", cacheDir)
+	if cache := prereqcache.NewCacheReadOnly(); cache != nil {
+		if cached, err := cache.ListCached(); err == nil && len(cached) > 0 {
+			fmt.Printf("  Cached files: %d\n", len(cached))
+			for _, f := range cached {
+				fmt.Printf("    - %s\n", f)
+			}
+		} else {
+			fmt.Println("  Cached files: (none)")
+		}
+	} else {
+		fmt.Println("  Cached files: (cache directory not created yet)")
+	}
 	fmt.Println()
 
 	// WiX information

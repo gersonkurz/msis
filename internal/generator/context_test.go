@@ -1560,3 +1560,119 @@ func TestAllDirectoryRoots(t *testing.T) {
 		t.Error("SystemDirXML should contain SYSTEMDIR")
 	}
 }
+
+func TestGenerateLaunchConditions(t *testing.T) {
+	setup := &ir.Setup{
+		Requires: []ir.Requirement{
+			{Type: "vcredist", Version: "2022"},
+			{Type: "netfx", Version: "4.8"},
+		},
+		Features: []ir.Feature{
+			{Name: "Main", Enabled: true},
+		},
+	}
+	vars := variables.New()
+	vars["PLATFORM"] = "x64"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Check registry search XML contains VC++ property
+	if !strings.Contains(output.LaunchConditionSearchXML, "VCREDIST_X64_2022") {
+		t.Error("LaunchConditionSearchXML should contain VCREDIST_X64_2022 property")
+	}
+	if !strings.Contains(output.LaunchConditionSearchXML, "RegistrySearch") {
+		t.Error("LaunchConditionSearchXML should contain RegistrySearch")
+	}
+
+	// Check launch conditions XML
+	if !strings.Contains(output.LaunchConditionsXML, "Launch Condition") {
+		t.Error("LaunchConditionsXML should contain Launch Condition elements")
+	}
+	if !strings.Contains(output.LaunchConditionsXML, "Visual C++ 2022") {
+		t.Error("LaunchConditionsXML should mention Visual C++ 2022 in error message")
+	}
+	if !strings.Contains(output.LaunchConditionsXML, ".NET Framework 4.8") {
+		t.Error("LaunchConditionsXML should mention .NET Framework 4.8 in error message")
+	}
+}
+
+func TestGenerateLaunchConditions_x86(t *testing.T) {
+	setup := &ir.Setup{
+		Requires: []ir.Requirement{
+			{Type: "vcredist", Version: "2022"},
+		},
+		Features: []ir.Feature{
+			{Name: "Main", Enabled: true},
+		},
+	}
+	vars := variables.New()
+	vars["PLATFORM"] = "x86"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use x86 property name
+	if !strings.Contains(output.LaunchConditionSearchXML, "VCREDIST_X86_2022") {
+		t.Error("LaunchConditionSearchXML should contain VCREDIST_X86_2022 for x86 platform")
+	}
+	if strings.Contains(output.LaunchConditionSearchXML, "VCREDIST_X64") {
+		t.Error("LaunchConditionSearchXML should NOT contain x64 for x86 platform")
+	}
+}
+
+func TestGenerateLaunchConditions_arm64(t *testing.T) {
+	setup := &ir.Setup{
+		Requires: []ir.Requirement{
+			{Type: "vcredist", Version: "2022"},
+		},
+		Features: []ir.Feature{
+			{Name: "Main", Enabled: true},
+		},
+	}
+	vars := variables.New()
+	vars["PLATFORM"] = "arm64"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use arm64 property name and registry key
+	if !strings.Contains(output.LaunchConditionSearchXML, "VCREDIST_ARM64_2022") {
+		t.Error("LaunchConditionSearchXML should contain VCREDIST_ARM64_2022 for arm64 platform")
+	}
+	if !strings.Contains(output.LaunchConditionSearchXML, "Runtimes\\arm64") {
+		t.Error("LaunchConditionSearchXML should reference arm64 registry key")
+	}
+}
+
+func TestGenerateLaunchConditions_NoRequirements(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{Name: "Main", Enabled: true},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should be empty when no requirements
+	if output.LaunchConditionSearchXML != "" {
+		t.Errorf("LaunchConditionSearchXML should be empty, got: %s", output.LaunchConditionSearchXML)
+	}
+	if output.LaunchConditionsXML != "" {
+		t.Errorf("LaunchConditionsXML should be empty, got: %s", output.LaunchConditionsXML)
+	}
+}

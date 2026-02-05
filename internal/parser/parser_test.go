@@ -646,6 +646,163 @@ func TestItemOrderPreservation(t *testing.T) {
 	}
 }
 
+func TestParseRequires(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <set name="PRODUCT_NAME" value="Test"/>
+    <requires type="vcredist" version="2022"/>
+    <requires type="netfx" version="4.8"/>
+    <feature name="Main">
+        <files source="C:\src" target="[INSTALLDIR]dest"/>
+    </feature>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if len(setup.Requires) != 2 {
+		t.Fatalf("expected 2 requirements, got %d", len(setup.Requires))
+	}
+
+	// Check first requirement
+	if setup.Requires[0].Type != "vcredist" {
+		t.Errorf("expected 'vcredist', got %s", setup.Requires[0].Type)
+	}
+	if setup.Requires[0].Version != "2022" {
+		t.Errorf("expected '2022', got %s", setup.Requires[0].Version)
+	}
+
+	// Check second requirement
+	if setup.Requires[1].Type != "netfx" {
+		t.Errorf("expected 'netfx', got %s", setup.Requires[1].Type)
+	}
+	if setup.Requires[1].Version != "4.8" {
+		t.Errorf("expected '4.8', got %s", setup.Requires[1].Version)
+	}
+}
+
+func TestParseRequiresWithSource(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <requires type="vcredist" version="2022" source=".\redist\vc_redist.x64.exe"/>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if len(setup.Requires) != 1 {
+		t.Fatalf("expected 1 requirement, got %d", len(setup.Requires))
+	}
+
+	req := setup.Requires[0]
+	if req.Type != "vcredist" {
+		t.Errorf("expected 'vcredist', got %s", req.Type)
+	}
+	if req.Version != "2022" {
+		t.Errorf("expected '2022', got %s", req.Version)
+	}
+	if req.Source != ".\\redist\\vc_redist.x64.exe" {
+		t.Errorf("expected '.\\redist\\vc_redist.x64.exe', got %s", req.Source)
+	}
+}
+
+func TestParseRequiresSourceOnly(t *testing.T) {
+	// User can provide just source without version for custom prereqs
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <requires type="custom" source=".\prereqs\custom.exe"/>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if len(setup.Requires) != 1 {
+		t.Fatalf("expected 1 requirement, got %d", len(setup.Requires))
+	}
+
+	req := setup.Requires[0]
+	if req.Type != "custom" {
+		t.Errorf("expected 'custom', got %s", req.Type)
+	}
+	if req.Version != "" {
+		t.Errorf("expected empty version, got %s", req.Version)
+	}
+	if req.Source != ".\\prereqs\\custom.exe" {
+		t.Errorf("expected '.\\prereqs\\custom.exe', got %s", req.Source)
+	}
+}
+
+func TestParseRequiresTypeNormalization(t *testing.T) {
+	// Type should be normalized to lowercase
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <requires type="VCRedist" version="2022"/>
+    <requires type="NETFX" version="4.8"/>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if len(setup.Requires) != 2 {
+		t.Fatalf("expected 2 requirements, got %d", len(setup.Requires))
+	}
+
+	// Types should be lowercase
+	if setup.Requires[0].Type != "vcredist" {
+		t.Errorf("expected 'vcredist' (lowercase), got %s", setup.Requires[0].Type)
+	}
+	if setup.Requires[1].Type != "netfx" {
+		t.Errorf("expected 'netfx' (lowercase), got %s", setup.Requires[1].Type)
+	}
+}
+
+func TestParseRequiresValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		xml     string
+		wantErr string
+	}{
+		{
+			name: "requires missing type",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><requires version="2022"/></setup>`,
+			wantErr: "requires 'type' attribute",
+		},
+		{
+			name: "requires missing version and source",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><requires type="vcredist"/></setup>`,
+			wantErr: "requires 'version' or 'source' attribute",
+		},
+		{
+			name: "requires unknown attribute",
+			xml: `<?xml version="1.0" encoding="utf-8"?>
+<setup><requires type="vcredist" version="2022" bogus="value"/></setup>`,
+			wantErr: "unknown attribute",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseBytes([]byte(tt.xml))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("expected error containing %q, got %q", tt.wantErr, err.Error())
+			}
+		})
+	}
+}
+
 func TestParseNg1BmoExample(t *testing.T) {
 	// Test parsing the actual production example
 	setup, err := Parse("../../../production-examples/ng1-bmo/installer.msis")

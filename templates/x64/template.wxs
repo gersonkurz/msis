@@ -7,6 +7,7 @@
         {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
         {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}
         <util:QueryWindowsWellKnownSIDs />
+{{{LAUNCH_CONDITION_SEARCHES}}}
 		{{#if USE_INSTALLER_HOOKS}}<Binary Id="binary.dll" SourceFile="x64/{{DLL_ENTRY}}" />{{/if}}
         {{#if SETUP_ICON }}
         <Icon Id="ngbt_setup_icon.ico" SourceFile="{{SETUP_ICON}}" />
@@ -35,6 +36,7 @@
         <Launch Condition="NOT OLDPRODUCTISINSTALLED OR Installed" Message="older version of ProAKT cannot be upgraded" />
         {{/unless}}
         {{/if}}
+{{{LAUNCH_CONDITIONS}}}
 		{{#if INCLUDE_VCREDIST}}
 		<DirectoryRef Id="INSTALLDIR">
 			<Merge Id="VCRedist_141" SourceFile="mergemodules/Microsoft_VC141_CRT_x64.msm" DiskId="1" Language="0" />

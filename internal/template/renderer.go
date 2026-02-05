@@ -194,6 +194,8 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["CUSTOM_ACTIONS"] = r.buildCustomActions()
 	ctx["INSTALL_EXECUTE_SEQUENCE"] = r.buildInstallExecuteSequence()
 	ctx["REMOVE_ON_UNINSTALL"] = r.GeneratedData.RemoveOnUninstallXML
+	ctx["LAUNCH_CONDITION_SEARCHES"] = r.GeneratedData.LaunchConditionSearchXML
+	ctx["LAUNCH_CONDITIONS"] = r.GeneratedData.LaunchConditionsXML
 
 	// Add boolean flags for conditional rendering
 	ctx["SETUP_ICON"] = r.Variables["SETUP_ICON"]
@@ -207,7 +209,8 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["START_EXE"] = r.Variables["START_EXE"]
 	ctx["SCHEDULE_REBOOT"] = r.Variables.GetBool("SCHEDULE_REBOOT")
 	ctx["USE_INSTALLER_HOOKS"] = r.Variables.GetBool("USE_INSTALLER_HOOKS")
-	ctx["INCLUDE_VCREDIST"] = r.Variables.GetBool("INCLUDE_VCREDIST")
+	// Note: INCLUDE_VCREDIST is deprecated. Use <requires type="vcredist" version="..."/> instead.
+	// Variable is no longer passed to templates; deprecation warning is shown by variables.CheckDeprecated()
 
 	return ctx
 }

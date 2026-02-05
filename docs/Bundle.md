@@ -14,6 +14,31 @@ Use bundles when you need to:
 
 For single-platform, no-prerequisites scenarios, a regular MSI is simpler and preferred.
 
+**Why bundles instead of MSI custom actions?**  
+MSI is not designed to install other installers (MSI/EXE) via custom actions. Doing so is unreliable, breaks rollback, and is often blocked by enterprise policy. The supported, robust approach is a WiX Bundle (Burn): prerequisites first, then the MSI.
+
+## Auto-Bundling with `<requires>`
+
+**New in 3.x:** For simple prerequisite scenarios, use `<requires>` at the setup level instead of explicitly declaring a bundle:
+
+```xml
+<setup>
+  <set name="PRODUCT_NAME" value="MyApp"/>
+  <requires type="vcredist" version="2022"/>
+  <feature name="MyApp">
+    <files source="bin" target="INSTALLDIR"/>
+  </feature>
+</setup>
+```
+
+When you build with `/BUILD`, MSIS automatically:
+1. Generates the MSI with launch conditions
+2. Creates a bundle wrapper that installs prerequisites first
+
+Use `/STANDALONE` to skip auto-bundling and generate only the MSI with launch conditions.
+
+See [Prerequisites.md](Prerequisites.md) for complete documentation on the `<requires>` element.
+
 ## Basic Bundle Syntax
 
 ### Legacy Shorthand (Simple Multi-Arch)
@@ -58,10 +83,14 @@ For more control, use nested elements:
 
 msis-3.x has built-in support for common prerequisites:
 
-| Type | Versions | Description |
-|------|----------|-------------|
-| `vcredist` | 2022, 2019, 2017, 2015 | Visual C++ Redistributable |
-| `netfx` | 4.8.1, 4.8, 4.7.2, 4.7.1, 4.7, 4.6.2 | .NET Framework |
+| Type | Versions | Auto-Download |
+|------|----------|---------------|
+| `vcredist` | 2022, 2019 | ✅ Yes |
+| `vcredist` | 2017, 2015 | ❌ No (provide `source`) |
+| `netfx` | 4.8.1, 4.8, 4.7.2 | ✅ Yes |
+| `netfx` | 4.7.1, 4.7, 4.6.2 | ❌ No (provide `source`) |
+
+Versions with auto-download are fetched from official Microsoft URLs and cached locally. Other versions require a `source` attribute pointing to the installer file.
 
 Example:
 ```xml
@@ -69,9 +98,20 @@ Example:
 <prerequisite type="netfx" version="4.8"/>
 ```
 
-### Prerequisite Files
+For versions without auto-download:
+```xml
+<prerequisite type="vcredist" version="2015" source="prereqs/vc_redist.x64.exe"/>
+```
 
-By default, msis looks for prerequisite installers in a `prerequisites` folder relative to your .msis file:
+### Automatic Prerequisite Downloads
+
+**New in 3.x:** MSIS automatically downloads prerequisite installers from official Microsoft sources and caches them in `%LOCALAPPDATA%\msis\prerequisites\`. This means you don't need to manually download or include prerequisite installers.
+
+First build downloads prerequisites; subsequent builds use the cache.
+
+### Manual Prerequisite Files (Legacy)
+
+If you prefer to manage prerequisite files manually, place them in a `prerequisites` folder:
 
 ```
 myapp/
@@ -144,8 +184,14 @@ Attributes:
 | `UPGRADE_CODE` | Bundle upgrade code (GUID) | Required |
 | `LICENSE_URL` | URL to license agreement | Required for UI bundle |
 | `LOGO_BOOTSTRAP` | Logo image for bootstrapper UI | `{LOGO_PREFIX}_LogoBootstrap.bmp` |
-| `LOGO_PREFIX` | Prefix for default logo files | `NGBT` |
+| `LOGO_PREFIX` | Prefix for default logo files | Empty (uses WiX defaults) |
 | `PREREQUISITES_FOLDER` | Path to prerequisite installers | `./prerequisites` |
+
+**Logo customization example:**
+```xml
+<set name="LOGO_PREFIX" value="MyCompany"/>
+<!-- Uses MyCompany_LogoBootstrap.bmp, MyCompany_WixUIBanner.bmp, etc. -->
+```
 
 ## Output
 
