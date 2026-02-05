@@ -130,6 +130,65 @@ project/
       MyCompany_WixUiDialog.bmp
 ```
 
+## Installer UI Options
+
+The standard MSI templates support optional dialogs for license agreement and install directory selection.
+
+### UI Variables
+
+| Variable | Purpose | Value |
+|----------|---------|-------|
+| `LICENSE_FILE` | Show license agreement dialog | Path to RTF file |
+| `INSTALL_DIR_DIALOG` | Show install directory selection dialog | `true` to enable |
+
+### Dialog Flow
+
+The installer dialog sequence depends on which options are enabled:
+
+| LICENSE_FILE | INSTALL_DIR_DIALOG | Dialog Flow |
+|--------------|-------------------|-------------|
+| No | No | Welcome → Features → Ready → Install |
+| No | Yes | Welcome → **Install Dir** → Features → Ready → Install |
+| Yes | No | Welcome → **License** → Features → Ready → Install |
+| Yes | Yes | Welcome → **License** → **Install Dir** → Features → Ready → Install |
+
+### Example: Full UI with License and Directory Selection
+
+```xml
+<setup>
+  <set name="PRODUCT_NAME" value="MyApp"/>
+  <set name="PRODUCT_VERSION" value="1.0.0"/>
+  <set name="MANUFACTURER" value="My Company"/>
+  <set name="UPGRADE_CODE" value="{GUID}"/>
+  <set name="INSTALL_FOLDER" value="MyCompany\MyApp"/>
+
+  <!-- Show license agreement (RTF format required) -->
+  <set name="LICENSE_FILE" value="license.rtf"/>
+
+  <!-- Allow user to change install location -->
+  <set name="INSTALL_DIR_DIALOG" value="true"/>
+
+  <feature name="Main">
+    <files source="bin\*" target="[INSTALLDIR]"/>
+  </feature>
+</setup>
+```
+
+### License File Requirements
+
+- Must be RTF (Rich Text Format) - not TXT, DOC, or PDF
+- Place in your project folder or a bind path location
+- The dialog shows "I accept the terms" checkbox; user must accept to proceed
+
+### Install Directory Dialog
+
+When enabled, users can:
+- See the default installation path
+- Click "Change..." to browse for a different location
+- The selected path is used for all `[INSTALLDIR]` targets
+
+**Note**: The install directory dialog only affects `INSTALLDIR`. Files targeting other roots (like `APPDATADIR`) are not affected by this selection.
+
 ## Custom Templates Folder
 
 The `custom/` folder (in templates or `%LOCALAPPDATA%\msis\custom`) is for user overrides. It's searched first, so files here take precedence.
@@ -179,6 +238,10 @@ Templates use Handlebars syntax. Key variables available:
 - `{{LOGO_BANNER}}` - Path to banner image
 - `{{LOGO_DIALOG}}` - Path to dialog image
 - `{{LOGO_BOOTSTRAP}}` - Path to bootstrap image
+
+### UI Options (if set)
+- `{{LICENSE_FILE}}` - Path to RTF license file (enables license dialog)
+- `{{INSTALL_DIR_DIALOG}}` - Set to `true` to enable install directory dialog
 
 ## Creating Custom Templates
 

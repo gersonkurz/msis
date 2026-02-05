@@ -635,9 +635,10 @@ Here's a complete example for a real-world application:
   <set name="UPGRADE_CODE" value="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"/>
 
   <!-- Installation options -->
-  <set name="INSTALLDIR" value="Acme\ProductivitySuite"/>
+  <set name="INSTALL_FOLDER" value="Acme\ProductivitySuite"/>
   <set name="ADD_TO_PATH" value="true"/>
   <set name="LICENSE_FILE" value="license.rtf"/>
+  <set name="INSTALL_DIR_DIALOG" value="true"/>
   <set name="SETUP_ICON" value="app.ico"/>
 
   <!-- Main application -->

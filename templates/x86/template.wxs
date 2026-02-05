@@ -6,6 +6,7 @@
         <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed. Setup will now exit." />
         {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
         {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}
+        {{#if LICENSE_FILE}}<WixVariable Id="WixUILicenseRtf" Value="{{LICENSE_FILE}}" />{{/if}}
         <util:QueryWindowsWellKnownSIDs />
 {{{LAUNCH_CONDITION_SEARCHES}}}
 		{{#if USE_INSTALLER_HOOKS}}<Binary Id="binary.dll" SourceFile="x86/{{DLL_ENTRY}}" />{{/if}}
@@ -50,6 +51,9 @@
         </Feature>
 		{{/if}}
         <Property Id="WIXUI_FEATURETREENOLICENSE" Value="INSTALLDIR" />
+        {{#if INSTALL_DIR_DIALOG}}
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+        {{/if}}
         {{{FEATURES}}}
         <UI Id="WixUI_FeatureTreeNoLicense">
             <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
@@ -65,14 +69,62 @@
             <DialogRef Id="ProgressDlg" />
             <DialogRef Id="ResumeDlg" />
             <DialogRef Id="UserExit" />
+            {{#if INSTALL_DIR_DIALOG}}
+            <DialogRef Id="InstallDirDlg" />
+            {{/if}}
+            {{#if LICENSE_FILE}}
+            <DialogRef Id="LicenseAgreementDlg" />
+            {{/if}}
             {{#if START_EXE}}
             <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
             {{/if}}
             <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+
+            <!-- Dialog flow for new install (NOT Installed) -->
+            <!-- Flow: Welcome -> [License] -> [InstallDir] -> Customize -> Verify -->
+
+            {{#if LICENSE_FILE}}
+            {{#if INSTALL_DIR_DIALOG}}
+            <!-- Both license and install dir: Welcome -> License -> InstallDir -> Customize -->
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
+            <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+            <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" />
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="2" />
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" />
+            {{/if}}
+            {{#unless INSTALL_DIR_DIALOG}}
+            <!-- License only: Welcome -> License -> Customize -->
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
+            <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+            <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT Installed" />
+            {{/unless}}
+            {{/if}}
+
+            {{#unless LICENSE_FILE}}
+            {{#if INSTALL_DIR_DIALOG}}
+            <!-- Install dir only: Welcome -> InstallDir -> Customize -->
+            <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" />
+            <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
+            <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Order="2" />
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
+            <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" Condition="NOT Installed" />
+            {{/if}}
+            {{#unless INSTALL_DIR_DIALOG}}
+            <!-- Neither: Welcome -> Customize -->
             <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="CustomizeDlg" Condition="NOT Installed" />
+            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="NOT Installed" />
+            {{/unless}}
+            {{/unless}}
+
             <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="Installed AND PATCH" />
             <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="1" Condition="Installed" />
-            <Publish Dialog="CustomizeDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
             <Publish Dialog="CustomizeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="CustomizeDlg" Order="1" Condition="NOT Installed OR WixUI_InstallMode = &quot;Change&quot;" />
             <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />

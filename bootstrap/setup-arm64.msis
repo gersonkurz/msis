@@ -13,6 +13,9 @@
   <set name="PLATFORM" value="arm64"/>
   <set name="BUILD_TARGET" value="dist\msis-{{PRODUCT_VERSION}}-arm64.msi"/>
 
+  <!-- Allow user to select install folder -->
+  <set name="INSTALL_DIR_DIALOG" value="true"/>
+
   <!-- Install folder name (under Program Files) -->
   <set name="INSTALLDIR" value="MSIS"/>
 
