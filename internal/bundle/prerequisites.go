@@ -1,6 +1,11 @@
 // Package bundle provides WiX Bundle (bootstrapper) generation.
 package bundle
 
+import (
+	"fmt"
+	"strings"
+)
+
 // PrerequisiteDef defines a well-known prerequisite package.
 type PrerequisiteDef struct {
 	// DisplayName shown in bootstrapper UI
@@ -123,6 +128,28 @@ func LookupPrerequisite(prereqType, version string) *PrerequisiteDef {
 		}
 	}
 	return nil
+}
+
+// ValidatePrerequisite checks if a prerequisite type/version is known.
+// Returns an error with helpful message if invalid.
+func ValidatePrerequisite(prereqType, version string) error {
+	if versions, ok := Prerequisites[prereqType]; ok {
+		if _, ok := versions[version]; ok {
+			return nil // Valid
+		}
+		// Type exists but version doesn't
+		var available []string
+		for v := range versions {
+			available = append(available, v)
+		}
+		return fmt.Errorf("unknown %s version '%s'; available versions: %s", prereqType, version, strings.Join(available, ", "))
+	}
+	// Unknown type
+	var types []string
+	for t := range Prerequisites {
+		types = append(types, t)
+	}
+	return fmt.Errorf("unknown prerequisite type '%s'; available types: %s", prereqType, strings.Join(types, ", "))
 }
 
 // ExpandArch replaces {arch} placeholder with x64 or x86.

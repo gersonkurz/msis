@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
@@ -160,7 +161,7 @@ func (b *Builder) runWixBuild() error {
 	args = append(args, "-o", absOutputFile)
 
 	wixPath := GetWixPath()
-	fmt.Printf("  Running: %s %s\n", wixPath, strings.Join(args, " "))
+	fmt.Printf("  Running: %s %s\n", cli.Filename(wixPath), strings.Join(args, " "))
 
 	cmd := exec.Command(wixPath, args...)
 	cmd.Dir = workDir
@@ -353,7 +354,7 @@ func (b *BundleBuilder) runWixBuild() error {
 	args = append(args, "-o", absOutputFile)
 
 	wixPath := GetWixPath()
-	fmt.Printf("  Running: %s %s\n", wixPath, strings.Join(args, " "))
+	fmt.Printf("  Running: %s %s\n", cli.Filename(wixPath), strings.Join(args, " "))
 
 	cmd := exec.Command(wixPath, args...)
 	cmd.Dir = workDir

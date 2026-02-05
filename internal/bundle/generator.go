@@ -620,16 +620,41 @@ func (g *AutoBundleGenerator) Generate() (*GeneratedBundle, error) {
 }
 
 // RequirementsToPrerequisites converts ir.Requirement slice to ir.Prerequisite slice.
-func RequirementsToPrerequisites(requirements []ir.Requirement) []ir.Prerequisite {
+// Returns an error if any requirement has an unknown type/version (unless custom source provided).
+func RequirementsToPrerequisites(requirements []ir.Requirement) ([]ir.Prerequisite, error) {
 	prereqs := make([]ir.Prerequisite, len(requirements))
 	for i, req := range requirements {
+		// Normalize version (map newer years to current)
+		version := normalizePrerequisiteVersion(req.Type, req.Version)
+
+		// Validate unless custom source is provided
+		if req.Source == "" {
+			if err := ValidatePrerequisite(req.Type, version); err != nil {
+				return nil, err
+			}
+		}
+
 		prereqs[i] = ir.Prerequisite{
 			Type:    req.Type,
-			Version: req.Version,
+			Version: version,
 			Source:  req.Source,
 		}
 	}
-	return prereqs
+	return prereqs, nil
+}
+
+// normalizePrerequisiteVersion maps version aliases to canonical versions.
+// For vcredist, versions 2023-2026 map to 2022 (the current latest redistributable).
+func normalizePrerequisiteVersion(prereqType, version string) string {
+	if prereqType == "vcredist" {
+		// Microsoft's VC++ 14.x redistributable covers VS 2015-2026
+		// The "2022" redistributable is the current latest
+		switch version {
+		case "2023", "2024", "2025", "2026":
+			return "2022"
+		}
+	}
+	return version
 }
 
 // sanitizeID converts a string to a valid WiX identifier.

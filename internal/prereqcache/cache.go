@@ -163,7 +163,7 @@ func (c *Cache) EnsurePrerequisite(prereqType, version, arch, customSource strin
 	// Look up download URL
 	urlInfo := LookupDownloadURL(prereqType, version, arch)
 	if urlInfo == nil {
-		return "", fmt.Errorf("no download URL for %s %s (%s)", prereqType, version, arch)
+		return "", fmt.Errorf("no download URL for %s %s (%s); %s", prereqType, version, arch, getAvailableVersionsHint(prereqType))
 	}
 
 	// Create cache subdirectory
@@ -215,6 +215,22 @@ func LookupDownloadURL(prereqType, version, arch string) *PrerequisiteURL {
 		}
 	}
 	return nil
+}
+
+// getAvailableVersionsHint returns a hint about available versions for error messages.
+func getAvailableVersionsHint(prereqType string) string {
+	if versions, ok := DownloadURLs[prereqType]; ok {
+		var available []string
+		for v := range versions {
+			available = append(available, v)
+		}
+		return fmt.Sprintf("available %s versions with auto-download: %s", prereqType, strings.Join(available, ", "))
+	}
+	var types []string
+	for t := range DownloadURLs {
+		types = append(types, t)
+	}
+	return fmt.Sprintf("unknown type '%s'; available types: %s", prereqType, strings.Join(types, ", "))
 }
 
 // getExpectedFileName returns the expected file name for a cached prerequisite.

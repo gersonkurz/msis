@@ -4,6 +4,7 @@ version := "3.0.0"
 binary := "msis"
 cmd_path := "./cmd/msis"
 bootstrap_dir := "bootstrap"
+build_time := `date -u +"%Y-%m-%d %H:%M:%S UTC"`
 
 # Default recipe: show available commands
 default:
@@ -11,19 +12,29 @@ default:
 
 # Build for current platform
 build:
-    go build -ldflags "-s -w -X main.Version={{version}}" -o {{binary}}{{ext}} {{cmd_path}}
+    go build -ldflags "-s -w -X main.Version={{version}} -X 'main.BuildTime={{build_time}}'" -o {{binary}}{{ext}} {{cmd_path}}
+    @just _install-if-exists
+
+# Copy to Program Files if installed (requires elevation on Windows)
+[windows]
+_install-if-exists:
+    @if [ -d "/c/Program Files/MSIS" ]; then cp {{binary}}.exe "/c/Program Files/MSIS/msis.exe" && echo "Updated installed version at C:\\Program Files\\MSIS\\msis.exe"; fi
+
+[unix]
+_install-if-exists:
+    @echo "Install location check skipped (not Windows)"
 
 # Build for Windows x64 (amd64)
 build-windows-x64:
-    GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-x64.exe {{cmd_path}}
+    GOOS=windows GOARCH=amd64 go build -ldflags "-s -w -X main.Version={{version}} -X 'main.BuildTime={{build_time}}'" -o {{bootstrap_dir}}/{{binary}}-x64.exe {{cmd_path}}
 
 # Build for Windows x86 (32-bit)
 build-windows-x86:
-    GOOS=windows GOARCH=386 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-x86.exe {{cmd_path}}
+    GOOS=windows GOARCH=386 go build -ldflags "-s -w -X main.Version={{version}} -X 'main.BuildTime={{build_time}}'" -o {{bootstrap_dir}}/{{binary}}-x86.exe {{cmd_path}}
 
 # Build for Windows ARM64
 build-windows-arm64:
-    GOOS=windows GOARCH=arm64 go build -ldflags "-s -w -X main.Version={{version}}" -o {{bootstrap_dir}}/{{binary}}-arm64.exe {{cmd_path}}
+    GOOS=windows GOARCH=arm64 go build -ldflags "-s -w -X main.Version={{version}} -X 'main.BuildTime={{build_time}}'" -o {{bootstrap_dir}}/{{binary}}-arm64.exe {{cmd_path}}
 
 # Build all Windows targets (x64 + x86 + arm64)
 build-all: build-windows-x64 build-windows-x86 build-windows-arm64

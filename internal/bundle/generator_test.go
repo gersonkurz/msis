@@ -334,7 +334,10 @@ func TestRequirementsToPrerequisites(t *testing.T) {
 		{Type: "netfx", Version: "4.8", Source: "custom.exe"},
 	}
 
-	prereqs := RequirementsToPrerequisites(requirements)
+	prereqs, err := RequirementsToPrerequisites(requirements)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(prereqs) != 2 {
 		t.Fatalf("expected 2 prerequisites, got %d", len(prereqs))
@@ -345,6 +348,49 @@ func TestRequirementsToPrerequisites(t *testing.T) {
 	}
 	if prereqs[1].Type != "netfx" || prereqs[1].Version != "4.8" || prereqs[1].Source != "custom.exe" {
 		t.Error("second prerequisite should be netfx 4.8 with custom source")
+	}
+}
+
+func TestRequirementsToPrerequisitesVersionNormalization(t *testing.T) {
+	// Versions 2023-2026 should normalize to 2022
+	requirements := []ir.Requirement{
+		{Type: "vcredist", Version: "2026"},
+	}
+
+	prereqs, err := RequirementsToPrerequisites(requirements)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if prereqs[0].Version != "2022" {
+		t.Errorf("expected vcredist 2026 to normalize to 2022, got %s", prereqs[0].Version)
+	}
+}
+
+func TestRequirementsToPrerequisitesValidation(t *testing.T) {
+	// Unknown version without custom source should fail
+	requirements := []ir.Requirement{
+		{Type: "vcredist", Version: "9999"},
+	}
+
+	_, err := RequirementsToPrerequisites(requirements)
+	if err == nil {
+		t.Error("expected error for unknown version")
+	}
+	if !strings.Contains(err.Error(), "available versions") {
+		t.Errorf("error should mention available versions: %v", err)
+	}
+
+	// Custom source should bypass validation
+	requirements = []ir.Requirement{
+		{Type: "vcredist", Version: "9999", Source: "custom.exe"},
+	}
+	prereqs, err := RequirementsToPrerequisites(requirements)
+	if err != nil {
+		t.Fatalf("custom source should bypass validation: %v", err)
+	}
+	if prereqs[0].Version != "9999" {
+		t.Error("custom source should preserve original version")
 	}
 }
 
@@ -417,6 +463,27 @@ func TestAutoBundleGeneratorWithCachedPaths(t *testing.T) {
 
 	// Simulate cached paths
 	gen.CachedPaths["vcredist/2022/x64"] = "/cache/vc_redist.x64.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use cached paths (default platform is x64, so only x64 included)
+	if !strings.Contains(result.ChainXML, "/cache/vc_redist.x64.exe") {
+		t.Error("expected cached x64 path")
+	}
+}
+
+func TestAutoBundleGeneratorWithCachedPathsX86(t *testing.T) {
+	prereqs := []ir.Prerequisite{
+		{Type: "vcredist", Version: "2022"},
+	}
+	vars := variables.New()
+	vars["PLATFORM"] = "x86"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi", prereqs)
+
+	// Simulate cached paths
 	gen.CachedPaths["vcredist/2022/x86"] = "/cache/vc_redist.x86.exe"
 
 	result, err := gen.Generate()
@@ -424,10 +491,7 @@ func TestAutoBundleGeneratorWithCachedPaths(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	// Should use cached paths
-	if !strings.Contains(result.ChainXML, "/cache/vc_redist.x64.exe") {
-		t.Error("expected cached x64 path")
-	}
+	// Should use cached paths (x86 platform)
 	if !strings.Contains(result.ChainXML, "/cache/vc_redist.x86.exe") {
 		t.Error("expected cached x86 path")
 	}

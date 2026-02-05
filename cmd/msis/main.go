@@ -22,8 +22,9 @@ import (
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
-// Version is set via ldflags at build time
+// Version and BuildTime are set via ldflags at build time
 var Version = "3.0.0-dev"
+var BuildTime = ""
 
 type cliArgs struct {
 	build           bool
@@ -235,8 +236,11 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs) error {
 	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
 
-	// Convert requirements to prerequisites
-	prereqs := bundle.RequirementsToPrerequisites(setup.Requires)
+	// Convert and validate requirements
+	prereqs, err := bundle.RequirementsToPrerequisites(setup.Requires)
+	if err != nil {
+		return fmt.Errorf("invalid requirement: %w", err)
+	}
 
 	// Generate bundle chain
 	gen := bundle.NewAutoBundleGenerator(vars, workDir, msiPath, prereqs)
@@ -586,67 +590,71 @@ func getDefaultCustomTemplates() string {
 }
 
 func printUsage() {
-	fmt.Printf("MSIS - Version %s\n", Version)
+	fmt.Printf("MSIS - Version %s\n", cli.Bold(Version))
 	fmt.Printf("MSI-Simplified installer generator [%s/%s]\n", runtime.GOOS, runtime.GOARCH)
-	fmt.Printf("Freeware written by Gerson Kurz (http://p-nand-q.com)\n")
+	fmt.Printf("Freeware written by Gerson Kurz (%s)\n", cli.Info("http://p-nand-q.com"))
 	fmt.Println()
-	fmt.Println("Usage: msis [OPTIONS] FILE [FILE...]")
+	fmt.Printf("Usage: %s [OPTIONS] FILE [FILE...]\n", cli.Bold("msis"))
 	fmt.Println()
-	fmt.Println("Options:")
-	fmt.Println("  /BUILD              Run WiX build tools automatically")
-	fmt.Println("  /RETAINWXS          Retain WXS file after build")
-	fmt.Println("  /TEMPLATE:NAME      Custom template to use")
-	fmt.Println("  /TEMPLATEFOLDER:PATH   Base template folder (public defaults)")
-	fmt.Println("  /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)")
-	fmt.Println("  /DRY-RUN            Parse and validate only, no output")
-	fmt.Println("  /STANDALONE         Skip auto-bundling, use launch conditions only")
-	fmt.Println("  /NO-COLOR           Disable colored output")
-	fmt.Println("  /STATUS             Show configuration status")
-	fmt.Println("  /?, /HELP           Show this help message")
+	fmt.Println(cli.Bold("Options:"))
+	fmt.Printf("  %s              Run WiX build tools automatically\n", cli.Info("/BUILD"))
+	fmt.Printf("  %s          Retain WXS file after build\n", cli.Info("/RETAINWXS"))
+	fmt.Printf("  %s      Custom template to use\n", cli.Info("/TEMPLATE:NAME"))
+	fmt.Printf("  %s   Base template folder (public defaults)\n", cli.Info("/TEMPLATEFOLDER:PATH"))
+	fmt.Printf("  %s  Overlay folder for private assets (takes precedence)\n", cli.Info("/CUSTOMTEMPLATES:PATH"))
+	fmt.Printf("  %s            Parse and validate only, no output\n", cli.Info("/DRY-RUN"))
+	fmt.Printf("  %s         Skip auto-bundling, use launch conditions only\n", cli.Info("/STANDALONE"))
+	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
+	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
+	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
-	fmt.Println("Template folder search order:")
+	fmt.Println(cli.Bold("Template folder search order:"))
 	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
 	fmt.Println("  2. <executable-dir>\\templates (portable)")
 	fmt.Println("  3. .\\templates (current directory)")
 	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  msis setup.msis                          Generate .wxs file")
-	fmt.Println("  msis /BUILD setup.msis                   Generate and build MSI")
-	fmt.Println("  msis /BUILD /RETAINWXS setup.msis        Build and keep .wxs")
-	fmt.Println("  msis /BUILD /STANDALONE setup.msis       Build MSI only (no auto-bundle)")
-	fmt.Println("  msis /TEMPLATEFOLDER:templates /BUILD setup.msis")
-	fmt.Println("  msis /DRY-RUN setup.msis                 Validate only")
+	fmt.Println(cli.Bold("Examples:"))
+	fmt.Printf("  %s                          Generate .wxs file\n", cli.Filename("msis setup.msis"))
+	fmt.Printf("  %s                   Generate and build MSI\n", cli.Filename("msis /BUILD setup.msis"))
+	fmt.Printf("  %s        Build and keep .wxs\n", cli.Filename("msis /BUILD /RETAINWXS setup.msis"))
+	fmt.Printf("  %s       Build MSI only (no auto-bundle)\n", cli.Filename("msis /BUILD /STANDALONE setup.msis"))
+	fmt.Printf("  %s\n", cli.Filename("msis /TEMPLATEFOLDER:templates /BUILD setup.msis"))
+	fmt.Printf("  %s                 Validate only\n", cli.Filename("msis /DRY-RUN setup.msis"))
 }
 
 func printStatus(args *cliArgs) {
-	fmt.Printf("MSIS - Version %s\n", Version)
+	if BuildTime != "" {
+		fmt.Printf("MSIS - Version %s (built %s)\n", cli.Bold(Version), cli.Info(BuildTime))
+	} else {
+		fmt.Printf("MSIS - Version %s\n", cli.Bold(Version))
+	}
 	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Println()
 
 	// Prerequisite cache information
-	fmt.Println("Prerequisite Cache:")
+	fmt.Println(cli.Bold("Prerequisite Cache:"))
 	cacheDir := prereqcache.GetDefaultCacheDir()
-	fmt.Printf("  Location: %s\n", cacheDir)
+	fmt.Printf("  Location: %s\n", cli.Filename(cacheDir))
 	if cache := prereqcache.NewCacheReadOnly(); cache != nil {
 		if cached, err := cache.ListCached(); err == nil && len(cached) > 0 {
-			fmt.Printf("  Cached files: %d\n", len(cached))
+			fmt.Printf("  Cached files: %s\n", cli.Number(fmt.Sprintf("%d", len(cached))))
 			for _, f := range cached {
-				fmt.Printf("    - %s\n", f)
+				fmt.Printf("    - %s\n", cli.Filename(f))
 			}
 		} else {
-			fmt.Println("  Cached files: (none)")
+			fmt.Printf("  Cached files: %s\n", cli.Info("(none)"))
 		}
 	} else {
-		fmt.Println("  Cached files: (cache directory not created yet)")
+		fmt.Printf("  Cached files: %s\n", cli.Info("(cache directory not created yet)"))
 	}
 	fmt.Println()
 
 	// WiX information
-	fmt.Println("WiX Toolset:")
+	fmt.Println(cli.Bold("WiX Toolset:"))
 	wixPath := wix.GetWixPath()
 	if wix.IsWixAvailable() {
-		fmt.Printf("  Location: %s\n", wixPath)
-		fmt.Printf("  Version:  %s\n", wix.GetWixVersion())
+		fmt.Printf("  Location: %s\n", cli.Filename(wixPath))
+		fmt.Printf("  Version:  %s\n", cli.Success(wix.GetWixVersion()))
 
 		// Show installed extensions
 		extensions := wix.GetInstalledExtensions()
@@ -657,24 +665,24 @@ func printStatus(args *cliArgs) {
 			}
 		}
 	} else {
-		fmt.Printf("  Location: (not found)\n")
-		fmt.Println("  Install with: dotnet tool install --global wix")
+		fmt.Printf("  Location: %s\n", cli.Warning("(not found)"))
+		fmt.Printf("  Install with: %s\n", cli.Info("dotnet tool install --global wix"))
 	}
 	fmt.Println()
 
 	// Template folders
-	fmt.Println("Template Folders:")
+	fmt.Println(cli.Bold("Template Folders:"))
 
 	// Determine effective template folder
 	templateFolder := args.templateFolder
 	if templateFolder == "" {
 		templateFolder = getDefaultTemplateFolder()
 	}
-	fmt.Printf("  Base templates: %s", templateFolder)
 	if _, err := os.Stat(templateFolder); err != nil {
-		fmt.Print(" (not found)")
+		fmt.Printf("  Base templates: %s %s\n", cli.Filename(templateFolder), cli.Warning("(not found)"))
+	} else {
+		fmt.Printf("  Base templates: %s\n", cli.Filename(templateFolder))
 	}
-	fmt.Println()
 
 	// Custom templates
 	customTemplates := args.customTemplates
@@ -682,25 +690,25 @@ func printStatus(args *cliArgs) {
 		customTemplates = getDefaultCustomTemplates()
 	}
 	if customTemplates != "" {
-		fmt.Printf("  Custom templates: %s", customTemplates)
 		if _, err := os.Stat(customTemplates); err != nil {
-			fmt.Print(" (not found)")
+			fmt.Printf("  Custom templates: %s %s\n", cli.Filename(customTemplates), cli.Warning("(not found)"))
+		} else {
+			fmt.Printf("  Custom templates: %s\n", cli.Filename(customTemplates))
 		}
-		fmt.Println()
 	} else {
-		fmt.Println("  Custom templates: (none)")
+		fmt.Printf("  Custom templates: %s\n", cli.Info("(none)"))
 	}
 	fmt.Println()
 
 	// Show search paths
-	fmt.Println("Template Search Order:")
+	fmt.Println(cli.Bold("Template Search Order:"))
 	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
 		installedPath := filepath.Join(localAppData, "msis", "templates")
 		if _, err := os.Stat(installedPath); err == nil {
-			fmt.Printf("     -> %s (found)\n", installedPath)
+			fmt.Printf("     -> %s %s\n", cli.Filename(installedPath), cli.Success("(found)"))
 		} else {
-			fmt.Printf("     -> %s (not found)\n", installedPath)
+			fmt.Printf("     -> %s %s\n", cli.Filename(installedPath), cli.Warning("(not found)"))
 		}
 	}
 
@@ -708,17 +716,17 @@ func printStatus(args *cliArgs) {
 	if exePath, err := os.Executable(); err == nil {
 		exeTemplates := filepath.Join(filepath.Dir(exePath), "templates")
 		if _, err := os.Stat(exeTemplates); err == nil {
-			fmt.Printf("     -> %s (found)\n", exeTemplates)
+			fmt.Printf("     -> %s %s\n", cli.Filename(exeTemplates), cli.Success("(found)"))
 		} else {
-			fmt.Printf("     -> %s (not found)\n", exeTemplates)
+			fmt.Printf("     -> %s %s\n", cli.Filename(exeTemplates), cli.Warning("(not found)"))
 		}
 	}
 
 	fmt.Println("  3. .\\templates (current directory)")
 	if _, err := os.Stat("templates"); err == nil {
 		cwd, _ := os.Getwd()
-		fmt.Printf("     -> %s (found)\n", filepath.Join(cwd, "templates"))
+		fmt.Printf("     -> %s %s\n", cli.Filename(filepath.Join(cwd, "templates")), cli.Success("(found)"))
 	} else {
-		fmt.Println("     -> (not found)")
+		fmt.Printf("     -> %s\n", cli.Warning("(not found)"))
 	}
 }
