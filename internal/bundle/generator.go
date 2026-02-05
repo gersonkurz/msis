@@ -362,9 +362,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("resolving MSI source: %w", err)
 			}
-			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s'>\n"+
-				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-				"      </MsiPackage>\n",
+			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s' bal:DisplayInternalUICondition='1'/>\n",
 				escapeXMLAttr(source)))
 		} else {
 			// Platform-specific MSIs
@@ -374,9 +372,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 					return "", fmt.Errorf("resolving MSI source_arm64: %w", err)
 				}
 				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_arm64' SourceFile='%s' "+
-					"InstallCondition='NativeMachine = 43620'>\n"+
-					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-					"      </MsiPackage>\n",
+					"InstallCondition='NativeMachine = 43620' bal:DisplayInternalUICondition='1'/>\n",
 					escapeXMLAttr(source)))
 			}
 			if bundle.MSI.Source64bit != "" {
@@ -390,9 +386,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 					condition = "VersionNT64 AND NOT NativeMachine = 43620"
 				}
 				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x64' SourceFile='%s' "+
-					"InstallCondition='%s'>\n"+
-					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-					"      </MsiPackage>\n",
+					"InstallCondition='%s' bal:DisplayInternalUICondition='1'/>\n",
 					escapeXMLAttr(source), condition))
 			}
 			if bundle.MSI.Source32bit != "" {
@@ -401,9 +395,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 					return "", fmt.Errorf("resolving MSI source_32bit: %w", err)
 				}
 				sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x86' SourceFile='%s' "+
-					"InstallCondition='NOT VersionNT64'>\n"+
-					"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-					"      </MsiPackage>\n",
+					"InstallCondition='NOT VersionNT64' bal:DisplayInternalUICondition='1'/>\n",
 					escapeXMLAttr(source)))
 			}
 		}
@@ -415,9 +407,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 				return "", fmt.Errorf("resolving source_arm64: %w", err)
 			}
 			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_arm64' SourceFile='%s' "+
-				"InstallCondition='NativeMachine = 43620'>\n"+
-				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-				"      </MsiPackage>\n",
+				"InstallCondition='NativeMachine = 43620' bal:DisplayInternalUICondition='1'/>\n",
 				escapeXMLAttr(source)))
 		}
 		if bundle.Source64bit != "" {
@@ -431,9 +421,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 				condition = "VersionNT64 AND NOT NativeMachine = 43620"
 			}
 			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x64' SourceFile='%s' "+
-				"InstallCondition='%s'>\n"+
-				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-				"      </MsiPackage>\n",
+				"InstallCondition='%s' bal:DisplayInternalUICondition='1'/>\n",
 				escapeXMLAttr(source), condition))
 		}
 		if bundle.Source32bit != "" {
@@ -442,9 +430,7 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 				return "", fmt.Errorf("resolving source_32bit: %w", err)
 			}
 			sb.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage_x86' SourceFile='%s' "+
-				"InstallCondition='NOT VersionNT64'>\n"+
-				"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-				"      </MsiPackage>\n",
+				"InstallCondition='NOT VersionNT64' bal:DisplayInternalUICondition='1'/>\n",
 				escapeXMLAttr(source)))
 		}
 	} else {
@@ -609,9 +595,7 @@ func (g *AutoBundleGenerator) Generate() (*GeneratedBundle, error) {
 	}
 
 	// Generate MsiPackage for the main MSI
-	chain.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s'>\n"+
-		"        <MsiProperty Name='INSTALLDIR' Value='[InstallFolder]'/>\n"+
-		"      </MsiPackage>\n",
+	chain.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s' bal:DisplayInternalUICondition='1'/>\n",
 		escapeXMLAttr(g.MSIPath)))
 
 	return &GeneratedBundle{

@@ -50,6 +50,10 @@ type Context struct {
 	// Value is the count of files targeting this location
 	targetFileSeen map[string]int
 
+	// File source paths by installed filename (key: lowercase filename, value: source path)
+	// Used to find source paths for service executables
+	fileSourcePaths map[string]string
+
 	// Registry processor and components
 	registryProcessor  *registry.Processor
 	RegistryComponents []*registry.Component
@@ -101,6 +105,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		featureIDs:         make(map[string]string),
 		FeatureComponents:  make(map[string][]string),
 		targetFileSeen:     make(map[string]int),
+		fileSourcePaths:    make(map[string]string),
 		registryProcessor:  registry.NewProcessor(workDir),
 		RegistryComponents: make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
@@ -669,7 +674,6 @@ func (c *Context) processItem(item ir.Item, featureID string) error {
 
 func (c *Context) processFiles(files ir.Files, featureID string) error {
 	rootKey, subPath := ParseTarget(files.Target)
-	dir := c.GetOrCreateDirectory(rootKey, subPath, files.DoNotOverwrite)
 
 	// Source path as specified in .msis (relative to .msis file directory)
 	// Keep it relative so WXS paths are relative to WXS output location
@@ -684,17 +688,39 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 	// Check if source exists
 	info, err := os.Stat(absSource)
 	if err != nil {
-		// Source doesn't exist - skip silently for dry-run
+		// Source doesn't exist - still create directory structure for dry-run/testing
+		// Use full subPath since we can't determine if it's a file or directory
+		c.GetOrCreateDirectory(rootKey, subPath, files.DoNotOverwrite)
 		return nil
 	}
 
 	if info.IsDir() {
+		// Directory: subPath is always a directory path
+		dir := c.GetOrCreateDirectory(rootKey, subPath, files.DoNotOverwrite)
 		// Enumerate directory recursively
 		// Use relative source for WXS paths, absolute for file enumeration
 		return c.addDirectoryContents(dir, source, absSource, featureID, files.DoNotOverwrite)
 	} else {
-		// Single file - use relative path for WXS
-		return c.addFile(dir, source, info.Name(), featureID)
+		// Single file: check if subPath ends with a filename (rename operation)
+		// If subPath has an extension, treat it as a file rename
+		targetFileName := info.Name() // Default: use source filename
+		dirPath := subPath
+
+		if subPath != "" {
+			lastComponent := filepath.Base(subPath)
+			// Check if last component looks like a filename (has an extension)
+			if ext := filepath.Ext(lastComponent); ext != "" {
+				// It's a rename: extract directory path and target filename
+				dirPath = filepath.Dir(subPath)
+				if dirPath == "." {
+					dirPath = ""
+				}
+				targetFileName = lastComponent
+			}
+		}
+
+		dir := c.GetOrCreateDirectory(rootKey, dirPath, files.DoNotOverwrite)
+		return c.addFile(dir, source, targetFileName, featureID)
 	}
 }
 
@@ -784,6 +810,13 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	c.targetFileSeen[targetKey]++
 	occurrence := c.targetFileSeen[targetKey]
 
+	// Track source path by filename for service executable lookup
+	// First occurrence wins (in case of duplicates)
+	fileKey := strings.ToLower(fileName)
+	if _, exists := c.fileSourcePaths[fileKey]; !exists {
+		c.fileSourcePaths[fileKey] = sourcePath
+	}
+
 	// Generate ShortName only for duplicates (2nd occurrence and beyond)
 	var shortName string
 	if occurrence > 1 {
@@ -872,15 +905,35 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 
 	svcID := c.NextServiceID()
 	compID := c.NextComponentID("svc_" + svc.ServiceName)
+	fileID := c.NextFileID()
 
 	start := "auto"
 	if svc.Start != "" {
 		start = svc.Start
 	}
 
+	// Look up the source path for the service executable
+	// This allows the service to reference a file installed by another feature
+	sourcePath := svc.FileName
+	if path, ok := c.fileSourcePaths[strings.ToLower(svc.FileName)]; ok {
+		sourcePath = path
+	}
+
+	// Service component must include the service executable file.
+	// WiX uses the KeyPath file to determine the service binary path.
+	// If the file is also installed by another component/feature, WiX handles
+	// the reference counting correctly.
 	comp := &Component{
 		ID:   compID,
-		GUID: GenerateGUID(compID), // Explicit GUID required for non-file components
+		GUID: GenerateGUID(compID),
+		Files: []*File{
+			{
+				ID:         fileID,
+				Name:       svc.FileName,
+				SourcePath: sourcePath,
+				KeyPath:    true,
+			},
+		},
 		Service: &Service{
 			ID:          svcID,
 			Name:        svc.ServiceName,

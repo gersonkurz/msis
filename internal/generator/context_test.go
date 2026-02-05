@@ -194,6 +194,13 @@ func TestProcessService(t *testing.T) {
 	if !strings.Contains(output.DirectoryXML, "ServiceControl") {
 		t.Error("expected directory output to contain 'ServiceControl'")
 	}
+	// Service component must include the executable file for WiX to know the service binary
+	if !strings.Contains(output.DirectoryXML, "Name='myservice.exe'") {
+		t.Error("expected service component to contain file 'myservice.exe'")
+	}
+	if !strings.Contains(output.DirectoryXML, "KeyPath='yes'") {
+		t.Error("expected service file to be KeyPath")
+	}
 }
 
 func TestNestedFeatures(t *testing.T) {
@@ -1674,5 +1681,166 @@ func TestGenerateLaunchConditions_NoRequirements(t *testing.T) {
 	}
 	if output.LaunchConditionsXML != "" {
 		t.Errorf("LaunchConditionsXML should be empty, got: %s", output.LaunchConditionsXML)
+	}
+}
+
+func TestFileRename(t *testing.T) {
+	// Create a temp directory with a test file
+	tmpDir, err := os.MkdirTemp("", "msis-rename-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source file
+	sourceFile := filepath.Join(tmpDir, "original-name.json")
+	if err := os.WriteFile(sourceFile, []byte(`{"test": true}`), 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create setup with file rename target
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "original-name.json",
+						Target: "INSTALLDIR\\renamed-file.json", // Rename operation
+					},
+				},
+			},
+		},
+	}
+
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MyApp"
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// The file should be named "renamed-file.json", not "original-name.json"
+	if !strings.Contains(output.DirectoryXML, "Name='renamed-file.json'") {
+		t.Errorf("DirectoryXML should contain renamed file 'renamed-file.json', got:\n%s", output.DirectoryXML)
+	}
+
+	// Should NOT create a directory named "renamed-file.json"
+	// (count how many times "Name='renamed-file.json'" appears - should be only in File element)
+	if strings.Contains(output.DirectoryXML, "<Directory") && strings.Contains(output.DirectoryXML, "Name='renamed-file.json'") {
+		// More specific check: the Name should appear in a File element, not a Directory element
+		lines := strings.Split(output.DirectoryXML, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "<Directory") && strings.Contains(line, "Name='renamed-file.json'") {
+				t.Errorf("Should not create directory named 'renamed-file.json', got:\n%s", output.DirectoryXML)
+				break
+			}
+		}
+	}
+}
+
+func TestFileRenameInSubdir(t *testing.T) {
+	// Create a temp directory with a test file
+	tmpDir, err := os.MkdirTemp("", "msis-rename-subdir-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source file
+	sourceFile := filepath.Join(tmpDir, "config.txt")
+	if err := os.WriteFile(sourceFile, []byte("config"), 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create setup with file rename in subdir
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "config.txt",
+						Target: "INSTALLDIR\\settings\\app-config.txt", // Rename in subdir
+					},
+				},
+			},
+		},
+	}
+
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MyApp"
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should have a "settings" directory
+	if !strings.Contains(output.DirectoryXML, "Name='settings'") {
+		t.Errorf("DirectoryXML should contain 'settings' directory, got:\n%s", output.DirectoryXML)
+	}
+
+	// The file should be named "app-config.txt"
+	if !strings.Contains(output.DirectoryXML, "Name='app-config.txt'") {
+		t.Errorf("DirectoryXML should contain renamed file 'app-config.txt', got:\n%s", output.DirectoryXML)
+	}
+}
+
+func TestDirectoryTargetNotTreatedAsRename(t *testing.T) {
+	// Create a temp directory with a test directory containing files
+	tmpDir, err := os.MkdirTemp("", "msis-dir-target-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source directory with files
+	sourceDir := filepath.Join(tmpDir, "myfiles")
+	if err := os.Mkdir(sourceDir, 0755); err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "file1.txt"), []byte("content"), 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	// Create setup with directory source and subdir target
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "myfiles",
+						Target: "INSTALLDIR\\data", // Directory target, not rename
+					},
+				},
+			},
+		},
+	}
+
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MyApp"
+	ctx := NewContext(setup, vars, tmpDir)
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should have a "data" directory (the target)
+	if !strings.Contains(output.DirectoryXML, "Name='data'") {
+		t.Errorf("DirectoryXML should contain 'data' directory, got:\n%s", output.DirectoryXML)
+	}
+
+	// Files should keep their original names
+	if !strings.Contains(output.DirectoryXML, "Name='file1.txt'") {
+		t.Errorf("DirectoryXML should contain original filename 'file1.txt', got:\n%s", output.DirectoryXML)
 	}
 }
