@@ -311,20 +311,58 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 	// Get or create root
 	root, ok := c.DirectoryTrees[rootKey]
 	if !ok {
-		// Get the directory name from variables (e.g., INSTALLDIR -> "NG1")
+		// Get the directory name from variables (e.g., INSTALLDIR -> "MyApp" or "Company\MyApp")
+		// Also check INSTALL_FOLDER as an alias for INSTALLDIR
 		rootName := c.Variables[rootKey]
-		root = &Directory{
-			ID:         c.NextDirectoryID(),
-			Name:       rootName, // Will be empty if variable not set, which is fine
-			CustomID:   rootKey,
-			Children:   make(map[string]*Directory),
-			FeatureIDs: make(map[string]bool),
+		if rootName == "" && rootKey == "INSTALLDIR" {
+			rootName = c.Variables["INSTALL_FOLDER"]
 		}
-		c.DirectoryTrees[rootKey] = root
+
+		// Handle nested paths like "NGBT\chimera" - need to create parent directories
+		// and put the custom ID (INSTALLDIR) on the final directory
+		if strings.Contains(rootName, "\\") {
+			parts := strings.Split(rootName, "\\")
+			// Create the first part as root (without custom ID)
+			root = &Directory{
+				ID:         c.NextDirectoryID(),
+				Name:       parts[0],
+				Children:   make(map[string]*Directory),
+				FeatureIDs: make(map[string]bool),
+			}
+			c.DirectoryTrees[rootKey] = root
+
+			// Create intermediate directories, putting custom ID on the last one
+			current := root
+			for i := 1; i < len(parts); i++ {
+				isLast := i == len(parts)-1
+				child := &Directory{
+					ID:         c.NextDirectoryID(),
+					Name:       parts[i],
+					Parent:     current,
+					Children:   make(map[string]*Directory),
+					FeatureIDs: make(map[string]bool),
+				}
+				if isLast {
+					child.CustomID = rootKey // Put INSTALLDIR on the final directory
+				}
+				current.Children[strings.ToLower(parts[i])] = child
+				current = child
+			}
+		} else {
+			root = &Directory{
+				ID:         c.NextDirectoryID(),
+				Name:       rootName, // Will be empty if variable not set, which is fine
+				CustomID:   rootKey,
+				Children:   make(map[string]*Directory),
+				FeatureIDs: make(map[string]bool),
+			}
+			c.DirectoryTrees[rootKey] = root
+		}
 	}
 
 	if subPath == "" {
-		return root
+		// For nested INSTALLDIR paths, find the directory with the custom ID
+		return c.findDirectoryWithCustomID(root, rootKey)
 	}
 
 	// Navigate/create path
@@ -352,9 +390,25 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 	return current
 }
 
+// findDirectoryWithCustomID recursively finds a directory with the given custom ID.
+// If root has the custom ID, returns root. Otherwise searches children.
+func (c *Context) findDirectoryWithCustomID(dir *Directory, customID string) *Directory {
+	if dir.CustomID == customID {
+		return dir
+	}
+	for _, child := range dir.Children {
+		if found := c.findDirectoryWithCustomID(child, customID); found != nil {
+			return found
+		}
+	}
+	// Fallback to root if not found (shouldn't happen)
+	return dir
+}
+
 // ParseTarget parses a target like "[INSTALLDIR]subfolder" into rootKey and subPath.
 // Handles bracketed form: [INSTALLDIR]path -> rootKey=INSTALLDIR, subPath=path
 // Handles bare root keys: INSTALLDIR, APPDATADIR -> rootKey=<name>, subPath=""
+// Handles root keys with path: INSTALLDIR\subdir -> rootKey=INSTALLDIR, subPath=subdir
 func ParseTarget(target string) (rootKey, subPath string) {
 	if strings.HasPrefix(target, "[") {
 		idx := strings.Index(target, "]")
@@ -367,13 +421,27 @@ func ParseTarget(target string) (rootKey, subPath string) {
 			return rootKey, subPath
 		}
 	}
-	// Check for bare root keys - these map to WiX StandardDirectory elements
-	bareKey := strings.ToUpper(target)
-	switch bareKey {
-	case "INSTALLDIR", "APPDATADIR", "COMMONFILESDIR", "WINDOWSDIR", "SYSTEMDIR",
-		"ROAMINGAPPDATADIR", "LOCALAPPDATADIR":
-		return bareKey, ""
+
+	// Normalize path separators first
+	target = strings.ReplaceAll(target, "/", "\\")
+
+	// Check for root keys (with optional path suffix)
+	rootKeys := []string{"INSTALLDIR", "APPDATADIR", "COMMONFILESDIR", "WINDOWSDIR",
+		"SYSTEMDIR", "ROAMINGAPPDATADIR", "LOCALAPPDATADIR"}
+
+	for _, rk := range rootKeys {
+		if strings.HasPrefix(strings.ToUpper(target), rk) {
+			if len(target) == len(rk) {
+				// Exact match: "INSTALLDIR"
+				return rk, ""
+			}
+			if target[len(rk)] == '\\' {
+				// Root key with path: "INSTALLDIR\subdir"
+				return rk, target[len(rk)+1:]
+			}
+		}
 	}
+
 	// Default: treat as subpath under INSTALLDIR
 	return "INSTALLDIR", target
 }

@@ -51,6 +51,11 @@ func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTempla
 
 // Build invokes WiX CLI to compile the WXS into an MSI.
 func (b *Builder) Build() error {
+	// Check if output file exists and can be overwritten
+	if err := b.checkOutputWritable(); err != nil {
+		return err
+	}
+
 	// Ensure EULA is accepted
 	if err := b.ensureEulaAccepted(); err != nil {
 		return fmt.Errorf("EULA check: %w", err)
@@ -63,6 +68,27 @@ func (b *Builder) Build() error {
 
 	// Cleanup
 	b.cleanup()
+
+	return nil
+}
+
+// checkOutputWritable checks if the output file can be written to.
+// If the file exists, tries to delete it to ensure it's not locked.
+func (b *Builder) checkOutputWritable() error {
+	outputPath := b.OutputFile
+	if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(b.SourceDir, outputPath)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		return nil // File doesn't exist, we're good
+	}
+
+	// File exists - try to delete it
+	if err := os.Remove(outputPath); err != nil {
+		return fmt.Errorf("cannot overwrite output file %s: file may be locked or in use by another process", outputPath)
+	}
 
 	return nil
 }
@@ -303,6 +329,11 @@ func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, custom
 
 // Build invokes WiX CLI to compile the bundle WXS into an EXE.
 func (b *BundleBuilder) Build() error {
+	// Check if output file exists and can be overwritten
+	if err := b.checkOutputWritable(); err != nil {
+		return err
+	}
+
 	// Ensure EULA is accepted (reuse MSI builder logic)
 	msiBuilder := &Builder{} // Create temporary for EULA check
 	if err := msiBuilder.ensureEulaAccepted(); err != nil {
@@ -316,6 +347,26 @@ func (b *BundleBuilder) Build() error {
 
 	// Cleanup
 	b.cleanup()
+
+	return nil
+}
+
+// checkOutputWritable checks if the output file can be written to.
+func (b *BundleBuilder) checkOutputWritable() error {
+	outputPath := b.OutputFile
+	if !filepath.IsAbs(outputPath) {
+		outputPath = filepath.Join(filepath.Dir(b.WxsFile), outputPath)
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
+		return nil // File doesn't exist, we're good
+	}
+
+	// File exists - try to delete it
+	if err := os.Remove(outputPath); err != nil {
+		return fmt.Errorf("cannot overwrite output file %s: file may be locked or in use by another process", outputPath)
+	}
 
 	return nil
 }
