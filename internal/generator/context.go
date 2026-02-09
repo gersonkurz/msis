@@ -776,8 +776,13 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 					Parent:         dir,
 					Children:       make(map[string]*Directory),
 					DoNotOverwrite: doNotOverwrite,
+					FeatureIDs:     make(map[string]bool),
 				}
 				dir.Children[key] = subDir
+			}
+			// Mark directory with feature so permission components are associated
+			if featureID != "" {
+				c.markDirectoryFeature(subDir, featureID)
 			}
 			if err := c.addDirectoryContents(subDir, relBasePath, absFullPath, featureID, doNotOverwrite); err != nil {
 				return err
