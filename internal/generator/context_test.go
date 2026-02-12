@@ -1568,6 +1568,107 @@ func TestAllDirectoryRoots(t *testing.T) {
 	}
 }
 
+func TestAppDataDirFallbackToInstallDir(t *testing.T) {
+	// When APPDATADIR is not set, it should fall back to the INSTALLDIR value.
+	// This ensures [APPDATADIR] resolves to e.g. C:\ProgramData\MyApp, not C:\ProgramData directly.
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "[APPDATADIR]config.json",
+						Target: "[APPDATADIR]config.json",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MySuperCoolApp"
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	// Note: APPDATADIR is deliberately NOT set
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// APPDATADIR root directory should use "MySuperCoolApp" from INSTALLDIR fallback
+	if !strings.Contains(output.AppDataDirXML, "Name='MySuperCoolApp'") {
+		t.Errorf("AppDataDirXML should use INSTALLDIR name as fallback.\nGot: %s", output.AppDataDirXML)
+	}
+	if !strings.Contains(output.AppDataDirXML, "Id='APPDATADIR'") {
+		t.Error("AppDataDirXML should have APPDATADIR as custom ID")
+	}
+}
+
+func TestAppDataDirExplicitOverride(t *testing.T) {
+	// When APPDATADIR is explicitly set, it should use that value, not INSTALLDIR.
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "[APPDATADIR]config.json",
+						Target: "[APPDATADIR]config.json",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MySuperCoolApp"
+	vars["APPDATADIR"] = "MyCustomDataDir"
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Should use explicit APPDATADIR value, not INSTALLDIR
+	if !strings.Contains(output.AppDataDirXML, "Name='MyCustomDataDir'") {
+		t.Errorf("AppDataDirXML should use explicit APPDATADIR value.\nGot: %s", output.AppDataDirXML)
+	}
+}
+
+func TestLocalAppDataDirFallbackToInstallDir(t *testing.T) {
+	// LOCALAPPDATADIR should also fall back to INSTALLDIR when not set.
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{
+						Source: "[LOCALAPPDATADIR]cache.dat",
+						Target: "[LOCALAPPDATADIR]cache.dat",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	vars["INSTALLDIR"] = "MySuperCoolApp"
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(output.LocalAppDataDirXML, "Name='MySuperCoolApp'") {
+		t.Errorf("LocalAppDataDirXML should use INSTALLDIR name as fallback.\nGot: %s", output.LocalAppDataDirXML)
+	}
+}
+
 func TestGenerateLaunchConditions(t *testing.T) {
 	setup := &ir.Setup{
 		Requires: []ir.Requirement{

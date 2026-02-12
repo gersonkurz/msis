@@ -323,6 +323,19 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 			rootName = c.Variables["INSTALL_FOLDER"]
 		}
 
+		// For appdata-like roots, fall back to INSTALLDIR value when not explicitly set.
+		// This matches C# msis-2.x behavior: users expect [APPDATADIR] to resolve to
+		// C:\ProgramData\<AppName>, not C:\ProgramData directly.
+		if rootName == "" {
+			switch rootKey {
+			case "APPDATADIR", "ROAMINGAPPDATADIR", "LOCALAPPDATADIR":
+				rootName = c.Variables["INSTALLDIR"]
+				if rootName == "" {
+					rootName = c.Variables["INSTALL_FOLDER"]
+				}
+			}
+		}
+
 		// Handle nested paths like "NGBT\chimera" - need to create parent directories
 		// and put the custom ID (INSTALLDIR) on the final directory
 		if strings.Contains(rootName, "\\") {
