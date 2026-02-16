@@ -73,9 +73,10 @@ type Context struct {
 
 // RemoveOnUninstallItem represents an item to remove during uninstall.
 type RemoveOnUninstallItem struct {
-	ID       string
-	Registry string // e.g., "HKLM\Software\MyCompany\MyApp"
-	Folder   string // e.g., "[COMMONAPPDATA]MyCompany\MyApp"
+	ID        string
+	Registry  string // e.g., "HKLM\Software\MyCompany\MyApp"
+	Folder    string // e.g., "[COMMONAPPDATA]MyCompany\MyApp"
+	FeatureID string // feature this component belongs to
 }
 
 // CustomAction represents a WiX custom action.
@@ -383,8 +384,11 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 		return c.findDirectoryWithCustomID(root, rootKey)
 	}
 
-	// Navigate/create path
-	current := root
+	// Navigate/create path from the CustomID directory (not the tree root).
+	// For nested roots like "NGBT\chimera", the tree root is NGBT but the
+	// CustomID (e.g., APPDATADIR) is on the child "chimera". Subpaths must
+	// be created under the CustomID directory, not as siblings of it.
+	current := c.findDirectoryWithCustomID(root, rootKey)
 	parts := strings.Split(subPath, "\\")
 	for _, part := range parts {
 		if part == "" {
@@ -501,6 +505,9 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 	// Generate launch conditions for requirements
 	launchSearchXML, launchCondXML := c.generateLaunchConditions()
 
+	// Generate remove-on-uninstall XML first, as it registers components with features
+	removeOnUninstallXML := c.generateRemoveOnUninstallXML()
+
 	// Generate output
 	output := &GeneratedOutput{
 		DirectoryXML:             c.generateDirectoryXMLForRoot("INSTALLDIR"),
@@ -516,7 +523,7 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		StartMenuXML:             c.generateShortcutsXML(c.StartMenuShortcuts),
 		CustomActionsXML:         c.generateCustomActionsXML(),
 		InstallExecuteSequence:   c.generateInstallExecuteSequence(),
-		RemoveOnUninstallXML:     c.generateRemoveOnUninstallXML(),
+		RemoveOnUninstallXML:     removeOnUninstallXML,
 		LaunchConditionSearchXML: launchSearchXML,
 		LaunchConditionsXML:      launchCondXML,
 	}
@@ -680,7 +687,7 @@ func (c *Context) processItem(item ir.Item, featureID string) error {
 	case ir.Registry:
 		return c.processRegistry(it, featureID)
 	case ir.RemoveOnUninstall:
-		return c.processRemoveOnUninstall(it)
+		return c.processRemoveOnUninstall(it, featureID)
 	}
 	return nil
 }
@@ -1424,14 +1431,15 @@ func (c *Context) generateInstallExecuteSequence() string {
 }
 
 // processRemoveOnUninstall handles a remove-on-uninstall item.
-func (c *Context) processRemoveOnUninstall(item ir.RemoveOnUninstall) error {
+func (c *Context) processRemoveOnUninstall(item ir.RemoveOnUninstall, featureID string) error {
 	id := fmt.Sprintf("RemoveOnUninstall_%04d", c.nextRemoveID)
 	c.nextRemoveID++
 
 	c.RemoveOnUninstallItems = append(c.RemoveOnUninstallItems, &RemoveOnUninstallItem{
-		ID:       id,
-		Registry: item.Registry,
-		Folder:   item.Folder,
+		ID:        id,
+		Registry:  item.Registry,
+		Folder:    item.Folder,
+		FeatureID: featureID,
 	})
 	return nil
 }
@@ -1460,6 +1468,11 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 				sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveOnUninstall_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
 					c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
 				sb.WriteString("        </Component>\n")
+
+				// Track component for feature
+				if item.FeatureID != "" {
+					c.FeatureComponents[item.FeatureID] = append(c.FeatureComponents[item.FeatureID], compID)
+				}
 			}
 		}
 
@@ -1480,6 +1493,11 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveFolder_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
 				c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
 			sb.WriteString("        </Component>\n")
+
+			// Track component for feature
+			if item.FeatureID != "" {
+				c.FeatureComponents[item.FeatureID] = append(c.FeatureComponents[item.FeatureID], compID)
+			}
 		}
 	}
 
