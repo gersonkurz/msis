@@ -285,7 +285,7 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 	}
 
 	// Component attributes - KeyPath must be on a RegistryValue, not Component
-	attrs := fmt.Sprintf("Id='%s' Guid='%s' NeverOverwrite='yes'", comp.ID, comp.GUID)
+	attrs := fmt.Sprintf("Id='%s' Guid='%s'", comp.ID, comp.GUID)
 	if comp.Permanent {
 		attrs += " Permanent='yes'"
 	}

@@ -374,9 +374,9 @@ func TestKeyPathOnRegistryValue(t *testing.T) {
 	xml := proc.GenerateXML(components, false)
 
 	// KeyPath should NOT be on Component (WiX 6 invalid)
-	if strings.Contains(xml, "<Component") && strings.Contains(xml, "KeyPath='yes'") {
-		// Need more precise check
-		if strings.Contains(xml, "<Component Id='") && strings.Contains(xml, "KeyPath='yes' NeverOverwrite") {
+	// Check that no Component element has KeyPath attribute
+	for _, line := range strings.Split(xml, "\n") {
+		if strings.Contains(line, "<Component ") && strings.Contains(line, "KeyPath='yes'") {
 			t.Error("KeyPath should not be on Component element")
 		}
 	}
