@@ -54,6 +54,10 @@ type Context struct {
 	// Used to find source paths for service executables
 	fileSourcePaths map[string]string
 
+	// File components by installed filename (key: lowercase filename, value: component)
+	// Used to attach service definitions to existing file components
+	fileComponents map[string]*Component
+
 	// Registry processor and components
 	registryProcessor  *registry.Processor
 	RegistryComponents []*registry.Component
@@ -107,6 +111,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		FeatureComponents:  make(map[string][]string),
 		targetFileSeen:     make(map[string]int),
 		fileSourcePaths:    make(map[string]string),
+		fileComponents:     make(map[string]*Component),
 		registryProcessor:  registry.NewProcessor(workDir),
 		RegistryComponents: make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
@@ -696,8 +701,11 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 	rootKey, subPath := ParseTarget(files.Target)
 
 	// Source path as specified in .msis (relative to .msis file directory)
-	// Keep it relative so WXS paths are relative to WXS output location
+	// Resolve any {{VAR}} references in the source path
 	source := files.Source
+	if resolved, err := c.Variables.Resolve(source); err == nil {
+		source = resolved
+	}
 
 	// Resolve to absolute for existence check
 	absSource := source
@@ -835,7 +843,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	c.targetFileSeen[targetKey]++
 	occurrence := c.targetFileSeen[targetKey]
 
-	// Track source path by filename for service executable lookup
+	// Track source path and component by filename for service executable lookup
 	// First occurrence wins (in case of duplicates)
 	fileKey := strings.ToLower(fileName)
 	if _, exists := c.fileSourcePaths[fileKey]; !exists {
@@ -863,6 +871,11 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	}
 
 	dir.Components = append(dir.Components, comp)
+
+	// Track component by filename so services can attach to it
+	if _, exists := c.fileComponents[fileKey]; !exists {
+		c.fileComponents[fileKey] = comp
+	}
 
 	// Track component for feature (keyed by unique feature ID)
 	if featureID != "" {
@@ -925,29 +938,48 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 }
 
 func (c *Context) processService(svc ir.Service, featureID string) error {
-	// Services go in INSTALLDIR
-	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
-
 	svcID := c.NextServiceID()
-	compID := c.NextComponentID("svc_" + svc.ServiceName)
-	fileID := c.NextFileID()
 
 	start := "auto"
 	if svc.Start != "" {
 		start = svc.Start
 	}
 
-	// Look up the source path for the service executable
-	// This allows the service to reference a file installed by another feature
+	serviceDef := &Service{
+		ID:           svcID,
+		Name:         svc.ServiceName,
+		DisplayName:  svc.ServiceDisplayName,
+		Description:  svc.Description,
+		Start:        start,
+		Type:         svc.ServiceType,
+		ErrorControl: svc.ErrorControl,
+		FileName:     svc.FileName,
+	}
+
+	// If the service executable is already installed by another component,
+	// attach the ServiceInstall/ServiceControl to that existing component
+	// instead of creating a duplicate File element.
+	fileKey := strings.ToLower(svc.FileName)
+	if existingComp, ok := c.fileComponents[fileKey]; ok {
+		existingComp.Service = serviceDef
+
+		// Add existing component to this feature if not already present
+		if featureID != "" {
+			c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], existingComp.ID)
+		}
+		return nil
+	}
+
+	// No existing file component found - create a new component with the file
+	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
+	compID := c.NextComponentID("svc_" + svc.ServiceName)
+	fileID := c.NextFileID()
+
 	sourcePath := svc.FileName
-	if path, ok := c.fileSourcePaths[strings.ToLower(svc.FileName)]; ok {
+	if path, ok := c.fileSourcePaths[fileKey]; ok {
 		sourcePath = path
 	}
 
-	// Service component must include the service executable file.
-	// WiX uses the KeyPath file to determine the service binary path.
-	// If the file is also installed by another component/feature, WiX handles
-	// the reference counting correctly.
 	comp := &Component{
 		ID:   compID,
 		GUID: GenerateGUID(compID),
@@ -959,16 +991,7 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 				KeyPath:    true,
 			},
 		},
-		Service: &Service{
-			ID:          svcID,
-			Name:        svc.ServiceName,
-			DisplayName: svc.ServiceDisplayName,
-			Description: svc.Description,
-			Start:       start,
-			Type:        svc.ServiceType,
-			ErrorControl: svc.ErrorControl,
-			FileName:    svc.FileName,
-		},
+		Service: serviceDef,
 	}
 
 	dir.Components = append(dir.Components, comp)

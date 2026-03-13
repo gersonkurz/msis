@@ -23,7 +23,7 @@ import (
 )
 
 // Version and BuildTime are set via ldflags at build time
-var Version = "3.0.0-dev"
+var Version = "3.0.1-dev"
 var BuildTime = ""
 
 type cliArgs struct {
@@ -34,8 +34,9 @@ type cliArgs struct {
 	customTemplates string
 	dryRun          bool
 	status          bool
-	standalone      bool // Skip auto-bundling, use launch conditions only
-	noColor         bool // Disable colored output
+	standalone      bool              // Skip auto-bundling, use launch conditions only
+	noColor         bool              // Disable colored output
+	setOverrides    map[string]string // /SET:NAME=VALUE overrides
 	files           []string
 }
 
@@ -88,6 +89,13 @@ func processFile(filename string, args *cliArgs) error {
 	// Milestone 3.2 - Variable resolution
 	vars := variables.New()
 	vars.LoadFromSetup(setup)
+
+	// Apply /SET: command-line overrides
+	for name, value := range args.setOverrides {
+		vars.Set(name, value)
+		fmt.Printf("  Override: %s=%s\n", cli.Info(name), cli.Filename(value))
+	}
+
 	if err := vars.ResolveAll(); err != nil {
 		return fmt.Errorf("resolving variables: %w", err)
 	}
@@ -463,6 +471,8 @@ func parseArgs() *cliArgs {
 	var flags []string
 	var files []string
 
+	setOverrides := make(map[string]string)
+
 	for _, arg := range os.Args[1:] {
 		if strings.HasPrefix(arg, "/") && !strings.Contains(arg, "\\") && !strings.Contains(arg, ":") {
 			// /FLAG -> --flag (but not paths like /c/foo or /flag:value)
@@ -470,13 +480,26 @@ func parseArgs() *cliArgs {
 			originalArgs[converted] = arg
 			flags = append(flags, converted)
 		} else if strings.HasPrefix(arg, "/") && strings.Contains(arg, ":") && !strings.HasPrefix(arg, "/c/") {
-			// /FLAG:value -> --flag=value
-			parts := strings.SplitN(arg, ":", 2)
-			key := strings.ToLower(parts[0][1:])
-			val := parts[1]
-			converted := "--" + key + "=" + val
-			originalArgs["--"+key] = "/" + strings.ToUpper(key)
-			flags = append(flags, converted)
+			// Check for /SET:NAME=VALUE before generic /FLAG:value handling
+			upper := strings.ToUpper(arg)
+			if strings.HasPrefix(upper, "/SET:") {
+				rest := arg[5:] // preserve original case of NAME=VALUE
+				eqIdx := strings.IndexByte(rest, '=')
+				if eqIdx < 1 {
+					fmt.Fprintf(os.Stderr, "Invalid /SET format: %s (use /SET:NAME=VALUE)\n\n", arg)
+					printUsage()
+					os.Exit(2)
+				}
+				setOverrides[rest[:eqIdx]] = rest[eqIdx+1:]
+			} else {
+				// /FLAG:value -> --flag=value
+				parts := strings.SplitN(arg, ":", 2)
+				key := strings.ToLower(parts[0][1:])
+				val := parts[1]
+				converted := "--" + key + "=" + val
+				originalArgs["--"+key] = "/" + strings.ToUpper(key)
+				flags = append(flags, converted)
+			}
 		} else if strings.HasPrefix(arg, "--") || strings.HasPrefix(arg, "-") {
 			// Unix-style flags (pass through)
 			flags = append(flags, arg)
@@ -541,6 +564,7 @@ func parseArgs() *cliArgs {
 	}
 
 	args.files = fs.Args()
+	args.setOverrides = setOverrides
 	return args
 }
 
@@ -598,6 +622,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println(cli.Bold("Options:"))
 	fmt.Printf("  %s              Run WiX build tools automatically\n", cli.Info("/BUILD"))
+	fmt.Printf("  %s     Override or add a <set> variable\n", cli.Info("/SET:NAME=VALUE"))
 	fmt.Printf("  %s          Retain WXS file after build\n", cli.Info("/RETAINWXS"))
 	fmt.Printf("  %s      Custom template to use\n", cli.Info("/TEMPLATE:NAME"))
 	fmt.Printf("  %s   Base template folder (public defaults)\n", cli.Info("/TEMPLATEFOLDER:PATH"))
@@ -618,7 +643,7 @@ func printUsage() {
 	fmt.Printf("  %s                   Generate and build MSI\n", cli.Filename("msis /BUILD setup.msis"))
 	fmt.Printf("  %s        Build and keep .wxs\n", cli.Filename("msis /BUILD /RETAINWXS setup.msis"))
 	fmt.Printf("  %s       Build MSI only (no auto-bundle)\n", cli.Filename("msis /BUILD /STANDALONE setup.msis"))
-	fmt.Printf("  %s\n", cli.Filename("msis /TEMPLATEFOLDER:templates /BUILD setup.msis"))
+	fmt.Printf("  %s\n", cli.Filename("msis /SET:PRODUCT_VERSION=2.0.0 /BUILD setup.msis"))
 	fmt.Printf("  %s                 Validate only\n", cli.Filename("msis /DRY-RUN setup.msis"))
 }
 
