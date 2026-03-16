@@ -157,6 +157,7 @@ type Environment struct {
 	ID    string
 	Name  string
 	Value string
+	Part  string // "all" (replace) or "last" (append); default "all"
 }
 
 // Service represents a Windows service.
@@ -691,6 +692,8 @@ func (c *Context) processItem(item ir.Item, featureID string) error {
 		return nil
 	case ir.Registry:
 		return c.processRegistry(it, featureID)
+	case ir.CreateFolder:
+		return c.processCreateFolder(it, featureID)
 	case ir.RemoveOnUninstall:
 		return c.processRemoveOnUninstall(it, featureID)
 	}
@@ -911,9 +914,38 @@ func (dir *Directory) getFullPath() string {
 	return strings.Join(parts, "\\")
 }
 
+// resolveEnvValue translates msis directory roots in environment variable values
+// to their WiX directory property equivalents.
+// e.g. "[APPDATADIR]NGBT\Logs" -> "[CommonAppDataFolder]NGBT\Logs"
+func resolveEnvValue(value string) string {
+	rootMap := map[string]string{
+		"INSTALLDIR":        "INSTALLDIR",
+		"APPDATADIR":        "CommonAppDataFolder",
+		"ROAMINGAPPDATADIR": "AppDataFolder",
+		"LOCALAPPDATADIR":   "LocalAppDataFolder",
+		"COMMONFILESDIR":    "CommonFiles64Folder",
+		"WINDOWSDIR":        "WindowsFolder",
+		"SYSTEMDIR":         "System64Folder",
+	}
+	for msisRoot, wixProp := range rootMap {
+		bracket := "[" + msisRoot + "]"
+		if strings.Contains(value, bracket) {
+			return strings.ReplaceAll(value, bracket, "["+wixProp+"]")
+		}
+	}
+	return value
+}
+
 func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 	// Environment variables go in INSTALLDIR
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
+
+	// Resolve {{VAR}} references in the value
+	value := env.Value
+	if resolved, err := c.Variables.Resolve(value); err == nil {
+		value = resolved
+	}
+	value = resolveEnvValue(value)
 
 	envID := c.NextEnvID()
 	compID := c.NextComponentID("env_" + env.Name)
@@ -924,8 +956,38 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 		Environment: &Environment{
 			ID:    envID,
 			Name:  env.Name,
-			Value: env.Value,
+			Value: value,
 		},
+	}
+
+	dir.Components = append(dir.Components, comp)
+
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+	}
+
+	return nil
+}
+
+func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) error {
+	rootKey, subPath := ParseTarget(cf.Target)
+
+	// Create the full directory path in the tree
+	dir := c.GetOrCreateDirectory(rootKey, subPath, false)
+
+	// Mark directory and ancestors as owned by this feature
+	// (needed so permission components on parent dirs get a feature ref)
+	if featureID != "" {
+		c.markDirectoryFeature(dir, featureID)
+	}
+
+	// Add a component with CreateFolder to ensure WiX creates the directory
+	compID := c.NextComponentID("create_folder")
+
+	comp := &Component{
+		ID:           compID,
+		GUID:         GenerateGUID(compID),
+		CreateFolder: true,
 	}
 
 	dir.Components = append(dir.Components, comp)
@@ -1155,6 +1217,7 @@ func (c *Context) addPathEnvironment(featureID string) {
 			ID:    envID,
 			Name:  "PATH",
 			Value: "[INSTALLDIR]",
+			Part:  "last",
 		},
 	}
 
@@ -1244,8 +1307,12 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 	// Environment
 	if comp.Environment != nil {
 		env := comp.Environment
-		sb.WriteString(fmt.Sprintf("%s    <Environment Id='%s' Name='%s' Value='%s' Permanent='yes' Part='last' Action='set' System='yes'/>\n",
-			indent, env.ID, env.Name, env.Value))
+		part := env.Part
+		if part == "" {
+			part = "all"
+		}
+		sb.WriteString(fmt.Sprintf("%s    <Environment Id='%s' Name='%s' Value='%s' Permanent='yes' Part='%s' Action='set' System='yes'/>\n",
+			indent, env.ID, env.Name, env.Value, part))
 	}
 
 	// Service

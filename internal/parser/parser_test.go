@@ -3,6 +3,8 @@ package parser
 import (
 	"strings"
 	"testing"
+
+	"github.com/gersonkurz/msis/internal/ir"
 )
 
 func TestParseMsisBool(t *testing.T) {
@@ -470,6 +472,33 @@ func TestParseExecute(t *testing.T) {
 
 	if feature.Items[0].ItemType() != "execute" {
 		t.Errorf("expected 'execute', got %s", feature.Items[0].ItemType())
+	}
+}
+
+func TestParseCreateFolder(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Main" enabled="yes">
+        <create-folder target="[APPDATADIR]MyApp\Logs"/>
+    </feature>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	feature := setup.Features[0]
+	if len(feature.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(feature.Items))
+	}
+
+	cf, ok := feature.Items[0].(ir.CreateFolder)
+	if !ok {
+		t.Fatalf("expected CreateFolder, got %T", feature.Items[0])
+	}
+	if cf.Target != "[APPDATADIR]MyApp\\Logs" {
+		t.Errorf("expected target '[APPDATADIR]MyApp\\Logs', got %q", cf.Target)
 	}
 }
 

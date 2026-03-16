@@ -155,6 +155,14 @@ type ExePackage struct {
 	InstallArgs   string
 }
 
+// CreateFolder represents: <create-folder target="[APPDATADIR]MyApp\Logs"/>
+// Creates an empty directory at install time.
+type CreateFolder struct {
+	Target string
+}
+
+func (c CreateFolder) ItemType() string { return "create-folder" }
+
 // RemoveOnUninstall represents items to remove during uninstall.
 // Can specify either a registry key or a folder path (not both).
 // Example: <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>

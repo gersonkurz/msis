@@ -53,6 +53,7 @@ type xmlItem struct {
 	Service           *xmlService
 	Exclude           *xmlExclude
 	Execute           *xmlExecute
+	CreateFolder      *xmlCreateFolder
 	RemoveOnUninstall *xmlRemoveOnUninstall
 }
 
@@ -116,6 +117,10 @@ type xmlExecute struct {
 	Cmd       string `xml:"cmd,attr"`
 	When      string `xml:"when,attr"`
 	Directory string `xml:"directory,attr"`
+}
+
+type xmlCreateFolder struct {
+	Target string `xml:"target,attr"`
 }
 
 type xmlRemoveOnUninstall struct {
@@ -559,6 +564,13 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				s.Items = append(s.Items, xmlItem{Type: "exclude", Exclude: &exc})
 
+			case "create-folder":
+				var cf xmlCreateFolder
+				if err := d.DecodeElement(&cf, &t); err != nil {
+					return err
+				}
+				s.Items = append(s.Items, xmlItem{Type: "create-folder", CreateFolder: &cf})
+
 			case "execute":
 				var exec xmlExecute
 				if err := d.DecodeElement(&exec, &t); err != nil {
@@ -668,6 +680,13 @@ func (f *xmlFeature) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 					return err
 				}
 				f.Items = append(f.Items, xmlItem{Type: "exclude", Exclude: &exc})
+
+			case "create-folder":
+				var cf xmlCreateFolder
+				if err := d.DecodeElement(&cf, &t); err != nil {
+					return err
+				}
+				f.Items = append(f.Items, xmlItem{Type: "create-folder", CreateFolder: &cf})
 
 			case "execute":
 				var exec xmlExecute
@@ -856,6 +875,11 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 		case "exclude":
 			items = append(items, ir.Exclude{
 				Folder: raw.Exclude.Folder,
+			})
+
+		case "create-folder":
+			items = append(items, ir.CreateFolder{
+				Target: raw.CreateFolder.Target,
 			})
 
 		case "execute":

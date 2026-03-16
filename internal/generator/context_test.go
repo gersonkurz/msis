@@ -158,6 +158,82 @@ func TestProcessSetEnv(t *testing.T) {
 	}
 }
 
+func TestResolveEnvValue(t *testing.T) {
+	tests := []struct {
+		input, expected string
+	}{
+		{"plain_value", "plain_value"},
+		{"[INSTALLDIR]bin", "[INSTALLDIR]bin"},
+		{"[APPDATADIR]NGBT\\Logs", "[CommonAppDataFolder]NGBT\\Logs"},
+		{"[LOCALAPPDATADIR]app\\cache", "[LocalAppDataFolder]app\\cache"},
+		{"[ROAMINGAPPDATADIR]app\\config", "[AppDataFolder]app\\config"},
+		{"[WINDOWSDIR]Temp", "[WindowsFolder]Temp"},
+		{"[SYSTEMDIR]drivers", "[System64Folder]drivers"},
+	}
+	for _, tt := range tests {
+		got := resolveEnvValue(tt.input)
+		if got != tt.expected {
+			t.Errorf("resolveEnvValue(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestProcessSetEnvWithDirectoryRoot(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Test",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.SetEnv{Name: "LOG_DIR", Value: "[APPDATADIR]MyApp\\Logs"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(output.DirectoryXML, "[CommonAppDataFolder]MyApp\\Logs") {
+		t.Errorf("expected WiX property in env value, got:\n%s", output.DirectoryXML)
+	}
+	if strings.Contains(output.DirectoryXML, "[APPDATADIR]") {
+		t.Error("msis root [APPDATADIR] should have been translated to WiX property")
+	}
+}
+
+func TestProcessCreateFolder(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Test",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.CreateFolder{Target: "[APPDATADIR]MyApp\\Logs"},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(output.AppDataDirXML, "CreateFolder") {
+		t.Errorf("expected AppDataDirXML to contain CreateFolder, got:\n%s", output.AppDataDirXML)
+	}
+	if !strings.Contains(output.AppDataDirXML, "Logs") {
+		t.Errorf("expected AppDataDirXML to contain 'Logs' directory, got:\n%s", output.AppDataDirXML)
+	}
+}
+
 func TestProcessService(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{
