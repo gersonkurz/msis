@@ -163,14 +163,15 @@ type Environment struct {
 
 // Service represents a Windows service.
 type Service struct {
-	ID          string
-	Name        string
-	DisplayName string
-	Description string
-	Start       string
-	Type        string
-	ErrorControl string
-	FileName    string
+	ID                string
+	Name              string
+	DisplayName       string
+	Description       string
+	Start             string
+	Type              string
+	ErrorControl      string
+	FileName          string
+	StartAfterInstall bool // true (default): start service on install
 }
 
 // Shortcut represents a shortcut (Desktop or StartMenu).
@@ -1009,15 +1010,18 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 		start = svc.Start
 	}
 
+	startAfterInstall := strings.ToLower(svc.StartAfterInstall) != "no"
+
 	serviceDef := &Service{
-		ID:           svcID,
-		Name:         svc.ServiceName,
-		DisplayName:  svc.ServiceDisplayName,
-		Description:  svc.Description,
-		Start:        start,
-		Type:         svc.ServiceType,
-		ErrorControl: svc.ErrorControl,
-		FileName:     svc.FileName,
+		ID:                svcID,
+		Name:              svc.ServiceName,
+		DisplayName:       svc.ServiceDisplayName,
+		Description:       svc.Description,
+		Start:             start,
+		Type:              svc.ServiceType,
+		ErrorControl:      svc.ErrorControl,
+		FileName:          svc.FileName,
+		StartAfterInstall: startAfterInstall,
 	}
 
 	// If the service executable is already installed by another component,
@@ -1340,8 +1344,13 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 			sb.WriteString(fmt.Sprintf("%s        <Description>%s</Description>\n", indent, svc.Description))
 		}
 		sb.WriteString(fmt.Sprintf("%s    </ServiceInstall>\n", indent))
-		sb.WriteString(fmt.Sprintf("%s    <ServiceControl Id='%s_ctrl' Name='%s' Start='install' Stop='both' Remove='uninstall' Wait='yes'/>\n",
-			indent, svc.ID, svc.Name))
+		if svc.StartAfterInstall {
+			sb.WriteString(fmt.Sprintf("%s    <ServiceControl Id='%s_ctrl' Name='%s' Start='install' Stop='both' Remove='uninstall' Wait='yes'/>\n",
+				indent, svc.ID, svc.Name))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s    <ServiceControl Id='%s_ctrl' Name='%s' Stop='both' Remove='uninstall' Wait='yes'/>\n",
+				indent, svc.ID, svc.Name))
+		}
 	}
 
 	// CreateFolder for empty directories

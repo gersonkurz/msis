@@ -55,6 +55,7 @@
     <xs:attribute name="service-type" type="xs:string" use="optional"/>
     <xs:attribute name="error-control" type="xs:string" use="optional"/>
     <xs:attribute name="restart" type="xs:string" use="optional"/>
+    <xs:attribute name="start-after-install" type="xs:string" use="optional"/>
   </xs:complexType>
 
   <xs:complexType name="ExcludeType">

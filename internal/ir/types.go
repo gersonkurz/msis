@@ -91,6 +91,7 @@ type Service struct {
 	ServiceType        string // ownProcess, shareProcess
 	ErrorControl       string // ignore, normal, critical
 	Restart            string
+	StartAfterInstall  string // yes (default), no
 }
 
 func (s Service) ItemType() string { return "service" }
