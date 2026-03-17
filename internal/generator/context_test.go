@@ -158,6 +158,46 @@ func TestProcessSetEnv(t *testing.T) {
 	}
 }
 
+func TestProcessSetEnvPermanent(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Main",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.SetEnv{Name: "KEEP_VAR", Value: "keep", Permanent: true},
+					ir.SetEnv{Name: "TEMP_VAR", Value: "temp", Permanent: false},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// Permanent env var should have Permanent='yes'
+	if !strings.Contains(output.DirectoryXML, "Name='KEEP_VAR'") {
+		t.Error("expected KEEP_VAR in output")
+	}
+	if !strings.Contains(output.DirectoryXML, "Name='TEMP_VAR'") {
+		t.Error("expected TEMP_VAR in output")
+	}
+
+	// Check that KEEP_VAR has Permanent='yes' and TEMP_VAR has Permanent='no'
+	for _, line := range strings.Split(output.DirectoryXML, "\n") {
+		if strings.Contains(line, "KEEP_VAR") && !strings.Contains(line, "Permanent='yes'") {
+			t.Error("expected KEEP_VAR to have Permanent='yes'")
+		}
+		if strings.Contains(line, "TEMP_VAR") && !strings.Contains(line, "Permanent='no'") {
+			t.Error("expected TEMP_VAR to have Permanent='no'")
+		}
+	}
+}
+
 func TestResolveEnvValue(t *testing.T) {
 	tests := []struct {
 		input, expected string

@@ -61,10 +61,11 @@ type Registry struct {
 
 func (r Registry) ItemType() string { return "registry" }
 
-// SetEnv represents: <set-env name="..." value="..."/>
+// SetEnv represents: <set-env name="..." value="..." permanent="..."/>
 type SetEnv struct {
-	Name  string
-	Value string
+	Name      string
+	Value     string
+	Permanent bool // if true, env var survives uninstall (default: false)
 }
 
 func (s SetEnv) ItemType() string { return "set-env" }

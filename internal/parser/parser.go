@@ -86,8 +86,9 @@ type xmlRegistry struct {
 }
 
 type xmlSetEnv struct {
-	Name  string `xml:"name,attr"`
-	Value string `xml:"value,attr"`
+	Name      string `xml:"name,attr"`
+	Value     string `xml:"value,attr"`
+	Permanent string `xml:"permanent,attr"`
 }
 
 type xmlShortcut struct {
@@ -847,8 +848,9 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 
 		case "set-env":
 			items = append(items, ir.SetEnv{
-				Name:  raw.SetEnv.Name,
-				Value: raw.SetEnv.Value,
+				Name:      raw.SetEnv.Name,
+				Value:     raw.SetEnv.Value,
+				Permanent: parseMsisBool(raw.SetEnv.Permanent),
 			})
 
 		case "shortcut":

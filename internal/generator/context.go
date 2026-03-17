@@ -154,10 +154,11 @@ type File struct {
 
 // Environment represents an environment variable.
 type Environment struct {
-	ID    string
-	Name  string
-	Value string
-	Part  string // "all" (replace) or "last" (append); default "all"
+	ID        string
+	Name      string
+	Value     string
+	Part      string // "all" (replace) or "last" (append); default "all"
+	Permanent bool   // if true, env var survives uninstall
 }
 
 // Service represents a Windows service.
@@ -954,9 +955,10 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 		ID:   compID,
 		GUID: GenerateGUID(compID), // Explicit GUID required for non-file components
 		Environment: &Environment{
-			ID:    envID,
-			Name:  env.Name,
-			Value: value,
+			ID:        envID,
+			Name:      env.Name,
+			Value:     value,
+			Permanent: env.Permanent,
 		},
 	}
 
@@ -1311,8 +1313,12 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 		if part == "" {
 			part = "all"
 		}
-		sb.WriteString(fmt.Sprintf("%s    <Environment Id='%s' Name='%s' Value='%s' Permanent='yes' Part='%s' Action='set' System='yes'/>\n",
-			indent, env.ID, env.Name, env.Value, part))
+		permanent := "no"
+		if env.Permanent {
+			permanent = "yes"
+		}
+		sb.WriteString(fmt.Sprintf("%s    <Environment Id='%s' Name='%s' Value='%s' Permanent='%s' Part='%s' Action='set' System='yes'/>\n",
+			indent, env.ID, env.Name, env.Value, permanent, part))
 	}
 
 	// Service
