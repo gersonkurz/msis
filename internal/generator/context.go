@@ -101,19 +101,19 @@ type ShortcutComponent struct {
 // NewContext creates a new generation context.
 func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Context {
 	return &Context{
-		Setup:              setup,
-		Variables:          vars,
-		WorkDir:            workDir,
-		componentIDs:       make(map[string]bool),
-		DirectoryTrees:     make(map[string]*Directory),
-		ExcludedFolders:    make(map[string]bool),
-		featureIDs:         make(map[string]string),
-		FeatureComponents:  make(map[string][]string),
-		targetFileSeen:     make(map[string]int),
-		fileSourcePaths:    make(map[string]string),
-		fileComponents:     make(map[string]*Component),
-		registryProcessor:  registry.NewProcessor(workDir),
-		RegistryComponents: make([]*registry.Component, 0),
+		Setup:                  setup,
+		Variables:              vars,
+		WorkDir:                workDir,
+		componentIDs:           make(map[string]bool),
+		DirectoryTrees:         make(map[string]*Directory),
+		ExcludedFolders:        make(map[string]bool),
+		featureIDs:             make(map[string]string),
+		FeatureComponents:      make(map[string][]string),
+		targetFileSeen:         make(map[string]int),
+		fileSourcePaths:        make(map[string]string),
+		fileComponents:         make(map[string]*Component),
+		registryProcessor:      registry.NewProcessor(workDir),
+		RegistryComponents:     make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
 		StartMenuShortcuts:     make([]*ShortcutComponent, 0),
 		CustomActions:          make([]*CustomAction, 0),
@@ -135,11 +135,11 @@ type Directory struct {
 
 // Component represents a WiX component containing files or other resources.
 type Component struct {
-	ID          string
-	GUID        string
-	Files       []*File
-	Environment *Environment
-	Service     *Service
+	ID           string
+	GUID         string
+	Files        []*File
+	Environment  *Environment
+	Service      *Service
 	CreateFolder bool
 }
 
@@ -1024,21 +1024,31 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 		StartAfterInstall: startAfterInstall,
 	}
 
-	// If the service executable is already installed by another component,
-	// attach the ServiceInstall/ServiceControl to that existing component
-	// instead of creating a duplicate File element.
 	fileKey := strings.ToLower(svc.FileName)
-	if existingComp, ok := c.fileComponents[fileKey]; ok {
-		existingComp.Service = serviceDef
 
-		// Add existing component to this feature if not already present
-		if featureID != "" {
-			c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], existingComp.ID)
+	// If the service executable is already installed by a component in the
+	// SAME feature, attach the ServiceInstall to that existing component.
+	// This avoids duplicating the file when the service doesn't need
+	// independent feature control.
+	if existingComp, ok := c.fileComponents[fileKey]; ok && featureID != "" {
+		alreadyInFeature := false
+		for _, id := range c.FeatureComponents[featureID] {
+			if id == existingComp.ID {
+				alreadyInFeature = true
+				break
+			}
 		}
-		return nil
+		if alreadyInFeature {
+			existingComp.Service = serviceDef
+			return nil
+		}
 	}
 
-	// No existing file component found - create a new component with the file
+	// The file is in a different feature (sub-feature) or doesn't exist yet.
+	// Create a new component with its own File + ServiceInstall so the
+	// sub-feature can independently control whether the service is installed.
+	// WiX handles reference counting when multiple components install the
+	// same file.
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 	compID := c.NextComponentID("svc_" + svc.ServiceName)
 	fileID := c.NextFileID()
@@ -1503,11 +1513,11 @@ var customActionTimings = map[string]struct {
 	reference string // Reference action
 	condition string // Optional condition
 }{
-	"after-install":          {"Before", "InstallFinalize", "(NOT REMOVE = \"ALL\")"},
+	"after-install":           {"Before", "InstallFinalize", "(NOT REMOVE = \"ALL\")"},
 	"after-install-not-patch": {"Before", "InstallFinalize", "NOT WIX_UPGRADE_DETECTED"},
-	"before-install":         {"After", "CostFinalize", ""},
-	"before-upgrade":         {"After", "CostFinalize", "WIX_UPGRADE_DETECTED"},
-	"before-uninstall":       {"After", "InstallInitialize", "(REMOVE=\"ALL\")"},
+	"before-install":          {"After", "CostFinalize", ""},
+	"before-upgrade":          {"After", "CostFinalize", "WIX_UPGRADE_DETECTED"},
+	"before-uninstall":        {"After", "InstallInitialize", "(REMOVE=\"ALL\")"},
 }
 
 // generateInstallExecuteSequence generates WiX InstallExecuteSequence Custom elements.
