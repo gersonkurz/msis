@@ -23,6 +23,7 @@ type Component struct {
 	ID        string
 	GUID      string
 	Permanent bool
+	Preserve  bool
 	Condition string
 	SDDL      string
 	Keys      []*RegistryKey
@@ -40,9 +41,9 @@ type RegistryKey struct {
 // RegistryValue represents a WiX RegistryValue element.
 type RegistryValue struct {
 	ID         string
-	Name       string // Empty for default value
-	Type       string // string, integer, binary, expandable, multiString
-	Value      string // For simple types
+	Name       string   // Empty for default value
+	Type       string   // string, integer, binary, expandable, multiString
+	Value      string   // For simple types
 	MultiValue []string // For multiString type
 	RemoveFlag bool
 }
@@ -54,6 +55,7 @@ type Processor struct {
 	nextValueID      int
 	componentCounter int
 	componentIDs     map[string]bool
+	nextPreserveID   int
 }
 
 // NewProcessor creates a new registry processor.
@@ -96,6 +98,7 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 		ID:        compID,
 		GUID:      guid,
 		Permanent: reg.Permanent,
+		Preserve:  reg.Preserve,
 		Condition: reg.Condition,
 		SDDL:      sddl,
 	}
@@ -266,18 +269,195 @@ type RemovalEntry struct {
 	Name  string // Value name (empty for key removal or default value)
 }
 
+// BuildAllPreservedIDs pre-builds preservation ID maps for all components.
+// Returns a slice parallel to the components slice, where each entry is either
+// nil (non-preserved) or a map of "keyPath+valueName" -> preserve ID.
+// This must be called before GenerateXML and GeneratePreservationXML to ensure
+// both methods use the same IDs.
+func (p *Processor) BuildAllPreservedIDs(components []*Component) []map[string]int {
+	result := make([]map[string]int, len(components))
+	for i, comp := range components {
+		if !comp.Preserve {
+			continue
+		}
+		ids := make(map[string]int)
+		for _, key := range comp.Keys {
+			if !key.RemoveFlag {
+				p.collectPreservedIDs(key, ids)
+			}
+		}
+		result[i] = ids
+	}
+	return result
+}
+
 // GenerateXML generates WiX XML for the components.
 func (p *Processor) GenerateXML(components []*Component, setPermissions bool) string {
+	return p.GenerateXMLWithPreservedIDs(components, setPermissions, nil)
+}
+
+// GenerateXMLWithPreservedIDs generates WiX XML for the components, using pre-built preserved IDs.
+func (p *Processor) GenerateXMLWithPreservedIDs(components []*Component, setPermissions bool, allPreservedIDs []map[string]int) string {
 	var sb strings.Builder
 
-	for _, comp := range components {
-		p.generateComponentXML(comp, &sb, setPermissions)
+	for i, comp := range components {
+		var preservedIDs map[string]int
+		if allPreservedIDs != nil && i < len(allPreservedIDs) {
+			preservedIDs = allPreservedIDs[i]
+		}
+		p.generateComponentXML(comp, &sb, setPermissions, preservedIDs)
 	}
 
 	return sb.String()
 }
 
-func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, setPermissions bool) {
+// GeneratePreservationXML generates Property+RegistrySearch elements for preserved registry values.
+// These elements must appear at Package level (before components) so that existing registry
+// values are read before the install writes new ones. If a value already exists, it's preserved;
+// otherwise the default from the .reg file is used.
+func (p *Processor) GeneratePreservationXML(components []*Component, allPreservedIDs []map[string]int) string {
+	var sb strings.Builder
+
+	for i, comp := range components {
+		if !comp.Preserve {
+			continue
+		}
+		var preservedIDs map[string]int
+		if allPreservedIDs != nil && i < len(allPreservedIDs) {
+			preservedIDs = allPreservedIDs[i]
+		}
+		if preservedIDs == nil {
+			continue
+		}
+		for _, key := range comp.Keys {
+			if !key.RemoveFlag {
+				p.generatePreservationPropertiesRecursive(key, key.Root, &sb, preservedIDs)
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// collectPreservedIDs recursively collects preserved value IDs from the key tree.
+func (p *Processor) collectPreservedIDs(key *RegistryKey, ids map[string]int) {
+	for _, val := range key.Values {
+		if val.RemoveFlag {
+			continue
+		}
+		if shouldPreserveValue(val) {
+			lookupKey := key.Key + val.Name
+			ids[lookupKey] = p.nextPreserveID
+			p.nextPreserveID++
+		}
+	}
+	for _, subKey := range key.SubKeys {
+		if !subKey.RemoveFlag {
+			p.collectPreservedIDs(subKey, ids)
+		}
+	}
+}
+
+// shouldPreserveValue determines if a registry value should be preserved.
+// String values starting with "[" are skipped (they're already WiX property references).
+// MultiString values are not preserved (no simple default encoding).
+func shouldPreserveValue(val *RegistryValue) bool {
+	if val.RemoveFlag {
+		return false
+	}
+	// Skip multiString - no simple default encoding for preservation
+	if val.Type == "multiString" {
+		return false
+	}
+	// Skip string values starting with "[" (already property references)
+	if val.Type == "string" && strings.HasPrefix(val.Value, "[") {
+		return false
+	}
+	return true
+}
+
+// generatePreservationPropertiesRecursive walks the key tree and generates
+// preservation XML for each preservable value. Uses a three-element pattern:
+//  1. PS_RV_XXXXX — Property holding the default value from the .reg file
+//  2. PS_RS_XXXXX — Search property with RegistrySearch (empty if value not found)
+//  3. SetProperty — conditionally copies found value into PS_RV_XXXXX
+//
+// This avoids the MSI AppSearch behavior where a failed RegistrySearch clears
+// the Property default, which would lose the .reg file default on first install.
+func (p *Processor) generatePreservationPropertiesRecursive(key *RegistryKey, root string, sb *strings.Builder, preservedIDs map[string]int) {
+	for _, val := range key.Values {
+		if val.RemoveFlag || !shouldPreserveValue(val) {
+			continue
+		}
+		lookupKey := key.Key + val.Name
+		id, ok := preservedIDs[lookupKey]
+		if !ok {
+			continue
+		}
+
+		// Encode default value based on type
+		defaultValue := encodePreservationDefault(val)
+
+		// 1. Default property — holds the .reg file default, never touched by AppSearch.
+		//    Secure='yes' ensures the value survives client→server handoff during elevated installs.
+		if defaultValue == "" {
+			sb.WriteString(fmt.Sprintf("    <Property Id='PS_RV_%05d' Secure='yes'/>\n", id))
+		} else {
+			sb.WriteString(fmt.Sprintf("    <Property Id='PS_RV_%05d' Value='%s' Secure='yes'/>\n", id, defaultValue))
+		}
+
+		// 2. Search property — RegistrySearch reads existing value (or clears to empty)
+		nameAttr := ""
+		if val.Name != "" {
+			nameAttr = fmt.Sprintf(" Name='%s'", escapeXML(val.Name))
+		}
+		sb.WriteString(fmt.Sprintf("    <Property Id='PS_RS_%05d' Secure='yes'>\n", id))
+		sb.WriteString(fmt.Sprintf("        <RegistrySearch Id='PS_RS_%05d_Registry' Type='raw' Root='%s' Key='%s'%s/>\n",
+			id, root, escapeXML(key.Key), nameAttr))
+		sb.WriteString("    </Property>\n")
+
+		// 3. Conditional override — only copies search result when the search found something
+		sb.WriteString(fmt.Sprintf("    <SetProperty Id='PS_RV_%05d' Value='[PS_RS_%05d]' After='AppSearch' Sequence='both' Condition='PS_RS_%05d'/>\n",
+			id, id, id))
+	}
+
+	for _, subKey := range key.SubKeys {
+		if !subKey.RemoveFlag {
+			p.generatePreservationPropertiesRecursive(subKey, root, sb, preservedIDs)
+		}
+	}
+}
+
+// encodePreservationDefault encodes a registry value's default for a WiX Property Value attribute.
+func encodePreservationDefault(val *RegistryValue) string {
+	switch val.Type {
+	case "integer":
+		// DWord/QWord: prefix with # (e.g., "#3")
+		return "#" + val.Value
+	case "binary":
+		// Binary: encode as #xHH per nibble pair (matching MSIS2)
+		// val.Value is uppercase hex string like "010203"
+		return encodeBinaryForPreserve(val.Value)
+	case "string", "expandable":
+		// SZ/ExpandSz: use literal value (empty string → omit Value attribute)
+		return val.Value
+	default:
+		return val.Value
+	}
+}
+
+// encodeBinaryForPreserve converts a hex string like "4F4B" to "#x4#xF#x4#xB".
+// This matches the MSIS2 RegEncodeBinaryValueForPreserve format.
+func encodeBinaryForPreserve(hexStr string) string {
+	var sb strings.Builder
+	for _, c := range hexStr {
+		sb.WriteString("#x")
+		sb.WriteRune(c)
+	}
+	return sb.String()
+}
+
+func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, setPermissions bool, preservedIDs map[string]int) {
 	// Collect all removal entries first (they go at component level in WiX 6)
 	var removals []RemovalEntry
 	for _, key := range comp.Keys {
@@ -288,6 +468,9 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 	attrs := fmt.Sprintf("Id='%s' Guid='%s'", comp.ID, comp.GUID)
 	if comp.Permanent {
 		attrs += " Permanent='yes'"
+	}
+	if comp.Preserve {
+		attrs += " NeverOverwrite='yes'"
 	}
 	if comp.Condition != "" {
 		attrs += fmt.Sprintf(" Condition='%s'", escapeXML(comp.Condition))
@@ -315,7 +498,7 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 	isFirstValue := true
 	for _, key := range comp.Keys {
 		if !key.RemoveFlag {
-			p.generateRegistryKeyXML(key, sb, comp.SDDL, setPermissions, 3, &isFirstValue)
+			p.generateRegistryKeyXML(key, sb, comp.SDDL, setPermissions, 3, &isFirstValue, preservedIDs)
 		}
 	}
 
@@ -362,7 +545,7 @@ func (p *Processor) collectRemovals(key *RegistryKey, removals *[]RemovalEntry) 
 	}
 }
 
-func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool) {
+func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
 	indent := strings.Repeat("    ", depth)
 
 	if key.RemoveFlag {
@@ -383,20 +566,20 @@ func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder
 	// Generate values (skip removals, they're at component level)
 	for _, val := range key.Values {
 		if !val.RemoveFlag {
-			p.generateRegistryValueXML(val, sb, depth+1, isFirstValue)
+			p.generateRegistryValueXML(val, key, sb, depth+1, isFirstValue, preservedIDs)
 		}
 	}
 
 	// Generate subkeys
 	for _, subKey := range key.SubKeys {
 		// Subkeys don't repeat Root
-		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue)
+		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue, preservedIDs)
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</RegistryKey>\n", indent))
 }
 
-func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool) {
+func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
 	indent := strings.Repeat("    ", depth)
 
 	if key.RemoveFlag {
@@ -419,19 +602,19 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 	// Generate values (skip removals, they're at component level)
 	for _, val := range key.Values {
 		if !val.RemoveFlag {
-			p.generateRegistryValueXML(val, sb, depth+1, isFirstValue)
+			p.generateRegistryValueXML(val, key, sb, depth+1, isFirstValue, preservedIDs)
 		}
 	}
 
 	// Generate subkeys
 	for _, subKey := range key.SubKeys {
-		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue)
+		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue, preservedIDs)
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</RegistryKey>\n", indent))
 }
 
-func (p *Processor) generateRegistryValueXML(val *RegistryValue, sb *strings.Builder, depth int, isFirstValue *bool) {
+func (p *Processor) generateRegistryValueXML(val *RegistryValue, key *RegistryKey, sb *strings.Builder, depth int, isFirstValue *bool, preservedIDs map[string]int) {
 	indent := strings.Repeat("    ", depth)
 
 	if val.RemoveFlag {
@@ -450,6 +633,18 @@ func (p *Processor) generateRegistryValueXML(val *RegistryValue, sb *strings.Bui
 	if *isFirstValue {
 		keyPathAttr = " KeyPath='yes'"
 		*isFirstValue = false
+	}
+
+	// Check if this value has a preservation property reference
+	if preservedIDs != nil {
+		lookupKey := key.Key + val.Name
+		if id, ok := preservedIDs[lookupKey]; ok {
+			// Emit reference to preservation property instead of literal value
+			// Type is always 'string' — WiX interprets the prefixed content from the property
+			sb.WriteString(fmt.Sprintf("%s<RegistryValue%s Value='[PS_RV_%05d]' Type='string'%s/>\n",
+				indent, nameAttr, id, keyPathAttr))
+			return
+		}
 	}
 
 	if val.Type == "multiString" {

@@ -516,24 +516,28 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 	// Generate remove-on-uninstall XML first, as it registers components with features
 	removeOnUninstallXML := c.generateRemoveOnUninstallXML()
 
+	// Build preserved IDs for registry components (needed by both preservation and registry XML)
+	preservedIDs := c.registryProcessor.BuildAllPreservedIDs(c.RegistryComponents)
+
 	// Generate output
 	output := &GeneratedOutput{
-		DirectoryXML:             c.generateDirectoryXMLForRoot("INSTALLDIR"),
-		AppDataDirXML:            c.generateDirectoryXMLForRoot("APPDATADIR"),
-		RoamingAppDataDirXML:     c.generateDirectoryXMLForRoot("ROAMINGAPPDATADIR"),
-		LocalAppDataDirXML:       c.generateDirectoryXMLForRoot("LOCALAPPDATADIR"),
-		CommonFilesDirXML:        c.generateDirectoryXMLForRoot("COMMONFILESDIR"),
-		WindowsDirXML:            c.generateDirectoryXMLForRoot("WINDOWSDIR"),
-		SystemDirXML:             c.generateDirectoryXMLForRoot("SYSTEMDIR"),
-		FeatureXML:               c.generateAllFeatureXML(),
-		RegistryXML:              c.generateAllRegistryXML(),
-		DesktopXML:               c.generateShortcutsXML(c.DesktopShortcuts),
-		StartMenuXML:             c.generateShortcutsXML(c.StartMenuShortcuts),
-		CustomActionsXML:         c.generateCustomActionsXML(),
-		InstallExecuteSequence:   c.generateInstallExecuteSequence(),
-		RemoveOnUninstallXML:     removeOnUninstallXML,
-		LaunchConditionSearchXML: launchSearchXML,
-		LaunchConditionsXML:      launchCondXML,
+		DirectoryXML:              c.generateDirectoryXMLForRoot("INSTALLDIR"),
+		AppDataDirXML:             c.generateDirectoryXMLForRoot("APPDATADIR"),
+		RoamingAppDataDirXML:      c.generateDirectoryXMLForRoot("ROAMINGAPPDATADIR"),
+		LocalAppDataDirXML:        c.generateDirectoryXMLForRoot("LOCALAPPDATADIR"),
+		CommonFilesDirXML:         c.generateDirectoryXMLForRoot("COMMONFILESDIR"),
+		WindowsDirXML:             c.generateDirectoryXMLForRoot("WINDOWSDIR"),
+		SystemDirXML:              c.generateDirectoryXMLForRoot("SYSTEMDIR"),
+		FeatureXML:                c.generateAllFeatureXML(),
+		RegistryXML:               c.generateAllRegistryXML(preservedIDs),
+		DesktopXML:                c.generateShortcutsXML(c.DesktopShortcuts),
+		StartMenuXML:              c.generateShortcutsXML(c.StartMenuShortcuts),
+		CustomActionsXML:          c.generateCustomActionsXML(),
+		InstallExecuteSequence:    c.generateInstallExecuteSequence(),
+		RemoveOnUninstallXML:      removeOnUninstallXML,
+		LaunchConditionSearchXML:  launchSearchXML,
+		LaunchConditionsXML:       launchCondXML,
+		PreservationPropertiesXML: c.registryProcessor.GeneratePreservationXML(c.RegistryComponents, preservedIDs),
 	}
 
 	return output, nil
@@ -561,22 +565,23 @@ func (c *Context) generateLaunchConditions() (searchXML, conditionsXML string) {
 
 // GeneratedOutput holds the generated WiX XML fragments.
 type GeneratedOutput struct {
-	DirectoryXML             string // INSTALLDIR tree (under ProgramFilesFolder)
-	AppDataDirXML            string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
-	RoamingAppDataDirXML     string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
-	LocalAppDataDirXML       string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
-	CommonFilesDirXML        string // COMMONFILESDIR tree (under CommonFilesFolder)
-	WindowsDirXML            string // WINDOWSDIR tree (under WindowsFolder)
-	SystemDirXML             string // SYSTEMDIR tree (under SystemFolder)
-	FeatureXML               string
-	RegistryXML              string
-	DesktopXML               string
-	StartMenuXML             string
-	CustomActionsXML         string
-	InstallExecuteSequence   string
-	RemoveOnUninstallXML     string
-	LaunchConditionSearchXML string // Registry searches for launch conditions
-	LaunchConditionsXML      string // Launch condition elements
+	DirectoryXML              string // INSTALLDIR tree (under ProgramFilesFolder)
+	AppDataDirXML             string // APPDATADIR tree (under CommonAppDataFolder - C:\ProgramData)
+	RoamingAppDataDirXML      string // ROAMINGAPPDATADIR tree (under AppDataFolder - %APPDATA%)
+	LocalAppDataDirXML        string // LOCALAPPDATADIR tree (under LocalAppDataFolder - %LOCALAPPDATA%)
+	CommonFilesDirXML         string // COMMONFILESDIR tree (under CommonFilesFolder)
+	WindowsDirXML             string // WINDOWSDIR tree (under WindowsFolder)
+	SystemDirXML              string // SYSTEMDIR tree (under SystemFolder)
+	FeatureXML                string
+	RegistryXML               string
+	DesktopXML                string
+	StartMenuXML              string
+	CustomActionsXML          string
+	InstallExecuteSequence    string
+	RemoveOnUninstallXML      string
+	LaunchConditionSearchXML  string // Registry searches for launch conditions
+	LaunchConditionsXML       string // Launch condition elements
+	PreservationPropertiesXML string // Property+RegistrySearch elements for preserve="yes"
 }
 
 func (c *Context) collectExcludes(items []ir.Item) {
@@ -1381,7 +1386,7 @@ func (c *Context) generateAllFeatureXML() string {
 	return sb.String()
 }
 
-func (c *Context) generateAllRegistryXML() string {
+func (c *Context) generateAllRegistryXML(preservedIDs []map[string]int) string {
 	if len(c.RegistryComponents) == 0 {
 		return ""
 	}
@@ -1390,8 +1395,8 @@ func (c *Context) generateAllRegistryXML() string {
 	// (msis-2.x always applies SDDL from registry entries)
 	setPermissions := !c.Variables.GetBool("DISABLE_REGISTRY_PERMISSIONS")
 
-	// Generate XML using the registry processor
-	return c.registryProcessor.GenerateXML(c.RegistryComponents, setPermissions)
+	// Generate XML using the registry processor with preservation support
+	return c.registryProcessor.GenerateXMLWithPreservedIDs(c.RegistryComponents, setPermissions, preservedIDs)
 }
 
 func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, depth int, parentIndexPath string, index int) {

@@ -19,8 +19,8 @@ func TestLookupDownloadURL(t *testing.T) {
 		{"vcredist", "2022", "x86", true, "x86"},
 		{"vcredist", "2022", "arm64", true, "arm64"},
 		{"vcredist", "2019", "x64", true, "x64"},
-		{"netfx", "4.8", "", true, ""},       // arch-neutral
-		{"netfx", "4.8", "x64", true, ""},    // falls back to arch-neutral
+		{"netfx", "4.8", "", true, ""},    // arch-neutral
+		{"netfx", "4.8", "x64", true, ""}, // falls back to arch-neutral
 		{"netfx", "4.8.1", "", true, ""},
 		{"unknown", "1.0", "x64", false, ""},
 		{"vcredist", "9999", "x64", false, ""}, // unknown version

@@ -28,11 +28,11 @@ type Set struct {
 
 // Feature represents a feature grouping with nested items.
 type Feature struct {
-	Name      string
-	Enabled   bool // default true
-	Condition string
-	Allowed   bool // default true
-	Items     []Item
+	Name        string
+	Enabled     bool // default true
+	Condition   string
+	Allowed     bool // default true
+	Items       []Item
 	SubFeatures []Feature
 }
 
@@ -43,8 +43,8 @@ type Item interface {
 
 // Files represents: <files source="..." target="..." do-not-overwrite="..."/>
 type Files struct {
-	Source        string
-	Target        string
+	Source         string
+	Target         string
 	DoNotOverwrite bool
 }
 
@@ -151,10 +151,10 @@ type BundleMSI struct {
 // ExePackage represents a custom executable package in the bundle chain.
 // Example: <exe id="..." source="..." detect="..." args="..."/>
 type ExePackage struct {
-	ID            string
-	Source        string
+	ID              string
+	Source          string
 	DetectCondition string
-	InstallArgs   string
+	InstallArgs     string
 }
 
 // CreateFolder represents: <create-folder target="[APPDATADIR]MyApp\Logs"/>

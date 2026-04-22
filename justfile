@@ -95,8 +95,13 @@ fmt:
     gofmt -w .
 
 # Check formatting
+[unix]
 fmt-check:
     @gofmt -l . | grep -q . && echo "Code not formatted. Run 'just fmt'" && exit 1 || echo "Code is formatted"
+
+[windows]
+fmt-check:
+    @$files = gofmt -l .; if ($files) { Write-Host "Code not formatted. Run 'just fmt'"; Write-Host $files; exit 1 } else { Write-Host "Code is formatted" }
 
 # Run go vet
 vet:

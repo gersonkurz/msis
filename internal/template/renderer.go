@@ -14,11 +14,11 @@ import (
 
 // Renderer fills WiX templates with generated content.
 type Renderer struct {
-	Variables          variables.Dictionary
-	TemplateFolder     string // Base template folder (public defaults)
-	CustomTemplates    string // Overlay folder (private overrides, takes precedence)
-	GeneratedData      *generator.GeneratedOutput
-	CustomTemplate     string // Optional: explicit template file path
+	Variables       variables.Dictionary
+	TemplateFolder  string // Base template folder (public defaults)
+	CustomTemplates string // Overlay folder (private overrides, takes precedence)
+	GeneratedData   *generator.GeneratedOutput
+	CustomTemplate  string // Optional: explicit template file path
 }
 
 // NewRenderer creates a template renderer.
@@ -191,6 +191,7 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["DESKTOP_FILES"] = r.buildDesktopFiles()
 	ctx["STARTMENU_FILES"] = r.buildStartMenuFiles()
 	ctx["REGISTRY_ENTRIES"] = r.GeneratedData.RegistryXML
+	ctx["PRESERVATION_PROPERTIES"] = r.GeneratedData.PreservationPropertiesXML
 	ctx["CUSTOM_ACTIONS"] = r.buildCustomActions()
 	ctx["INSTALL_EXECUTE_SEQUENCE"] = r.buildInstallExecuteSequence()
 	ctx["REMOVE_ON_UNINSTALL"] = r.GeneratedData.RemoveOnUninstallXML
@@ -224,51 +225,51 @@ type languageInfo struct {
 // languageMap maps language tags to LCID and codepage (matching Windows CultureInfo).
 var languageMap = map[string]languageInfo{
 	// English variants
-	"en-us":    {"1033", "1252"},
-	"en-gb":    {"2057", "1252"},
-	"en-au":    {"3081", "1252"},
-	"en-ca":    {"4105", "1252"},
-	"english":  {"1033", "1252"},
+	"en-us":   {"1033", "1252"},
+	"en-gb":   {"2057", "1252"},
+	"en-au":   {"3081", "1252"},
+	"en-ca":   {"4105", "1252"},
+	"english": {"1033", "1252"},
 	// German variants
-	"de-de":    {"1031", "1252"},
-	"de-at":    {"3079", "1252"},
-	"de-ch":    {"2055", "1252"},
-	"german":   {"1031", "1252"},
+	"de-de":  {"1031", "1252"},
+	"de-at":  {"3079", "1252"},
+	"de-ch":  {"2055", "1252"},
+	"german": {"1031", "1252"},
 	// French variants
-	"fr-fr":    {"1036", "1252"},
-	"fr-ca":    {"3084", "1252"},
-	"fr-ch":    {"4108", "1252"},
-	"french":   {"1036", "1252"},
+	"fr-fr":  {"1036", "1252"},
+	"fr-ca":  {"3084", "1252"},
+	"fr-ch":  {"4108", "1252"},
+	"french": {"1036", "1252"},
 	// Spanish variants
-	"es-es":    {"3082", "1252"},
-	"es-mx":    {"2058", "1252"},
-	"spanish":  {"3082", "1252"},
+	"es-es":   {"3082", "1252"},
+	"es-mx":   {"2058", "1252"},
+	"spanish": {"3082", "1252"},
 	// Italian
-	"it-it":    {"1040", "1252"},
-	"italian":  {"1040", "1252"},
+	"it-it":   {"1040", "1252"},
+	"italian": {"1040", "1252"},
 	// Portuguese
-	"pt-br":    {"1046", "1252"},
-	"pt-pt":    {"2070", "1252"},
+	"pt-br":      {"1046", "1252"},
+	"pt-pt":      {"2070", "1252"},
 	"portuguese": {"1046", "1252"},
 	// Dutch
-	"nl-nl":    {"1043", "1252"},
-	"dutch":    {"1043", "1252"},
+	"nl-nl": {"1043", "1252"},
+	"dutch": {"1043", "1252"},
 	// Polish
-	"pl-pl":    {"1045", "1250"},
-	"polish":   {"1045", "1250"},
+	"pl-pl":  {"1045", "1250"},
+	"polish": {"1045", "1250"},
 	// Russian
-	"ru-ru":    {"1049", "1251"},
-	"russian":  {"1049", "1251"},
+	"ru-ru":   {"1049", "1251"},
+	"russian": {"1049", "1251"},
 	// Japanese
 	"ja-jp":    {"1041", "932"},
 	"japanese": {"1041", "932"},
 	// Chinese
-	"zh-cn":    {"2052", "936"},
-	"zh-tw":    {"1028", "950"},
-	"chinese":  {"2052", "936"},
+	"zh-cn":   {"2052", "936"},
+	"zh-tw":   {"1028", "950"},
+	"chinese": {"2052", "936"},
 	// Korean
-	"ko-kr":    {"1042", "949"},
-	"korean":   {"1042", "949"},
+	"ko-kr":  {"1042", "949"},
+	"korean": {"1042", "949"},
 }
 
 func (r *Renderer) getLCID() string {

@@ -52,14 +52,14 @@ func TestGetCodepage(t *testing.T) {
 		language     string
 		wantCodepage string
 	}{
-		{"en-us", "1252"},      // Western European
-		{"de-de", "1252"},      // Western European
-		{"pl-pl", "1250"},      // Central European
-		{"ru-ru", "1251"},      // Cyrillic
-		{"ja-jp", "932"},       // Japanese Shift-JIS
-		{"zh-cn", "936"},       // Simplified Chinese GBK
-		{"ko-kr", "949"},       // Korean
-		{"unknown", "1252"},    // Default
+		{"en-us", "1252"},   // Western European
+		{"de-de", "1252"},   // Western European
+		{"pl-pl", "1250"},   // Central European
+		{"ru-ru", "1251"},   // Cyrillic
+		{"ja-jp", "932"},    // Japanese Shift-JIS
+		{"zh-cn", "936"},    // Simplified Chinese GBK
+		{"ko-kr", "949"},    // Korean
+		{"unknown", "1252"}, // Default
 	}
 
 	for _, tt := range tests {

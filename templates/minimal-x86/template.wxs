@@ -9,6 +9,7 @@
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed." />
 {{{LAUNCH_CONDITION_SEARCHES}}}
 {{{LAUNCH_CONDITIONS}}}
+{{{PRESERVATION_PROPERTIES}}}
 
     {{#if LOGO_BANNER}}<WixVariable Id="WixUIBannerBmp" Value="{{LOGO_BANNER}}" />{{/if}}
     {{#if LOGO_DIALOG}}<WixVariable Id="WixUIDialogBmp" Value="{{LOGO_DIALOG}}" />{{/if}}

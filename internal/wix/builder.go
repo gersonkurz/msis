@@ -383,8 +383,8 @@ func (b *BundleBuilder) runWixBuild() error {
 	// Bundle-specific extensions
 	args = append(args,
 		"-ext", "WixToolset.BootstrapperApplications.wixext", // Bootstrapper Application Library (renamed from Bal in WiX 6)
-		"-ext", "WixToolset.Util.wixext",                     // Utility functions
-		"-ext", "WixToolset.Netfx.wixext",                    // .NET Framework detection
+		"-ext", "WixToolset.Util.wixext", // Utility functions
+		"-ext", "WixToolset.Netfx.wixext", // .NET Framework detection
 	)
 
 	// Bind paths

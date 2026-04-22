@@ -21,8 +21,8 @@ func TestParseTarget(t *testing.T) {
 		{"[INSTALLDIR]bin", "INSTALLDIR", "bin"},
 		{"[INSTALLDIR]bin\\release", "INSTALLDIR", "bin\\release"},
 		{"[APPDATADIR]config", "APPDATADIR", "config"},
-		{"INSTALLDIR", "INSTALLDIR", ""},  // Bare root key = root with empty subpath
-		{"APPDATADIR", "APPDATADIR", ""},  // Bare root key = root with empty subpath
+		{"INSTALLDIR", "INSTALLDIR", ""},   // Bare root key = root with empty subpath
+		{"APPDATADIR", "APPDATADIR", ""},   // Bare root key = root with empty subpath
 		{"subdir", "INSTALLDIR", "subdir"}, // Non-root-key = subpath under INSTALLDIR
 	}
 
@@ -761,8 +761,8 @@ func TestGenerateShortName(t *testing.T) {
 		{"ng1_watchdog.processes.xml", 3, "NG1_WA_3.XML"},
 		{"readme.txt", 2, "README_2.TXT"},
 		{"LONGFILENAME.doc", 2, "LONGFI_2.DOC"},
-		{"file", 2, "FILE_2"},                     // No extension
-		{"a.b.c.d", 2, "ABC_2.D"},                 // Multiple dots - ext is last part
+		{"file", 2, "FILE_2"},                    // No extension
+		{"a.b.c.d", 2, "ABC_2.D"},                // Multiple dots - ext is last part
 		{"file.toolongext", 2, "FILE_2.TOO"},     // Extension truncated to 3
 		{"!!!special!!!.txt", 2, "SPECIA_2.TXT"}, // Special chars stripped, keeps SPECIA
 		{"config_backup.xml", 2, "CONFIG_2.XML"}, // Underscore preserved
@@ -2059,5 +2059,88 @@ func TestDirectoryTargetNotTreatedAsRename(t *testing.T) {
 	// Files should keep their original names
 	if !strings.Contains(output.DirectoryXML, "Name='file1.txt'") {
 		t.Errorf("DirectoryXML should contain original filename 'file1.txt', got:\n%s", output.DirectoryXML)
+	}
+}
+
+func TestPreserveRegistryIntegration(t *testing.T) {
+	// Create a .reg file with mixed value types
+	regContent := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp]
+"LogLevel"=dword:00000003
+"AppName"="MyApp"
+"InstallDir"="[INSTALLDIR]"
+`
+	tmpDir, err := os.MkdirTemp("", "msis-test-preserve-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	regFile := filepath.Join(tmpDir, "settings.reg")
+	if err := os.WriteFile(regFile, []byte(regContent), 0644); err != nil {
+		t.Fatalf("Failed to write reg file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "MainFeature",
+				Enabled: true,
+				Allowed: true,
+				Items: []ir.Item{
+					ir.Registry{File: "settings.reg", Preserve: true},
+				},
+			},
+		},
+	}
+
+	vars := variables.New()
+	ctx := NewContext(setup, vars, tmpDir)
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// PreservationPropertiesXML should contain default Property, search Property, and SetProperty
+	if output.PreservationPropertiesXML == "" {
+		t.Fatal("PreservationPropertiesXML should not be empty for preserved registry")
+	}
+	if !strings.Contains(output.PreservationPropertiesXML, "<Property Id='PS_RV_") {
+		t.Error("PreservationPropertiesXML should contain default Property elements")
+	}
+	if !strings.Contains(output.PreservationPropertiesXML, "<Property Id='PS_RS_") {
+		t.Error("PreservationPropertiesXML should contain search Property elements")
+	}
+	if !strings.Contains(output.PreservationPropertiesXML, "<SetProperty") {
+		t.Error("PreservationPropertiesXML should contain SetProperty elements")
+	}
+	if !strings.Contains(output.PreservationPropertiesXML, "<RegistrySearch") {
+		t.Error("PreservationPropertiesXML should contain RegistrySearch elements")
+	}
+
+	// DWord default should have # prefix
+	if !strings.Contains(output.PreservationPropertiesXML, "Value='#3'") {
+		t.Errorf("DWord default should be '#3', got:\n%s", output.PreservationPropertiesXML)
+	}
+
+	// String starting with "[" should NOT be preserved
+	if strings.Contains(output.PreservationPropertiesXML, "INSTALLDIR") {
+		t.Error("Property reference values should not be preserved")
+	}
+
+	// RegistryXML should reference [PS_RV_XXXXX] for preserved values
+	if !strings.Contains(output.RegistryXML, "[PS_RV_") {
+		t.Errorf("RegistryXML should contain PS_RV_ references, got:\n%s", output.RegistryXML)
+	}
+
+	// RegistryXML should have NeverOverwrite on the component
+	if !strings.Contains(output.RegistryXML, "NeverOverwrite='yes'") {
+		t.Errorf("RegistryXML should have NeverOverwrite='yes', got:\n%s", output.RegistryXML)
+	}
+
+	// Non-preserved "[INSTALLDIR]" value should still use literal value
+	if !strings.Contains(output.RegistryXML, "[INSTALLDIR]") {
+		t.Errorf("Non-preserved property ref value should remain literal, got:\n%s", output.RegistryXML)
 	}
 }

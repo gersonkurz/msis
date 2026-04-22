@@ -38,6 +38,7 @@
         {{/unless}}
         {{/if}}
 {{{LAUNCH_CONDITIONS}}}
+{{{PRESERVATION_PROPERTIES}}}
 		{{#if INCLUDE_VCREDIST}}
 		<DirectoryRef Id="INSTALLDIR">
 			<Merge Id="VCRedist_141" SourceFile="mergemodules/Microsoft_VC141_CRT_x86.msm" DiskId="1" Language="0" />
