@@ -112,7 +112,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		targetFileSeen:         make(map[string]int),
 		fileSourcePaths:        make(map[string]string),
 		fileComponents:         make(map[string]*Component),
-		registryProcessor:      registry.NewProcessor(workDir),
+		registryProcessor:      registry.NewProcessor(workDir, vars.UpgradeCode()),
 		RegistryComponents:     make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
 		StartMenuShortcuts:     make([]*ShortcutComponent, 0),
@@ -242,6 +242,19 @@ func (c *Context) NextFeatureID() string {
 	id := fmt.Sprintf("FEATURE_%05d", c.nextFeatureID)
 	c.nextFeatureID++
 	return id
+}
+
+// productScopedID returns a path string prefixed with the product's UpgradeCode,
+// ensuring different products generate unique component GUIDs for non-file components.
+// Without this, components like permission CreateFolder and PATH environment entries
+// would get identical GUIDs across all MSIS-built products, causing MSI "shared component"
+// conflicts that prevent proper directory cleanup during uninstall.
+func (c *Context) productScopedID(path string) string {
+	upgradeCode := c.Variables.UpgradeCode()
+	if upgradeCode != "" {
+		return upgradeCode + "/" + path
+	}
+	return path
 }
 
 // GenerateGUID creates a deterministic GUID from a path.
@@ -955,7 +968,7 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 	value = resolveEnvValue(value)
 
 	envID := c.NextEnvID()
-	compID := c.NextComponentID("env_" + env.Name)
+	compID := c.NextComponentID(c.productScopedID("env_" + env.Name))
 
 	comp := &Component{
 		ID:   compID,
@@ -990,7 +1003,7 @@ func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) erro
 	}
 
 	// Add a component with CreateFolder to ensure WiX creates the directory
-	compID := c.NextComponentID("create_folder")
+	compID := c.NextComponentID(c.productScopedID("create_folder"))
 
 	comp := &Component{
 		ID:           compID,
@@ -1055,7 +1068,7 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 	// WiX handles reference counting when multiple components install the
 	// same file.
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
-	compID := c.NextComponentID("svc_" + svc.ServiceName)
+	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
 	fileID := c.NextFileID()
 
 	sourcePath := svc.FileName
@@ -1095,7 +1108,7 @@ func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {
 
 	// Generate IDs
 	shortcutID := c.NextShortcutID()
-	compID := c.NextComponentID("shortcut_" + sc.Name)
+	compID := c.NextComponentID(c.productScopedID("shortcut_" + sc.Name))
 	guid := GenerateGUID(compID)
 
 	// Determine working directory from the file path
@@ -1208,7 +1221,7 @@ func (c *Context) generatePermissionComponent(dir *Directory, sb *strings.Builde
 	if dir.CustomID != "" {
 		dirID = dir.CustomID
 	}
-	compID := c.NextComponentID("perm_" + dirID)
+	compID := c.NextComponentID(c.productScopedID("perm_" + dirID))
 	guid := GenerateGUID(compID)
 	permissions := c.getPermissionAttributes()
 
@@ -1228,7 +1241,7 @@ func (c *Context) generatePermissionComponent(dir *Directory, sb *strings.Builde
 func (c *Context) addPathEnvironment(featureID string) {
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 
-	compID := c.NextComponentID("add_to_path")
+	compID := c.NextComponentID(c.productScopedID("add_to_path"))
 	envID := c.NextEnvID()
 
 	comp := &Component{

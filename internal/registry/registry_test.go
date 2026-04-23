@@ -23,7 +23,7 @@ func TestProcessBasicRegistry(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{
 		File: "test.reg",
 	}
@@ -96,7 +96,7 @@ func TestProcessRegistryWithAttributes(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{
 		File:      "settings.reg",
 		SDDL:      "D:(A;;GA;;;WD)",
@@ -141,7 +141,7 @@ func TestProcessRegistryValueTypes(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "types.reg"}
 
 	components, err := proc.Process(reg)
@@ -199,7 +199,7 @@ func TestGenerateXML(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "test.reg"}
 
 	components, err := proc.Process(reg)
@@ -239,7 +239,7 @@ func TestGenerateXMLWithPermissions(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{
 		File: "secure.reg",
 		SDDL: "D:(A;;GA;;;WD)",
@@ -324,7 +324,7 @@ func TestDeleteMarkers(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "delete.reg"}
 
 	components, err := proc.Process(reg)
@@ -363,7 +363,7 @@ func TestKeyPathOnRegistryValue(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "keypath.reg"}
 
 	components, err := proc.Process(reg)
@@ -409,7 +409,7 @@ func TestDeleteOnlyRegFile(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "deleteonly.reg"}
 
 	components, err := proc.Process(reg)
@@ -453,7 +453,7 @@ func TestRemoveRegistryValueAtComponentLevel(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "removevalue.reg"}
 
 	components, err := proc.Process(reg)
@@ -501,7 +501,7 @@ func TestPreserveBasicStringValues(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "preserve.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -562,7 +562,7 @@ func TestPreserveDwordValues(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "dword.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -594,7 +594,7 @@ func TestPreserveBinaryValues(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "binary.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -624,7 +624,7 @@ func TestPreserveRegistryValueReferences(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "refs.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -661,7 +661,7 @@ func TestPreserveNeverOverwrite(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "neveroverwrite.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -690,7 +690,7 @@ func TestNonPreservedRegistryUnchanged(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "nopreserve.reg", Preserve: false}
 
 	components, err := proc.Process(reg)
@@ -736,7 +736,7 @@ func TestPreserveSkipsPropertyReferences(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "propref.reg", Preserve: true}
 
 	components, err := proc.Process(reg)
@@ -757,6 +757,89 @@ func TestPreserveSkipsPropertyReferences(t *testing.T) {
 	}
 }
 
+func TestForceDeleteOnUninstallOnlyEmptyKeys(t *testing.T) {
+	// Keys WITH values should NOT get ForceDeleteOnUninstall (runtime values may exist).
+	// Keys WITHOUT values (empty structural keys) SHOULD get ForceDeleteOnUninstall.
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp]
+"Version"="1.0.0"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp\Hotkeys]
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp\Config]
+"LogLevel"=dword:00000003
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp\Config\EmptyChild]
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "mixed.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	reg := ir.Registry{File: "mixed.reg"}
+
+	components, err := proc.Process(reg)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	xml := proc.GenerateXML(components, false)
+
+	// TestApp has values (via subkeys) → no ForceDeleteOnUninstall
+	// Note: keys are nested hierarchically, so TestApp appears as Key='TestApp'
+	if strings.Contains(xml, "Key='TestApp' ForceCreateOnInstall='yes' ForceDeleteOnUninstall='yes'") {
+		t.Errorf("Key with values should NOT have ForceDeleteOnUninstall:\n%s", xml)
+	}
+	if !strings.Contains(xml, "Key='TestApp' ForceCreateOnInstall='yes'") {
+		t.Errorf("Key with values should still have ForceCreateOnInstall:\n%s", xml)
+	}
+
+	// Hotkeys is empty → should have ForceDeleteOnUninstall
+	if !strings.Contains(xml, "Key='Hotkeys' ForceCreateOnInstall='yes' ForceDeleteOnUninstall='yes'") {
+		t.Errorf("Empty key should have ForceDeleteOnUninstall:\n%s", xml)
+	}
+
+	// Config has values → no ForceDeleteOnUninstall
+	if strings.Contains(xml, "Key='Config' ForceCreateOnInstall='yes' ForceDeleteOnUninstall='yes'") {
+		t.Errorf("Key with values should NOT have ForceDeleteOnUninstall:\n%s", xml)
+	}
+
+	// EmptyChild is empty → should have ForceDeleteOnUninstall
+	if !strings.Contains(xml, "Key='EmptyChild' ForceCreateOnInstall='yes' ForceDeleteOnUninstall='yes'") {
+		t.Errorf("Empty child key should have ForceDeleteOnUninstall:\n%s", xml)
+	}
+}
+
+func TestForceDeleteOnUninstallNotOnPermanent(t *testing.T) {
+	// Permanent components should never get ForceDeleteOnUninstall, even for empty keys
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\TestApp\EmptyKey]
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "perm.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	reg := ir.Registry{File: "perm.reg", Permanent: true}
+
+	components, err := proc.Process(reg)
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	xml := proc.GenerateXML(components, false)
+
+	if strings.Contains(xml, "ForceDeleteOnUninstall") {
+		t.Errorf("Permanent component should never have ForceDeleteOnUninstall:\n%s", xml)
+	}
+}
+
 func TestPreserveEmptyStringValue(t *testing.T) {
 	content := `Windows Registry Editor Version 5.00
 
@@ -769,7 +852,7 @@ func TestPreserveEmptyStringValue(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	proc := NewProcessor(tmpDir)
+	proc := NewProcessor(tmpDir, "")
 	reg := ir.Registry{File: "empty.reg", Preserve: true}
 
 	components, err := proc.Process(reg)

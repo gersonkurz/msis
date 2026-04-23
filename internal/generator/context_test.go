@@ -2144,3 +2144,55 @@ func TestPreserveRegistryIntegration(t *testing.T) {
 		t.Errorf("Non-preserved property ref value should remain literal, got:\n%s", output.RegistryXML)
 	}
 }
+
+func TestProductScopedComponentGUIDs(t *testing.T) {
+	// Verify that different UPGRADE_CODEs produce different component GUIDs
+	// for non-file components (permissions, env vars, shortcuts, etc.).
+	// This prevents MSI "shared component" conflicts when multiple MSIS-built
+	// products are installed on the same machine.
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{Name: "Main", Enabled: true},
+		},
+	}
+
+	vars1 := variables.New()
+	vars1["UPGRADE_CODE"] = "11111111-1111-1111-1111-111111111111"
+	ctx1 := NewContext(setup, vars1, ".")
+
+	vars2 := variables.New()
+	vars2["UPGRADE_CODE"] = "22222222-2222-2222-2222-222222222222"
+	ctx2 := NewContext(setup, vars2, ".")
+
+	// Permission component IDs should differ
+	id1 := ctx1.NextComponentID(ctx1.productScopedID("perm_INSTALLDIR"))
+	id2 := ctx2.NextComponentID(ctx2.productScopedID("perm_INSTALLDIR"))
+	if id1 == id2 {
+		t.Errorf("Permission component IDs should differ between products, both got %s", id1)
+	}
+
+	// GUIDs should also differ
+	guid1 := GenerateGUID(id1)
+	guid2 := GenerateGUID(id2)
+	if guid1 == guid2 {
+		t.Errorf("Permission component GUIDs should differ between products, both got %s", guid1)
+	}
+
+	// add_to_path should differ
+	id3 := ctx1.NextComponentID(ctx1.productScopedID("add_to_path"))
+	id4 := ctx2.NextComponentID(ctx2.productScopedID("add_to_path"))
+	if id3 == id4 {
+		t.Errorf("PATH component IDs should differ between products, both got %s", id3)
+	}
+
+	// Without UPGRADE_CODE, should still produce deterministic IDs (backward compat)
+	vars3 := variables.New()
+	ctx3 := NewContext(setup, vars3, ".")
+	id5 := ctx3.NextComponentID(ctx3.productScopedID("perm_INSTALLDIR"))
+	// Should be same as hashing "perm_INSTALLDIR" directly (no prefix)
+	ctx4 := NewContext(setup, vars3, ".")
+	id6 := ctx4.NextComponentID("perm_INSTALLDIR")
+	if id5 != id6 {
+		t.Errorf("Without UPGRADE_CODE, productScopedID should not change the input: got %s vs %s", id5, id6)
+	}
+}

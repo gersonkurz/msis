@@ -51,6 +51,7 @@ type RegistryValue struct {
 // Processor handles registry file parsing and WiX generation.
 type Processor struct {
 	workDir          string
+	upgradeCode      string
 	nextKeyID        int
 	nextValueID      int
 	componentCounter int
@@ -59,9 +60,12 @@ type Processor struct {
 }
 
 // NewProcessor creates a new registry processor.
-func NewProcessor(workDir string) *Processor {
+// The upgradeCode is used to make component GUIDs product-unique,
+// preventing shared component conflicts between different products.
+func NewProcessor(workDir string, upgradeCode string) *Processor {
 	return &Processor{
 		workDir:      workDir,
+		upgradeCode:  upgradeCode,
 		componentIDs: make(map[string]bool),
 	}
 }
@@ -92,7 +96,7 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 
 	// Generate component
 	compID := p.nextComponentIDStr()
-	guid := generateGUID("registry_" + reg.File)
+	guid := generateGUID(p.upgradeCode + "/registry_" + reg.File)
 
 	comp := &Component{
 		ID:        compID,
@@ -498,7 +502,7 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 	isFirstValue := true
 	for _, key := range comp.Keys {
 		if !key.RemoveFlag {
-			p.generateRegistryKeyXML(key, sb, comp.SDDL, setPermissions, 3, &isFirstValue, preservedIDs)
+			p.generateRegistryKeyXML(key, sb, comp.SDDL, setPermissions, !comp.Permanent, 3, &isFirstValue, preservedIDs)
 		}
 	}
 
@@ -545,7 +549,7 @@ func (p *Processor) collectRemovals(key *RegistryKey, removals *[]RemovalEntry) 
 	}
 }
 
-func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
+func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, canForceDelete bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
 	indent := strings.Repeat("    ", depth)
 
 	if key.RemoveFlag {
@@ -553,9 +557,15 @@ func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder
 		return
 	}
 
-	// Open RegistryKey
-	sb.WriteString(fmt.Sprintf("%s<RegistryKey Root='%s' Key='%s' ForceCreateOnInstall='yes'>\n",
-		indent, key.Root, escapeXML(key.Key)))
+	// Only add ForceDeleteOnUninstall to empty keys (no values in this key or any subkeys).
+	// Keys with values are left alone — MSI removes individual values it created, and
+	// runtime-created values (not in the .reg file) are preserved.
+	deleteAttr := ""
+	if canForceDelete && !keyTreeHasValues(key) {
+		deleteAttr = " ForceDeleteOnUninstall='yes'"
+	}
+	sb.WriteString(fmt.Sprintf("%s<RegistryKey Root='%s' Key='%s' ForceCreateOnInstall='yes'%s>\n",
+		indent, key.Root, escapeXML(key.Key), deleteAttr))
 
 	// Add permissions if enabled
 	// Note: Use core WiX PermissionEx (not util:PermissionEx) for Sddl attribute on registry keys
@@ -573,13 +583,13 @@ func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder
 	// Generate subkeys
 	for _, subKey := range key.SubKeys {
 		// Subkeys don't repeat Root
-		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue, preservedIDs)
+		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, canForceDelete, depth+1, isFirstValue, preservedIDs)
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</RegistryKey>\n", indent))
 }
 
-func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
+func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sddl string, setPermissions bool, canForceDelete bool, depth int, isFirstValue *bool, preservedIDs map[string]int) {
 	indent := strings.Repeat("    ", depth)
 
 	if key.RemoveFlag {
@@ -591,8 +601,13 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 	parts := strings.Split(key.Key, "\\")
 	keyName := parts[len(parts)-1]
 
-	sb.WriteString(fmt.Sprintf("%s<RegistryKey Key='%s' ForceCreateOnInstall='yes'>\n",
-		indent, escapeXML(keyName)))
+	// Only add ForceDeleteOnUninstall to empty keys (no values in this key or any subkeys)
+	deleteAttr := ""
+	if canForceDelete && !keyTreeHasValues(key) {
+		deleteAttr = " ForceDeleteOnUninstall='yes'"
+	}
+	sb.WriteString(fmt.Sprintf("%s<RegistryKey Key='%s' ForceCreateOnInstall='yes'%s>\n",
+		indent, escapeXML(keyName), deleteAttr))
 
 	// Add permissions if enabled (core WiX PermissionEx, not util:PermissionEx)
 	if setPermissions && sddl != "" {
@@ -608,7 +623,7 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 
 	// Generate subkeys
 	for _, subKey := range key.SubKeys {
-		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, depth+1, isFirstValue, preservedIDs)
+		p.generateSubKeyXML(subKey, sb, sddl, setPermissions, canForceDelete, depth+1, isFirstValue, preservedIDs)
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</RegistryKey>\n", indent))
@@ -659,6 +674,23 @@ func (p *Processor) generateRegistryValueXML(val *RegistryValue, key *RegistryKe
 		sb.WriteString(fmt.Sprintf("%s<RegistryValue%s Value='%s' Type='%s'%s/>\n",
 			indent, nameAttr, escapeXML(val.Value), val.Type, keyPathAttr))
 	}
+}
+
+// keyTreeHasValues returns true if the key or any of its subkeys contain non-removal values.
+// Keys without values are "structural" (empty) and safe to ForceDeleteOnUninstall.
+// Keys with values may have runtime-created siblings that must not be deleted.
+func keyTreeHasValues(key *RegistryKey) bool {
+	for _, val := range key.Values {
+		if !val.RemoveFlag {
+			return true
+		}
+	}
+	for _, subKey := range key.SubKeys {
+		if !subKey.RemoveFlag && keyTreeHasValues(subKey) {
+			return true
+		}
+	}
+	return false
 }
 
 // findFirstKeyPath finds the first non-removal key to use for a dummy keypath.
