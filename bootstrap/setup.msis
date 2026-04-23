@@ -9,7 +9,7 @@
 <setup>
   <!-- Product identification -->
   <set name="PRODUCT_NAME" value="MSIS"/>
-  <set name="PRODUCT_VERSION" value="3.0.1"/>
+  <set name="PRODUCT_VERSION" value="3.0.2"/>
   <set name="MANUFACTURER" value="NG Branch Technology GmbH"/>
   <set name="UPGRADE_CODE" value="{E7A3B8C1-5D2F-4A9E-B6C4-8F1D3E2A7B5C}"/>
 

@@ -2,7 +2,7 @@
 
 set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 
-version := "3.0.1"
+version := "3.0.2"
 binary := "msis"
 cmd_path := "./cmd/msis"
 bootstrap_dir := "bootstrap"

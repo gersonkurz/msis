@@ -23,7 +23,7 @@ import (
 )
 
 // Version and BuildTime are set via ldflags at build time
-var Version = "3.0.1-dev"
+var Version = "3.0.2"
 var BuildTime = ""
 
 type cliArgs struct {
