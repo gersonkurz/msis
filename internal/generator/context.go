@@ -1435,8 +1435,15 @@ func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, d
 		allowAbsent = "no"
 	}
 
-	sb.WriteString(fmt.Sprintf("%s<Feature Id='%s' Title='%s' Level='%s' AllowAbsent='%s'>\n",
-		indent, featureID, feature.Name, level, allowAbsent))
+	// Root feature gets ConfigurableDirectory so CustomizeDlg's Browse button
+	// is enabled. Sub-features inherit INSTALLDIR and must not override.
+	configurable := ""
+	if parentIndexPath == "" {
+		configurable = " ConfigurableDirectory='INSTALLDIR'"
+	}
+
+	sb.WriteString(fmt.Sprintf("%s<Feature Id='%s' Title='%s' Level='%s' AllowAbsent='%s'%s>\n",
+		indent, featureID, feature.Name, level, allowAbsent, configurable))
 
 	// Component refs (keyed by unique feature ID)
 	if compIDs, ok := c.FeatureComponents[featureID]; ok {
