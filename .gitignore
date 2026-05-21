@@ -24,6 +24,9 @@ bootstrap/dist/
 coverage.*
 *.coverprofile
 profile.cov
+msis-coverage.xml
+msis-junit.xml
+msis-test.log
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

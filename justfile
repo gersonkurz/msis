@@ -57,13 +57,31 @@ build-windows-arm64:
 build-all: build-windows-x64 build-windows-x86 build-windows-arm64
     @echo "Built all targets in {{bootstrap_dir}}/"
 
-# Run tests
+# Run tests, write JUnit XML + JSON log
 test:
-    go test ./...
+    go run gotest.tools/gotestsum@latest \
+        --jsonfile msis-test.log \
+        --junitfile msis-junit.xml \
+        --junitfile-hide-empty-pkg \
+        -- -p=1 ./...
 
-# Run tests with verbose output
+# Run tests with verbose (testdox) output
 test-verbose:
-    go test -v ./...
+    go run gotest.tools/gotestsum@latest \
+        --jsonfile msis-test.log \
+        --junitfile msis-junit.xml \
+        --junitfile-hide-empty-pkg \
+        --format testdox \
+        -- -p=1 -v ./...
+
+# Run tests with coverage and generate Cobertura XML report
+coverage:
+    go run gotest.tools/gotestsum@latest \
+        --jsonfile msis-test.log \
+        --junitfile msis-junit.xml \
+        --junitfile-hide-empty-pkg \
+        -- -p=1 -coverpkg=./... -coverprofile=msis-coverage.out ./...
+    go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml
 
 # Clean build artifacts
 [unix]
