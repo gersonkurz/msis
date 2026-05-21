@@ -58,6 +58,12 @@ build-all: build-windows-x64 build-windows-x86 build-windows-arm64
     @echo "Built all targets in {{bootstrap_dir}}/"
 
 # Run tests, write JUnit XML + JSON log
+# Windows uses cmd /c: PowerShell mangles flags after `--` for external commands.
+[windows]
+test:
+    cmd /c "go run gotest.tools/gotestsum@latest --jsonfile msis-test.log --junitfile msis-junit.xml --junitfile-hide-empty-pkg -- -p=1 ./..."
+
+[unix]
 test:
     go run gotest.tools/gotestsum@latest \
         --jsonfile msis-test.log \
@@ -66,6 +72,11 @@ test:
         -- -p=1 ./...
 
 # Run tests with verbose (testdox) output
+[windows]
+test-verbose:
+    cmd /c "go run gotest.tools/gotestsum@latest --jsonfile msis-test.log --junitfile msis-junit.xml --junitfile-hide-empty-pkg --format testdox -- -p=1 -v ./..."
+
+[unix]
 test-verbose:
     go run gotest.tools/gotestsum@latest \
         --jsonfile msis-test.log \
@@ -75,13 +86,19 @@ test-verbose:
         -- -p=1 -v ./...
 
 # Run tests with coverage and generate Cobertura XML report
+[windows]
+coverage:
+    cmd /c "go run gotest.tools/gotestsum@latest --jsonfile msis-test.log --junitfile msis-junit.xml --junitfile-hide-empty-pkg -- -p=1 -coverpkg=./... -coverprofile=msis-coverage.out ./..."
+    cmd /c "go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml"
+
+[unix]
 coverage:
     go run gotest.tools/gotestsum@latest \
         --jsonfile msis-test.log \
         --junitfile msis-junit.xml \
         --junitfile-hide-empty-pkg \
         -- -p=1 -coverpkg=./... -coverprofile=msis-coverage.out ./...
-    {{ if os() == "windows" { "Get-Content msis-coverage.out | go run github.com/boumenot/gocover-cobertura@latest > msis-coverage.xml" } else { "go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml" } }}
+    go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml
 
 # Clean build artifacts
 [unix]
