@@ -66,6 +66,7 @@
     <xs:attribute name="cmd" type="xs:string" use="required"/>
     <xs:attribute name="when" type="xs:string" use="required"/>
     <xs:attribute name="directory" type="xs:string" use="optional"/>
+    <xs:attribute name="fail-on-error" type="msisBoolean" use="optional"/>
   </xs:complexType>
 
   <xs:complexType name="PrerequisiteType">

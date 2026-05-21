@@ -1445,6 +1445,76 @@ func TestExecuteBeforeInstall(t *testing.T) {
 	}
 }
 
+func TestExecuteFailOnErrorDeferred(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{Name: "Main", Enabled: true}},
+		Items: []ir.Item{
+			ir.Execute{
+				Cmd:         "[INSTALLDIR]guard-agent.exe validate --config [INSTALLDIR]guard-agent.json",
+				When:        "after-install",
+				FailOnError: true,
+			},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(output.CustomActionsXML, "Return='check'") {
+		t.Errorf("fail-on-error=true should emit Return='check', got: %s", output.CustomActionsXML)
+	}
+	if strings.Contains(output.CustomActionsXML, "Return='ignore'") {
+		t.Errorf("fail-on-error=true must not emit Return='ignore', got: %s", output.CustomActionsXML)
+	}
+}
+
+func TestExecuteFailOnErrorImmediate(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{Name: "Main", Enabled: true}},
+		Items: []ir.Item{
+			ir.Execute{Cmd: "check.exe", When: "before-install", FailOnError: true},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(output.CustomActionsXML, "Execute='immediate'") {
+		t.Error("before-install with fail-on-error should still be immediate")
+	}
+	if !strings.Contains(output.CustomActionsXML, "Return='check'") {
+		t.Errorf("fail-on-error=true should emit Return='check', got: %s", output.CustomActionsXML)
+	}
+}
+
+func TestExecuteFailOnErrorDefault(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{Name: "Main", Enabled: true}},
+		Items: []ir.Item{
+			ir.Execute{Cmd: "x.exe", When: "after-install"},
+		},
+	}
+	vars := variables.New()
+	vars["DISABLE_FILE_PERMISSIONS"] = "True"
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(output.CustomActionsXML, "Return='ignore'") {
+		t.Errorf("default (no fail-on-error) should keep Return='ignore' for backwards compatibility, got: %s", output.CustomActionsXML)
+	}
+}
+
 func TestExecuteMultipleTimings(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{

@@ -85,10 +85,11 @@ type RemoveOnUninstallItem struct {
 
 // CustomAction represents a WiX custom action.
 type CustomAction struct {
-	ID        string
-	Command   string
-	Directory string
-	When      string // before-install, after-install, before-uninstall, etc.
+	ID          string
+	Command     string
+	Directory   string
+	When        string // before-install, after-install, before-uninstall, etc.
+	FailOnError bool   // true → Return='check' (non-zero exit fails the install)
 }
 
 // ShortcutComponent represents a WiX component containing a shortcut.
@@ -642,18 +643,22 @@ func (c *Context) assignFeatureIDs(feature *ir.Feature, parentIndexPath string, 
 }
 
 // isExcluded checks if a path should be excluded, matching against both absolute
-// and relative forms (relative to basePath or WorkDir).
+// and relative forms (relative to basePath or WorkDir). Exclude entries are stored
+// with forward slashes normalized to backslashes by collectExcludes, so inputs are
+// normalized the same way here.
 func (c *Context) isExcluded(path, basePath string) bool {
-	lowerPath := strings.ToLower(path)
+	normalize := func(p string) string {
+		return strings.ToLower(strings.ReplaceAll(p, "/", "\\"))
+	}
 	// Check absolute path
-	if c.ExcludedFolders[lowerPath] {
+	if c.ExcludedFolders[normalize(path)] {
 		return true
 	}
 	// Check path relative to basePath
 	if basePath != "" {
 		relPath, err := filepath.Rel(basePath, path)
 		if err == nil {
-			if c.ExcludedFolders[strings.ToLower(relPath)] {
+			if c.ExcludedFolders[normalize(relPath)] {
 				return true
 			}
 		}
@@ -661,7 +666,7 @@ func (c *Context) isExcluded(path, basePath string) bool {
 	// Check path relative to WorkDir
 	relPath, err := filepath.Rel(c.WorkDir, path)
 	if err == nil {
-		if c.ExcludedFolders[strings.ToLower(relPath)] {
+		if c.ExcludedFolders[normalize(relPath)] {
 			return true
 		}
 	}
@@ -758,12 +763,18 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 		dirPath := subPath
 
 		if subPath != "" {
-			lastComponent := filepath.Base(subPath)
+			// msis target paths are Windows-style; split on '\' regardless of host OS.
+			lastSep := strings.LastIndexByte(subPath, '\\')
+			lastComponent := subPath
+			if lastSep >= 0 {
+				lastComponent = subPath[lastSep+1:]
+			}
 			// Check if last component looks like a filename (has an extension)
 			if ext := filepath.Ext(lastComponent); ext != "" {
 				// It's a rename: extract directory path and target filename
-				dirPath = filepath.Dir(subPath)
-				if dirPath == "." {
+				if lastSep >= 0 {
+					dirPath = subPath[:lastSep]
+				} else {
 					dirPath = ""
 				}
 				targetFileName = lastComponent
@@ -1188,10 +1199,11 @@ func (c *Context) processExecute(exec ir.Execute, featureID string) error {
 	}
 
 	ca := &CustomAction{
-		ID:        actionID,
-		Command:   exec.Cmd,
-		Directory: directory,
-		When:      exec.When,
+		ID:          actionID,
+		Command:     exec.Cmd,
+		Directory:   directory,
+		When:        exec.When,
+		FailOnError: exec.FailOnError,
 	}
 
 	c.CustomActions = append(c.CustomActions, ca)
@@ -1519,14 +1531,18 @@ func (c *Context) generateCustomActionsXML() string {
 
 	var sb strings.Builder
 	for _, ca := range c.CustomActions {
+		returnAttr := "ignore"
+		if ca.FailOnError {
+			returnAttr = "check"
+		}
 		// Determine execution type based on timing
 		// before-install runs immediate, others run deferred with elevated privileges
 		if ca.When == "before-install" {
-			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='immediate' Return='ignore'/>\n",
-				ca.ID, ca.Directory, escapeXMLAttr(ca.Command)))
+			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='immediate' Return='%s'/>\n",
+				ca.ID, ca.Directory, escapeXMLAttr(ca.Command), returnAttr))
 		} else {
-			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='deferred' Return='ignore' Impersonate='no'/>\n",
-				ca.ID, ca.Directory, escapeXMLAttr(ca.Command)))
+			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='deferred' Return='%s' Impersonate='no'/>\n",
+				ca.ID, ca.Directory, escapeXMLAttr(ca.Command), returnAttr))
 		}
 	}
 	return sb.String()

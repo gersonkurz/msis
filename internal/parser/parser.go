@@ -116,9 +116,10 @@ type xmlExclude struct {
 }
 
 type xmlExecute struct {
-	Cmd       string `xml:"cmd,attr"`
-	When      string `xml:"when,attr"`
-	Directory string `xml:"directory,attr"`
+	Cmd         string `xml:"cmd,attr"`
+	When        string `xml:"when,attr"`
+	Directory   string `xml:"directory,attr"`
+	FailOnError string `xml:"fail-on-error,attr"`
 }
 
 type xmlCreateFolder struct {
@@ -373,6 +374,8 @@ func (e *xmlExecute) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 			hasWhen = true
 		case "directory":
 			e.Directory = attr.Value
+		case "fail-on-error":
+			e.FailOnError = attr.Value
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <execute>", attr.Name.Local)
 		}
@@ -890,9 +893,10 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 
 		case "execute":
 			items = append(items, ir.Execute{
-				Cmd:       raw.Execute.Cmd,
-				When:      raw.Execute.When,
-				Directory: raw.Execute.Directory,
+				Cmd:         raw.Execute.Cmd,
+				When:        raw.Execute.When,
+				Directory:   raw.Execute.Directory,
+				FailOnError: parseMsisBool(raw.Execute.FailOnError),
 			})
 
 		case "remove-on-uninstall":

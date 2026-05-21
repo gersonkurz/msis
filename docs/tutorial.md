@@ -371,6 +371,18 @@ Sometimes you need to run commands during installation:
 
 **Note**: `after-install` and later run with elevated privileges (as SYSTEM), which is usually what you want for configuration tasks.
 
+### Failing the install on non-zero exit
+
+By default a custom action's exit code is ignored. To make the installer roll back when the command exits non-zero (e.g. a pre-flight validator), add `fail-on-error="true"`:
+
+```xml
+<execute cmd="[INSTALLDIR]myapp.exe validate --config &quot;[INSTALLDIR]myapp.json&quot;"
+         when="after-install"
+         fail-on-error="true"/>
+```
+
+A non-zero exit then surfaces as an MSI error and triggers automatic rollback of the install.
+
 ---
 
 ## Tutorial 8: Optional Features

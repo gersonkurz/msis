@@ -473,6 +473,47 @@ func TestParseExecute(t *testing.T) {
 	if feature.Items[0].ItemType() != "execute" {
 		t.Errorf("expected 'execute', got %s", feature.Items[0].ItemType())
 	}
+
+	exec := feature.Items[0].(ir.Execute)
+	if exec.FailOnError {
+		t.Error("expected fail-on-error to default to false")
+	}
+}
+
+func TestParseExecute_FailOnError(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Scripts" enabled="yes">
+        <execute cmd="validate.exe" when="after-install" fail-on-error="true"/>
+    </feature>
+</setup>`
+
+	setup, err := ParseBytes([]byte(xml))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	exec, ok := setup.Features[0].Items[0].(ir.Execute)
+	if !ok {
+		t.Fatal("expected ir.Execute")
+	}
+	if !exec.FailOnError {
+		t.Error("expected fail-on-error=true to be parsed as true")
+	}
+}
+
+func TestParseExecute_UnknownAttribute(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Scripts" enabled="yes">
+        <execute cmd="x.exe" when="after-install" bogus="1"/>
+    </feature>
+</setup>`
+
+	_, err := ParseBytes([]byte(xml))
+	if err == nil {
+		t.Fatal("expected error for unknown attribute on <execute>")
+	}
 }
 
 func TestParseCreateFolder(t *testing.T) {
