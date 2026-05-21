@@ -81,7 +81,7 @@ coverage:
         --junitfile msis-junit.xml \
         --junitfile-hide-empty-pkg \
         -- -p=1 -coverpkg=./... -coverprofile=msis-coverage.out ./...
-    go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml
+    {{ if os() == "windows" { "Get-Content msis-coverage.out | go run github.com/boumenot/gocover-cobertura@latest > msis-coverage.xml" } else { "go run github.com/boumenot/gocover-cobertura@latest < msis-coverage.out > msis-coverage.xml" } }}
 
 # Clean build artifacts
 [unix]
