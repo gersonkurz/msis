@@ -13,6 +13,14 @@
     <SetVariable Id="SetInstallFolder" Variable="InstallFolder"
         Value="[ProgramFiles6432Folder]{{#if INSTALL_FOLDER}}{{INSTALL_FOLDER}}{{else}}{{#if INSTALLDIR}}{{INSTALLDIR}}{{else}}{{PRODUCT_NAME}}{{/if}}{{/if}}"/>
 
+    <!-- Detect VC++ 2015-2022 runtime (referenced by Prereq_vcredist_* DetectCondition) -->
+    <util:RegistrySearch Id="VcppRuntimeX64" Variable="VcppRuntimeX64Installed"
+        Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" Value="Installed"
+        Result="exists" Bitness="always64"/>
+    <util:RegistrySearch Id="VcppRuntimeX86" Variable="VcppRuntimeX86Installed"
+        Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" Value="Installed"
+        Result="exists" Bitness="always32"/>
+
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}"{{#if LOGO_BOOTSTRAP}} LogoFile="{{LOGO_BOOTSTRAP}}"{{/if}} Theme="hyperlinkLicense" SuppressOptionsUI="yes"/>
     </BootstrapperApplication>

@@ -104,11 +104,15 @@ var Prerequisites = map[string]map[string]PrerequisiteDef{
 }
 
 // VC++ Redistributable detection conditions
-// These check the Installed DWORD value in the appropriate registry key
+// References Burn variables populated by <util:RegistrySearch> elements in the
+// bundle templates (templates/bundle.wxs and templates/bundle-silent.wxs).
+// Burn's condition language does NOT support EXISTS() — that's MSI Launch
+// Condition syntax. The searches probe HKLM\…\VC\Runtimes\{x64|x86}\Installed
+// and set VcppRuntimeX64Installed / VcppRuntimeX86Installed (1 = installed).
 // Reference: https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files
 
 // 2022 (14.30+) - same key as 2015-2019, higher version
-const vcRedistDetect2022 = `(VersionNT64 AND EXISTS("HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64\Installed")) OR (NOT VersionNT64 AND EXISTS("HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86\Installed"))`
+const vcRedistDetect2022 = `(VersionNT64 AND VcppRuntimeX64Installed) OR (NOT VersionNT64 AND VcppRuntimeX86Installed)`
 
 // 2019 (14.20-14.29)
 const vcRedistDetect2019 = vcRedistDetect2022 // Same detection, different installer
