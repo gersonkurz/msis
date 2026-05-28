@@ -577,13 +577,13 @@ func (d *discardWriter) Write(p []byte) (n int, err error) {
 
 // getDefaultTemplateFolder returns the default template folder path.
 // Search order:
-// 1. %LOCALAPPDATA%\msis\templates (installed location)
+// 1. %LOCALAPPDATA%\MSIS\templates (installed location)
 // 2. Executable directory\templates (portable/dev)
 // 3. Current directory\templates (fallback)
 func getDefaultTemplateFolder() string {
-	// 1. Check installed location: %LOCALAPPDATA%\msis\templates
+	// 1. Check installed location: %LOCALAPPDATA%\MSIS\templates
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		installedPath := filepath.Join(localAppData, "msis", "templates")
+		installedPath := filepath.Join(localAppData, "MSIS", "templates")
 		if _, err := os.Stat(installedPath); err == nil {
 			return installedPath
 		}
@@ -605,7 +605,7 @@ func getDefaultTemplateFolder() string {
 // getDefaultCustomTemplates returns the default custom templates folder path.
 func getDefaultCustomTemplates() string {
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		customPath := filepath.Join(localAppData, "msis", "custom")
+		customPath := filepath.Join(localAppData, "MSIS", "custom")
 		if _, err := os.Stat(customPath); err == nil {
 			return customPath
 		}
@@ -634,7 +634,7 @@ func printUsage() {
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
 	fmt.Println(cli.Bold("Template folder search order:"))
-	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
+	fmt.Println("  1. %LOCALAPPDATA%\\MSIS\\templates (installed)")
 	fmt.Println("  2. <executable-dir>\\templates (portable)")
 	fmt.Println("  3. .\\templates (current directory)")
 	fmt.Println()
@@ -727,9 +727,9 @@ func printStatus(args *cliArgs) {
 
 	// Show search paths
 	fmt.Println(cli.Bold("Template Search Order:"))
-	fmt.Println("  1. %LOCALAPPDATA%\\msis\\templates (installed)")
+	fmt.Println("  1. %LOCALAPPDATA%\\MSIS\\templates (installed)")
 	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
-		installedPath := filepath.Join(localAppData, "msis", "templates")
+		installedPath := filepath.Join(localAppData, "MSIS", "templates")
 		if _, err := os.Stat(installedPath); err == nil {
 			fmt.Printf("     -> %s %s\n", cli.Filename(installedPath), cli.Success("(found)"))
 		} else {
