@@ -478,6 +478,40 @@ func TestParseExecute(t *testing.T) {
 	if exec.FailOnError {
 		t.Error("expected fail-on-error to default to false")
 	}
+	if exec.Quiet != "no" {
+		t.Errorf("expected quiet to default to 'no', got %q", exec.Quiet)
+	}
+}
+
+func TestParseExecute_Quiet(t *testing.T) {
+	for _, want := range []string{"no", "yes", "auto"} {
+		xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Scripts" enabled="yes">
+        <execute cmd="x.exe" when="after-install" quiet="` + want + `"/>
+    </feature>
+</setup>`
+		setup, err := ParseBytes([]byte(xml))
+		if err != nil {
+			t.Fatalf("Parse failed for quiet=%q: %v", want, err)
+		}
+		exec := setup.Features[0].Items[0].(ir.Execute)
+		if exec.Quiet != want {
+			t.Errorf("expected quiet=%q, got %q", want, exec.Quiet)
+		}
+	}
+}
+
+func TestParseExecute_QuietInvalid(t *testing.T) {
+	xml := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Scripts" enabled="yes">
+        <execute cmd="x.exe" when="after-install" quiet="maybe"/>
+    </feature>
+</setup>`
+	if _, err := ParseBytes([]byte(xml)); err == nil {
+		t.Fatal("expected error for invalid quiet value")
+	}
 }
 
 func TestParseExecute_FailOnError(t *testing.T) {

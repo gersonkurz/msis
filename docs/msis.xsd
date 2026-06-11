@@ -67,6 +67,24 @@
     <xs:attribute name="when" type="xs:string" use="required"/>
     <xs:attribute name="directory" type="xs:string" use="optional"/>
     <xs:attribute name="fail-on-error" type="msisBoolean" use="optional"/>
+    <xs:attribute name="quiet" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Controls whether the launched process shows a console window.
+          "no" (default): visible console window (current behavior).
+          "yes": always hidden, run via WixQuietExec (CREATE_NO_WINDOW); output is captured to the MSI log.
+          "auto": hidden only for unattended installs (UILevel &lt;= 3, i.e. /qn or /qb); visible otherwise.
+          Only supported for deferred timings (not when="before-install").
+        </xs:documentation>
+      </xs:annotation>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="no"/>
+          <xs:enumeration value="yes"/>
+          <xs:enumeration value="auto"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
   </xs:complexType>
 
   <xs:complexType name="PrerequisiteType">

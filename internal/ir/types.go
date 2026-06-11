@@ -103,12 +103,13 @@ type Exclude struct {
 
 func (e Exclude) ItemType() string { return "exclude" }
 
-// Execute represents: <execute cmd="..." when="..." directory="..." fail-on-error="..."/>
+// Execute represents: <execute cmd="..." when="..." directory="..." fail-on-error="..." quiet="..."/>
 type Execute struct {
 	Cmd         string
 	When        string // before-install, after-install, before-uninstall, after-uninstall
 	Directory   string
-	FailOnError bool // true → Return='check' (non-zero exit fails the install)
+	FailOnError bool   // true → Return='check' (non-zero exit fails the install)
+	Quiet       string // "no" (default, visible console), "yes" (always hidden), "auto" (hidden only when UILevel<=3, i.e. /qn or /qb)
 }
 
 func (e Execute) ItemType() string { return "execute" }

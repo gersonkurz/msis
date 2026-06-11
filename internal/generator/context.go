@@ -90,6 +90,7 @@ type CustomAction struct {
 	Directory   string
 	When        string // before-install, after-install, before-uninstall, etc.
 	FailOnError bool   // true → Return='check' (non-zero exit fails the install)
+	Quiet       string // "no" (visible ExeCommand), "yes" (hidden via WixQuietExec), "auto" (hidden only when UILevel<=3)
 }
 
 // ShortcutComponent represents a WiX component containing a shortcut.
@@ -1188,6 +1189,23 @@ func (c *Context) processExecute(exec ir.Execute, featureID string) error {
 		return fmt.Errorf("invalid execute when value %q: must be one of before-install, after-install, after-install-not-patch, before-upgrade, before-uninstall", exec.When)
 	}
 
+	// Validate quiet value and that it is only used with deferred timings.
+	// WixQuietExec hides the console window (CREATE_NO_WINDOW); the before-install
+	// timing runs immediate and is not supported here.
+	quiet := exec.Quiet
+	if quiet == "" {
+		quiet = "no"
+	}
+	switch quiet {
+	case "no", "yes", "auto":
+		// valid
+	default:
+		return fmt.Errorf("invalid quiet value %q: must be one of no, yes, auto", quiet)
+	}
+	if quiet != "no" && exec.When == "before-install" {
+		return fmt.Errorf("quiet=%q is not supported with when=before-install (only deferred timings)", quiet)
+	}
+
 	// Generate unique action ID
 	actionID := fmt.Sprintf("CUSTOMACTION_%05d", c.nextActionID)
 	c.nextActionID++
@@ -1204,6 +1222,7 @@ func (c *Context) processExecute(exec ir.Execute, featureID string) error {
 		Directory:   directory,
 		When:        exec.When,
 		FailOnError: exec.FailOnError,
+		Quiet:       quiet,
 	}
 
 	c.CustomActions = append(c.CustomActions, ca)
@@ -1523,6 +1542,133 @@ func escapeXMLAttr(s string) string {
 	return s
 }
 
+// quietExecBinaryRef is the WiX Util custom-action binary used to run a command
+// with no console window (CREATE_NO_WINDOW, via WixQuietExec). The project
+// references the X86 build of the Util CA across all platforms (see the
+// WixShellExec usage in templates/*/template.wxs).
+const quietExecBinaryRef = "Wix4UtilCA_X86"
+
+// quoteLeadingExecutable wraps the leading executable token of a command line in
+// double quotes if it is not already quoted. WixQuietExec rejects a command line
+// whose application name is not quoted ("Command string must begin with quoted
+// application name", error 0x80070057), so the quiet path needs this; the plain
+// ExeCommand (type 34) path does not and is left untouched. The executable token
+// is everything up to the first whitespace (property refs like [INSTALLDIR] have
+// no spaces in the unresolved string, so this stays correct after MSI formatting).
+func quoteLeadingExecutable(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" || strings.HasPrefix(cmd, "\"") {
+		return cmd
+	}
+	if i := strings.IndexAny(cmd, " \t"); i >= 0 {
+		return "\"" + cmd[:i] + "\"" + cmd[i:]
+	}
+	return "\"" + cmd + "\""
+}
+
+// emittedAction is one WiX CustomAction definition together with its
+// InstallExecuteSequence scheduling entry, kept together so the two generators
+// stay in sync.
+type emittedAction struct {
+	def string // <CustomAction .../> definition
+	seq string // <Custom .../> sequence entry
+}
+
+// combineConditions ANDs two MSI condition expressions, ignoring empty ones.
+func combineConditions(a, b string) string {
+	switch {
+	case a == "" && b == "":
+		return ""
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return "(" + a + ") AND (" + b + ")"
+	}
+}
+
+// expandCustomAction turns one CustomAction into the concrete WiX CustomAction
+// definitions and sequence entries it requires, honoring the quiet setting:
+//
+//	"no"   → a plain ExeCommand action (visible console window) - unchanged behavior.
+//	"yes"  → a WixQuietExec action (no console window, output captured to the MSI log).
+//	"auto" → both: WixQuietExec when UILevel<=3 (/qn or /qb), visible when UILevel>=4.
+//
+// It is deterministic and side-effect free, so both generators can call it.
+func (c *Context) expandCustomAction(ca *CustomAction) []emittedAction {
+	timing, ok := customActionTimings[ca.When]
+	if !ok {
+		return nil
+	}
+
+	returnAttr := "ignore"
+	if ca.FailOnError {
+		returnAttr = "check"
+	}
+	cmd := escapeXMLAttr(ca.Command)
+	// WixQuietExec requires the executable to be quoted; the visible ExeCommand path does not.
+	quietCmd := escapeXMLAttr(quoteLeadingExecutable(ca.Command))
+	immediate := ca.When == "before-install"
+
+	// visibleDef builds a plain ExeCommand custom action (visible console window).
+	visibleDef := func(id string) string {
+		if immediate {
+			return fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='immediate' Return='%s'/>\n",
+				id, ca.Directory, cmd, returnAttr)
+		}
+		return fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='deferred' Return='%s' Impersonate='no'/>\n",
+			id, ca.Directory, cmd, returnAttr)
+	}
+
+	// seqEntry builds an InstallExecuteSequence scheduling entry for an action.
+	seqEntry := func(actionID, condition string) string {
+		if condition != "" {
+			return fmt.Sprintf("            <Custom Action='%s' %s='%s' Condition='%s'/>\n",
+				actionID, timing.position, timing.reference, condition)
+		}
+		return fmt.Sprintf("            <Custom Action='%s' %s='%s'/>\n",
+			actionID, timing.position, timing.reference)
+	}
+
+	// quietPair builds the WixQuietExec action that hides the console window.
+	// A type-51 immediate action stores the command line in the property whose
+	// name equals the deferred action's Id; the deferred WixQuietExec action then
+	// receives it as CustomActionData and runs it with CREATE_NO_WINDOW.
+	quietPair := func(execID, condition string) []emittedAction {
+		setterID := execID + "_CMD"
+		setterDef := fmt.Sprintf("        <CustomAction Id='%s' Property='%s' Value='%s' Execute='immediate'/>\n",
+			setterID, execID, quietCmd)
+		execDef := fmt.Sprintf("        <CustomAction Id='%s' DllEntry='WixQuietExec' BinaryRef='%s' Execute='deferred' Return='%s' Impersonate='no'/>\n",
+			execID, quietExecBinaryRef, returnAttr)
+		// The setter (immediate) must run before the deferred action is written to the script.
+		var setterSeq string
+		if condition != "" {
+			setterSeq = fmt.Sprintf("            <Custom Action='%s' Before='%s' Condition='%s'/>\n", setterID, execID, condition)
+		} else {
+			setterSeq = fmt.Sprintf("            <Custom Action='%s' Before='%s'/>\n", setterID, execID)
+		}
+		return []emittedAction{
+			{def: setterDef, seq: setterSeq},
+			{def: execDef, seq: seqEntry(execID, condition)},
+		}
+	}
+
+	switch ca.Quiet {
+	case "yes":
+		return quietPair(ca.ID, timing.condition)
+	case "auto":
+		quietCond := combineConditions(timing.condition, "UILevel &lt;= 3")
+		visibleCond := combineConditions(timing.condition, "UILevel &gt;= 4")
+		out := quietPair(ca.ID, quietCond)
+		visID := ca.ID + "_VIS"
+		out = append(out, emittedAction{def: visibleDef(visID), seq: seqEntry(visID, visibleCond)})
+		return out
+	default: // "no" (or empty)
+		return []emittedAction{{def: visibleDef(ca.ID), seq: seqEntry(ca.ID, timing.condition)}}
+	}
+}
+
 // generateCustomActionsXML generates WiX CustomAction elements.
 func (c *Context) generateCustomActionsXML() string {
 	if len(c.CustomActions) == 0 {
@@ -1531,18 +1677,8 @@ func (c *Context) generateCustomActionsXML() string {
 
 	var sb strings.Builder
 	for _, ca := range c.CustomActions {
-		returnAttr := "ignore"
-		if ca.FailOnError {
-			returnAttr = "check"
-		}
-		// Determine execution type based on timing
-		// before-install runs immediate, others run deferred with elevated privileges
-		if ca.When == "before-install" {
-			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='immediate' Return='%s'/>\n",
-				ca.ID, ca.Directory, escapeXMLAttr(ca.Command), returnAttr))
-		} else {
-			sb.WriteString(fmt.Sprintf("        <CustomAction Id='%s' Directory='%s' ExeCommand='%s' Execute='deferred' Return='%s' Impersonate='no'/>\n",
-				ca.ID, ca.Directory, escapeXMLAttr(ca.Command), returnAttr))
+		for _, e := range c.expandCustomAction(ca) {
+			sb.WriteString(e.def)
 		}
 	}
 	return sb.String()
@@ -1569,18 +1705,8 @@ func (c *Context) generateInstallExecuteSequence() string {
 
 	var sb strings.Builder
 	for _, ca := range c.CustomActions {
-		timing, ok := customActionTimings[ca.When]
-		if !ok {
-			// Unknown timing - skip with warning (could also return error)
-			continue
-		}
-
-		if timing.condition != "" {
-			sb.WriteString(fmt.Sprintf("            <Custom Action='%s' %s='%s' Condition='%s'/>\n",
-				ca.ID, timing.position, timing.reference, timing.condition))
-		} else {
-			sb.WriteString(fmt.Sprintf("            <Custom Action='%s' %s='%s'/>\n",
-				ca.ID, timing.position, timing.reference))
+		for _, e := range c.expandCustomAction(ca) {
+			sb.WriteString(e.seq)
 		}
 	}
 	return sb.String()

@@ -29,4 +29,81 @@
     <String Id="msierrXmlConfigFailedOpen" Overridable="yes" Value="Impossibile aprire il file XML [3], errore di sistema: [2]" />
     <String Id="msierrXmlConfigFailedSelect" Overridable="yes" Value="Impossibile trovare il nodo: [3] nel file XML: [4], errore di sistema: [2]" />
     <String Id="msierrXmlConfigFailedSave" Overridable="yes" Value="Impossibile salvare le modifiche al file XML [3], errore di sitema: [2]" />
+
+    <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Benvenuto nell'installazione guidata di [ProductName] [ProductVersion]" />
+    <String Id="PrepareDlgTitle" Value="{\WixUI_Font_Bigger}Benvenuto nell'installazione guidata di [ProductName] [ProductVersion]" />
+
+    <String Id="AdvancedWelcomeEulaDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="AdvancedWelcomeEulaDlgTitle" Value="{\WixUI_Font_Title}Leggere il contratto di licenza di [ProductName] [ProductVersion]" />
+    <String Id="BrowseDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="CancelDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="CancelDlgText" Value="Annullare l'installazione di [ProductName] [ProductVersion]?" />
+    <String Id="CustomizeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="DiskCostDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ErrorDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ExitDialog_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}Installazione guidata di [ProductName] [ProductVersion] completata" />
+    <String Id="FatalError_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="FatalErrorTitle" Value="{\WixUI_Font_Bigger}L'installazione guidata di [ProductName] [ProductVersion] è terminata prematuramente" />
+    <String Id="FatalErrorDescription1" Value="L'installazione guidata di [ProductName] [ProductVersion] è terminata prematuramente a causa di un errore. Il sistema non è stato modificato. Per installare il programma in un secondo momento, eseguire nuovamente l'installazione guidata." />
+    <String Id="FeaturesDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="FilesInUse_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="InstallDirDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="InstallDirDlgFolderLabel" Value="Installare [ProductName] [ProductVersion] in:" />
+    <String Id="InstallScopeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="InstallScopeDlgPerUserDescription" Value="[ProductName] [ProductVersion] verrà installato in una cartella per utente e sarà disponibile solo per il proprio account. Non sono necessari privilegi di amministratore locale." />
+    <String Id="InstallScopeDlgNoPerUserDescription" Value="[ProductName] [ProductVersion] non supporta l'installazione per utente." />
+    <String Id="InstallScopeDlgPerMachineDescription" Value="[ProductName] [ProductVersion] verrà installato in una cartella predefinita per tutti gli utenti. È possibile modificare la cartella di installazione predefinita. Sono necessari privilegi di amministratore locale." />
+    <String Id="InvalidDirDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="LicenseAgreementDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="MaintenanceTypeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="MaintenanceTypeDlgChangeDisabledText" Value="[ProductName] [ProductVersion] non ha funzionalità selezionabili singolarmente." />
+    <String Id="MaintenanceTypeDlgRemoveText" Value="Rimuove [ProductName] [ProductVersion] dal computer." />
+    <String Id="MaintenanceTypeDlgRemoveDisabledText" Value="[ProductName] [ProductVersion] non può essere rimosso." />
+    <String Id="MaintenanceTypeDlgRepairDisabledText" Value="[ProductName] [ProductVersion] non può essere riparato." />
+    <String Id="MaintenanceWelcomeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="MaintenanceWelcomeDlgDescription" Value="L'installazione guidata consente di modificare le funzionalità installate di [ProductName] [ProductVersion] o di rimuoverlo dal computer. Fare clic su Avanti per continuare o su Annulla per uscire." />
+    <String Id="MaintenanceWelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Benvenuto nell'installazione guidata di [ProductName] [ProductVersion]" />
+    <String Id="MsiRMFilesInUse_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="OutOfDiskDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="OutOfRbDiskDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="PrepareDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ProgressDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ProgressDlgTextInstalling" Value="Attendere. L'installazione guidata sta installando [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleInstalling" Value="{\WixUI_Font_Title}Installazione di [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextChanging" Value="Attendere. L'installazione guidata sta modificando [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleChanging" Value="{\WixUI_Font_Title}Modifica di [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextRepairing" Value="Attendere. L'installazione guidata sta riparando [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleRepairing" Value="{\WixUI_Font_Title}Riparazione di [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextRemoving" Value="Attendere. L'installazione guidata sta rimuovendo [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleRemoving" Value="{\WixUI_Font_Title}Rimozione di [ProductName] [ProductVersion]" />
+    <String Id="ProgressDlgTextUpdating" Value="Attendere. L'installazione guidata sta aggiornando [ProductName] [ProductVersion]." />
+    <String Id="ProgressDlgTitleUpdating" Value="{\WixUI_Font_Title}Aggiornamento di [ProductName] [ProductVersion]" />
+    <String Id="ResumeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="ResumeDlgDescription" Value="L'installazione guidata completerà l'installazione di [ProductName] [ProductVersion] sul computer. Fare clic su Installa per continuare o su Annulla per uscire." />
+    <String Id="ResumeDlgTitle" Value="{\WixUI_Font_Bigger}Ripresa dell'installazione guidata di [ProductName] [ProductVersion]" />
+
+    <String Id="SetupTypeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="UserExit_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="UserExitTitle" Value="{\WixUI_Font_Bigger}L'installazione guidata di [ProductName] [ProductVersion] è stata interrotta" />
+    <String Id="UserExitDescription1" Value="L'installazione di [ProductName] [ProductVersion] è stata interrotta. Il sistema non è stato modificato. Per installare il programma in un secondo momento, eseguire nuovamente l'installazione." />
+    <String Id="VerifyReadyDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="VerifyReadyDlgInstallTitle" Value="{\WixUI_Font_Title}Pronto per installare [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgChangeTitle" Value="{\WixUI_Font_Title}Pronto per modificare [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgRepairText" Value="Fare clic su Ripara per riparare l'installazione di [ProductName] [ProductVersion]. Fare clic su Indietro per modificare le impostazioni. Fare clic su Annulla per uscire." />
+    <String Id="VerifyReadyDlgRepairTitle" Value="{\WixUI_Font_Title}Pronto per riparare [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgRemoveText" Value="Fare clic su Rimuovi per rimuovere [ProductName] [ProductVersion] dal computer. Fare clic su Indietro per modificare le impostazioni. Fare clic su Annulla per uscire." />
+    <String Id="VerifyReadyDlgRemoveTitle" Value="{\WixUI_Font_Title}Pronto per rimuovere [ProductName] [ProductVersion]" />
+    <String Id="VerifyReadyDlgUpdateText" Value="Fare clic su Aggiorna per aggiornare [ProductName] [ProductVersion] sul computer. Fare clic su Indietro per modificare le impostazioni. Fare clic su Annulla per uscire." />
+    <String Id="VerifyReadyDlgUpdateTitle" Value="{\WixUI_Font_Title}Pronto per aggiornare [ProductName] [ProductVersion]" />
+    <String Id="WaitForCostingDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="WelcomeDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="WelcomeDlgDescription" Value="L'installazione guidata installerà [ProductName] [ProductVersion] sul computer. Fare clic su Avanti per continuare o su Annulla per uscire." />
+    <String Id="WelcomeUpdateDlgDescriptionUpdate" Value="L'installazione guidata aggiornerà [ProductName] [ProductVersion] sul computer. Fare clic su Avanti per continuare o su Annulla per uscire." />
+    <String Id="WelcomeEulaDlg_Title" Value="[ProductName] [ProductVersion] - Installazione" />
+    <String Id="WelcomeEulaDlgTitle" Value="{\WixUI_Font_Title}Leggere il contratto di licenza di [ProductName] [ProductVersion]" />
+    <String Id="Error9" Value="[ProductName] [ProductVersion]" />
+    <String Id="Error20" Value="Attendere. Configurazione di [ProductName] [ProductVersion] in corso" />
+    <String Id="Error32" Value="{[ProductName] [ProductVersion] }Installazione completata." />
+    <String Id="Error33" Value="{[ProductName] [ProductVersion] }Installazione non riuscita." />
 </WixLocalization>

@@ -1405,6 +1405,88 @@ func TestProcessExecute(t *testing.T) {
 	}
 }
 
+func generateWithExecute(t *testing.T, exec ir.Execute) *GeneratedOutput {
+	t.Helper()
+	setup := &ir.Setup{
+		Features: []ir.Feature{{Name: "Main", Enabled: true, Items: []ir.Item{}}},
+		Items:    []ir.Item{exec},
+	}
+	ctx := NewContext(setup, variables.New(), ".")
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	return output
+}
+
+func TestProcessExecuteQuietYes(t *testing.T) {
+	output := generateWithExecute(t, ir.Execute{
+		Cmd:   "[INSTALLDIR]PAKTCONF.EXE /POST-INSTALL",
+		When:  "after-install",
+		Quiet: "yes",
+	})
+
+	ca := output.CustomActionsXML
+	// Property-setter feeds the command line as CustomActionData to the deferred action.
+	if !strings.Contains(ca, "<CustomAction Id='CUSTOMACTION_00000_CMD' Property='CUSTOMACTION_00000'") {
+		t.Errorf("expected property setter CA, got: %s", ca)
+	}
+	// WixQuietExec rejects a command line whose executable is not quoted.
+	if !strings.Contains(ca, "Value='&quot;[INSTALLDIR]PAKTCONF.EXE&quot; /POST-INSTALL'") {
+		t.Errorf("WixQuietExec command must have the executable quoted, got: %s", ca)
+	}
+	if !strings.Contains(ca, "<CustomAction Id='CUSTOMACTION_00000' DllEntry='WixQuietExec' BinaryRef='Wix4UtilCA_X86' Execute='deferred'") {
+		t.Errorf("expected WixQuietExec deferred CA, got: %s", ca)
+	}
+	// quiet=yes must NOT emit a visible ExeCommand action.
+	if strings.Contains(ca, "ExeCommand=") {
+		t.Errorf("quiet=yes must not emit an ExeCommand action, got: %s", ca)
+	}
+
+	seq := output.InstallExecuteSequence
+	if !strings.Contains(seq, "<Custom Action='CUSTOMACTION_00000_CMD' Before='CUSTOMACTION_00000'") {
+		t.Errorf("setter must be sequenced before the deferred action, got: %s", seq)
+	}
+	if !strings.Contains(seq, "<Custom Action='CUSTOMACTION_00000' Before='InstallFinalize'") {
+		t.Errorf("deferred quiet action must be scheduled before InstallFinalize, got: %s", seq)
+	}
+}
+
+func TestProcessExecuteQuietAuto(t *testing.T) {
+	output := generateWithExecute(t, ir.Execute{
+		Cmd:   "[INSTALLDIR]PAKTCONF.EXE /POST-INSTALL",
+		When:  "after-install",
+		Quiet: "auto",
+	})
+
+	ca := output.CustomActionsXML
+	if !strings.Contains(ca, "DllEntry='WixQuietExec'") {
+		t.Errorf("auto must emit a WixQuietExec action, got: %s", ca)
+	}
+	if !strings.Contains(ca, "<CustomAction Id='CUSTOMACTION_00000_VIS' Directory='INSTALLDIR' ExeCommand=") {
+		t.Errorf("auto must emit a visible ExeCommand fallback action, got: %s", ca)
+	}
+
+	seq := output.InstallExecuteSequence
+	if !strings.Contains(seq, "UILevel &lt;= 3") {
+		t.Errorf("quiet branch must be conditioned on UILevel <= 3, got: %s", seq)
+	}
+	if !strings.Contains(seq, "UILevel &gt;= 4") {
+		t.Errorf("visible branch must be conditioned on UILevel >= 4, got: %s", seq)
+	}
+}
+
+func TestProcessExecuteQuietBeforeInstallIsError(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{Name: "Main", Enabled: true, Items: []ir.Item{}}},
+		Items:    []ir.Item{ir.Execute{Cmd: "x.exe", When: "before-install", Quiet: "yes"}},
+	}
+	ctx := NewContext(setup, variables.New(), ".")
+	if _, err := ctx.Generate(); err == nil {
+		t.Fatal("expected error for quiet with when=before-install")
+	}
+}
+
 func TestExecuteBeforeInstall(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{

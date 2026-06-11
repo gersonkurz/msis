@@ -120,6 +120,7 @@ type xmlExecute struct {
 	When        string `xml:"when,attr"`
 	Directory   string `xml:"directory,attr"`
 	FailOnError string `xml:"fail-on-error,attr"`
+	Quiet       string `xml:"quiet,attr"`
 }
 
 type xmlCreateFolder struct {
@@ -376,6 +377,8 @@ func (e *xmlExecute) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 			e.Directory = attr.Value
 		case "fail-on-error":
 			e.FailOnError = attr.Value
+		case "quiet":
+			e.Quiet = strings.ToLower(attr.Value)
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <execute>", attr.Name.Local)
 		}
@@ -385,6 +388,12 @@ func (e *xmlExecute) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 	}
 	if !hasWhen {
 		return fmt.Errorf("<execute> requires 'when' attribute")
+	}
+	switch e.Quiet {
+	case "", "no", "yes", "auto":
+		// valid
+	default:
+		return fmt.Errorf("invalid quiet value %q on <execute>: must be one of no, yes, auto", e.Quiet)
 	}
 	return d.Skip()
 }
@@ -892,11 +901,16 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 			})
 
 		case "execute":
+			quiet := raw.Execute.Quiet
+			if quiet == "" {
+				quiet = "no"
+			}
 			items = append(items, ir.Execute{
 				Cmd:         raw.Execute.Cmd,
 				When:        raw.Execute.When,
 				Directory:   raw.Execute.Directory,
 				FailOnError: parseMsisBool(raw.Execute.FailOnError),
+				Quiet:       quiet,
 			})
 
 		case "remove-on-uninstall":
