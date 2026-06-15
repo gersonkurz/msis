@@ -649,7 +649,11 @@ func TestPreserveRegistryValueReferences(t *testing.T) {
 	}
 }
 
-func TestPreserveNeverOverwrite(t *testing.T) {
+func TestPreserveDoesNotEmitNeverOverwrite(t *testing.T) {
+	// NeverOverwrite must NOT be emitted for preserved components: it breaks major upgrades
+	// (component marked do-not-install during costing while the old keypath still exists, then
+	// RemoveExistingProducts wipes the values and they never get rewritten). Preservation is
+	// handled by the RegistrySearch -> PS_RV mechanism instead.
 	content := `Windows Registry Editor Version 5.00
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
@@ -672,8 +676,12 @@ func TestPreserveNeverOverwrite(t *testing.T) {
 	allIDs := proc.BuildAllPreservedIDs(components)
 	xml := proc.GenerateXMLWithPreservedIDs(components, false, allIDs)
 
-	if !strings.Contains(xml, "NeverOverwrite='yes'") {
-		t.Errorf("Preserved component should have NeverOverwrite='yes', got:\n%s", xml)
+	if strings.Contains(xml, "NeverOverwrite") {
+		t.Errorf("Preserved component must not have NeverOverwrite (breaks major upgrades), got:\n%s", xml)
+	}
+	// Preservation must still be in place via the PS_RV mechanism.
+	if !strings.Contains(xml, "[PS_RV_") {
+		t.Errorf("Preserved component should reference PS_RV properties, got:\n%s", xml)
 	}
 }
 

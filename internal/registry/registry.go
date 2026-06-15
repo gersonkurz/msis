@@ -473,9 +473,15 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 	if comp.Permanent {
 		attrs += " Permanent='yes'"
 	}
-	if comp.Preserve {
-		attrs += " NeverOverwrite='yes'"
-	}
+	// NOTE: We intentionally do NOT emit NeverOverwrite for preserved components.
+	// Preservation is handled entirely by the RegistrySearch -> PS_RV -> Value='[PS_RV_xxxxx]'
+	// mechanism (read the live value, write it back; fall back to the .reg default on fresh install).
+	// NeverOverwrite is both redundant with that mechanism and actively harmful during major
+	// upgrades: per MSI semantics it "only affects the action state of the component during
+	// costing", so when the keypath already exists (previous version installed), the component is
+	// marked do-not-install BEFORE RemoveExistingProducts runs. RemoveExistingProducts then wipes
+	// the old values and the new component never rewrites them, so preserved values vanish on
+	// upgrade. The PS_RV mechanism alone is the correct, upgrade-safe preservation.
 	if comp.Condition != "" {
 		attrs += fmt.Sprintf(" Condition='%s'", escapeXML(comp.Condition))
 	}

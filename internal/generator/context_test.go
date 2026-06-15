@@ -2286,9 +2286,11 @@ func TestPreserveRegistryIntegration(t *testing.T) {
 		t.Errorf("RegistryXML should contain PS_RV_ references, got:\n%s", output.RegistryXML)
 	}
 
-	// RegistryXML should have NeverOverwrite on the component
-	if !strings.Contains(output.RegistryXML, "NeverOverwrite='yes'") {
-		t.Errorf("RegistryXML should have NeverOverwrite='yes', got:\n%s", output.RegistryXML)
+	// RegistryXML must NOT have NeverOverwrite on the component: it breaks major upgrades
+	// (component marked do-not-install during costing, then RemoveExistingProducts wipes the
+	// old values and they never get rewritten). Preservation relies on the PS_RV mechanism.
+	if strings.Contains(output.RegistryXML, "NeverOverwrite") {
+		t.Errorf("RegistryXML must not have NeverOverwrite (breaks major upgrades), got:\n%s", output.RegistryXML)
 	}
 
 	// Non-preserved "[INSTALLDIR]" value should still use literal value
