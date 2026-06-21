@@ -10,8 +10,25 @@
 
     <!-- Default install folder for bundle options UI -->
     <Variable Name="InstallFolder" Type="string" Value="" bal:Overridable="yes"/>
-    <SetVariable Id="SetInstallFolder" Variable="InstallFolder"
-        Value="[ProgramFiles6432Folder]{{#if INSTALL_FOLDER}}{{INSTALL_FOLDER}}{{else}}{{#if INSTALLDIR}}{{INSTALLDIR}}{{else}}{{PRODUCT_NAME}}{{/if}}{{/if}}"/>
+
+    <!-- Resolve the *true* 64-bit Program Files. The bundle's Burn engine is x86 (so the
+         bundle runs on x86 Windows too), but an x86 engine mis-resolves
+         [ProgramFiles6432Folder] on ARM64 Windows, which put the LaunchTarget path in the
+         wrong place there. Reading ProgramFilesDir from the 64-bit registry view (always64)
+         yields C:\Program Files on both x64 and ARM64 — matching where the MSI installs. -->
+    <util:RegistrySearch Id="ProgramFiles64Dir" Variable="ProgramFiles64Dir"
+        Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion" Value="ProgramFilesDir"
+        Result="value" Bitness="always64"/>
+
+    <!-- Program Files root, normalized to include a trailing slash. Default is the built-in
+         (correct on 32-bit and x64 Windows). On 64-bit Windows the registry value is found and
+         we override with it, which fixes ARM64 and is identical to the default on x64. -->
+    <SetVariable Id="SetPfRoot" Variable="PfRoot" Value="[ProgramFiles6432Folder]"/>
+    <SetVariable Id="SetPfRootNative" Variable="PfRoot" After="SetPfRoot"
+        Condition="ProgramFiles64Dir" Value="[ProgramFiles64Dir]\"/>
+
+    <SetVariable Id="SetInstallFolder" Variable="InstallFolder" After="SetPfRootNative"
+        Value="[PfRoot]{{#if INSTALL_FOLDER}}{{INSTALL_FOLDER}}{{else}}{{#if INSTALLDIR}}{{INSTALLDIR}}{{else}}{{PRODUCT_NAME}}{{/if}}{{/if}}"/>
 
     {{#if LAUNCH_TARGET}}
     <!-- Show a "Launch" button on the WixStdBA success page (LAUNCH_TARGET is a Formatted path) -->
