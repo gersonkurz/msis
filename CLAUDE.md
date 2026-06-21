@@ -104,6 +104,23 @@ Paths not matching these roots are treated as `INSTALLDIR` subpaths.
   Helpers `parseMajorVersion`/`eulaAcceptArgs` in `internal/wix/builder.go` are unit-tested.
 - Default architecture is **x64** (msis-2.x defaulted to x86); set `PLATFORM=x86`/`arm64` to change.
 
+## MSI vs Bundle UI variables (don't conflate)
+
+A standalone MSI (Windows Installer UI) and a bundle (Burn / WixStandardBootstrapperApplication)
+use different engines, so license and launch settings are **separate, non-interchangeable
+variables** — a value set for one side has no effect on the other:
+
+| Capability | MSI (`.msi`) | Bundle (`.exe`) |
+|------------|--------------|-----------------|
+| License | `LICENSE_FILE` — RTF file, accept dialog | `LICENSE_URL` — URL, hyperlink |
+| Launch on finish | `START_EXE` — WiX File Id (`[#FileId]`) | `LAUNCH_TARGET` — Burn Formatted path (`[InstallFolder]\App.exe`) |
+
+When advising users: for a standalone MSI use the MSI column; for a bundle (incl. auto-bundle
+wrappers, which drive the visible UI) use the bundle column. All four flow to templates via the
+variable dictionary. Full reference: `docs/templates.md` (MSI) and `docs/Bundle.md` (bundle).
+(Note: `START_EXE` takes a WiX File Id, but msis generates opaque ids like `FILE_ID00007` — its
+practical usability is unverified; see git history for the LAUNCH_TARGET discussion.)
+
 ## Key Dependencies
 
 - `github.com/aymerick/raymond` — Handlebars template engine
