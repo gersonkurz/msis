@@ -503,26 +503,31 @@ Bundles use `SetVariable` to resolve the install path at runtime:
 
 ## WiX CLI Integration
 
-### WiX 6 Differences
+### WiX 6 / 7 Differences
 
-msis-3.x targets WiX 6, which differs from earlier versions:
+msis-3.x targets WiX 6 and 7 (auto-detected at build time), which differ from earlier versions:
 
-| Aspect | WiX 3.x/4.x | WiX 6 |
-|--------|-------------|-------|
+| Aspect | WiX 3.x/4.x | WiX 6 / 7 |
+|--------|-------------|-----------|
 | Installation | MSI | .NET tool |
 | Root element | `<Product>` | `<Package>` |
-| Namespace | `wix` | `http://wixtoolset.org/schemas/v4/wxs` |
+| Namespace | `wix` | `http://wixtoolset.org/schemas/v4/wxs` (unchanged in 7) |
 | Bundle ext | `WixToolset.Bal.wixext` | `WixToolset.BootstrapperApplications.wixext` |
+| EULA | none | none in 6; WiX 7 enforces the OSMF EULA |
+
+The XML namespace and generated WXS are identical between WiX 6 and 7, so templates need no
+changes. The only build-time difference msis handles is EULA acceptance (see below).
 
 ### Builder Implementation
 
 `wix.Builder` handles:
 
 1. **Path resolution**: Finds `wix.exe` in `~/.dotnet/tools/`
-2. **EULA acceptance**: Runs `wix eula accept wix6` if needed
-3. **Extension loading**: Adds `-ext` flags for UI, Util extensions
-4. **Bind paths**: Adds `-b` flags for file resolution
-5. **Cleanup**: Removes `.wixpdb` and optionally `.wxs`
+2. **Version detection**: `GetWixMajorVersion()` parses `wix --version`
+3. **EULA acceptance**: For WiX 7+ adds `-acceptEula wix<major>` to `wix build`; WiX 6 has no EULA gate (nothing added)
+4. **Extension loading**: Adds `-ext` flags for UI, Util extensions
+5. **Bind paths**: Adds `-b` flags for file resolution
+6. **Cleanup**: Removes `.wixpdb` and optionally `.wxs`
 
 ### Status Command
 

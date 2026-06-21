@@ -29,7 +29,8 @@ Instead of 500+ lines of WiX XML. The tool handles component GUIDs, directory tr
 
 ### Prerequisites
 
-**WiX Toolset 6** (with the extensions msis needs).
+**WiX Toolset 7** (or 6) with the extensions msis needs. msis detects the installed WiX
+major version at build time and works with either — WiX 7 is recommended for new setups.
 
 The easiest and most reliable way is the setup script, which installs the correct WiX
 version, registers all required extensions *pinned to the matching version*, and verifies
@@ -43,20 +44,21 @@ scripts\ensure-wix.cmd
 > Adding them without pinning a version (the common mistake) leaves mismatched copies that
 > trigger `WIX6101 ... compatible with WiX vN?` warnings and "(damaged)" labels. The script
 > avoids that. Re-run with `scripts\ensure-wix.cmd -Clean` to remove mismatched copies.
+> To stay on WiX 6 instead, run `scripts\ensure-wix.cmd -Version 6.0.2`.
 
 <details>
 <summary>Manual install (equivalent)</summary>
 
 ```bash
-dotnet tool install --global wix --version 6.0.2
-wix extension add -g WixToolset.UI.wixext/6.0.2
-wix extension add -g WixToolset.Util.wixext/6.0.2
-wix extension add -g WixToolset.BootstrapperApplications.wixext/6.0.2   # bundles
-wix extension add -g WixToolset.Netfx.wixext/6.0.2                      # bundles
+dotnet tool install --global wix --version 7.0.0
+wix extension add -g WixToolset.UI.wixext/7.0.0
+wix extension add -g WixToolset.Util.wixext/7.0.0
+wix extension add -g WixToolset.BootstrapperApplications.wixext/7.0.0   # bundles
+wix extension add -g WixToolset.Netfx.wixext/7.0.0                      # bundles
 ```
 
-Note the `-g` (global) flag and the `/6.0.2` version pin on every package — omitting either
-is the usual cause of extension trouble.
+Note the `-g` (global) flag and the `/7.0.0` version pin on every package — omitting either
+is the usual cause of extension trouble. (Use `/6.0.2` throughout to stay on WiX 6.)
 </details>
 
 ### Get msis
@@ -131,12 +133,12 @@ msis-3.x is largely compatible with msis-2.x scripts:
 
 | Aspect | msis-2.x | msis-3.x |
 |--------|----------|----------|
-| WiX Version | WiX 3.x/4.x | WiX 6.x |
+| WiX Version | WiX 3.x/4.x | WiX 6 or 7 (auto-detected) |
 | Default Architecture | x86 | x64 |
 | Bundle Engine | Custom C++ | WiX Burn |
 
 **Migration steps:**
-1. Install WiX 6 + extensions: `scripts\ensure-wix.cmd`
+1. Install WiX + extensions: `scripts\ensure-wix.cmd`
 2. Validate: `msis /DRY-RUN setup.msis`
 3. If you need x86: add `<set name="PLATFORM" value="x86"/>`
 4. Rebuild: `msis /BUILD setup.msis`
@@ -147,7 +149,7 @@ Most scripts work unchanged. See the [Tutorial](docs/tutorial.md) for the full e
 
 - **msis-1.x** (C++) - Original implementation, internal use
 - **msis-2.x** (C#) - Expanded features, production use since 2013
-- **msis-3.x** (Go) - Current version, clean rewrite for WiX 6
+- **msis-3.x** (Go) - Current version, clean rewrite for WiX 6/7
 
 All versions share the same `.msis` format.
 

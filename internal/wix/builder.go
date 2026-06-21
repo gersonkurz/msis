@@ -2,11 +2,11 @@
 package wix
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/cli"
@@ -56,12 +56,7 @@ func (b *Builder) Build() error {
 		return err
 	}
 
-	// Ensure EULA is accepted
-	if err := b.ensureEulaAccepted(); err != nil {
-		return fmt.Errorf("EULA check: %w", err)
-	}
-
-	// Build MSI
+	// Build MSI (EULA acceptance, if required, is passed on the build command)
 	if err := b.runWixBuild(); err != nil {
 		return fmt.Errorf("wix build: %w", err)
 	}
@@ -93,39 +88,35 @@ func (b *Builder) checkOutputWritable() error {
 	return nil
 }
 
-// ensureEulaAccepted checks if WiX EULA has been accepted and accepts it if needed.
-func (b *Builder) ensureEulaAccepted() error {
-	wixPath := GetWixPath()
-
-	// Try running a simple wix command to see if EULA is already accepted
-	cmd := exec.Command(wixPath, "--version")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err == nil {
-		return nil // EULA already accepted
+// parseMajorVersion extracts the major version number from a WiX version
+// string such as "6.0.2+b3f3403" or "7.0.0". Returns 0 if it can't be parsed.
+func parseMajorVersion(version string) int {
+	version = strings.TrimSpace(version)
+	if dot := strings.IndexByte(version, '.'); dot > 0 {
+		version = version[:dot]
 	}
-
-	// Check if error is EULA-related
-	errOutput := stderr.String()
-	if strings.Contains(errOutput, "EULA") || strings.Contains(errOutput, "eula") {
-		// Accept EULA for WiX 6
-		fmt.Println("  Accepting WiX 6 EULA...")
-		acceptCmd := exec.Command(wixPath, "eula", "accept", "wix6")
-		acceptCmd.Stdout = os.Stdout
-		acceptCmd.Stderr = os.Stderr
-		if err := acceptCmd.Run(); err != nil {
-			return fmt.Errorf("accepting EULA: %w", err)
-		}
-		return nil
+	n, err := strconv.Atoi(strings.TrimSpace(version))
+	if err != nil {
+		return 0
 	}
+	return n
+}
 
-	// Non-EULA error - return it
-	if errOutput != "" {
-		return fmt.Errorf("wix --version failed: %s", strings.TrimSpace(errOutput))
+// GetWixMajorVersion returns the installed WiX major version (e.g. 6 or 7),
+// or 0 if it cannot be determined.
+func GetWixMajorVersion() int {
+	return parseMajorVersion(GetWixVersion())
+}
+
+// eulaAcceptArgs returns the `wix build` arguments needed to accept the WiX
+// EULA for the given major version. WiX 7 enforces the OSMF EULA and accepts it
+// via `-acceptEula wix<major>`; WiX 6 and earlier have no EULA gate and do not
+// recognize the flag, so nothing is added for them.
+func eulaAcceptArgs(major int) []string {
+	if major >= 7 {
+		return []string{"-acceptEula", fmt.Sprintf("wix%d", major)}
 	}
-	return fmt.Errorf("wix --version failed: %w", err)
+	return nil
 }
 
 // runWixBuild executes wix build command.
@@ -149,6 +140,9 @@ func (b *Builder) runWixBuild() error {
 		"-ext", "WixToolset.UI.wixext",
 		"-ext", "WixToolset.Util.wixext",
 	)
+
+	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
+	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)
 
 	// Localization file
 	locFile := b.getLocalizationFile()
@@ -334,13 +328,7 @@ func (b *BundleBuilder) Build() error {
 		return err
 	}
 
-	// Ensure EULA is accepted (reuse MSI builder logic)
-	msiBuilder := &Builder{} // Create temporary for EULA check
-	if err := msiBuilder.ensureEulaAccepted(); err != nil {
-		return fmt.Errorf("EULA check: %w", err)
-	}
-
-	// Build bundle
+	// Build bundle (EULA acceptance, if required, is passed on the build command)
 	if err := b.runWixBuild(); err != nil {
 		return fmt.Errorf("wix build: %w", err)
 	}
@@ -386,6 +374,9 @@ func (b *BundleBuilder) runWixBuild() error {
 		"-ext", "WixToolset.Util.wixext", // Utility functions
 		"-ext", "WixToolset.Netfx.wixext", // .NET Framework detection
 	)
+
+	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
+	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)
 
 	// Bind paths
 	args = append(args, "-b", workDir)

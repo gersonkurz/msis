@@ -7,7 +7,7 @@ binary := "msis"
 cmd_path := "./cmd/msis"
 bootstrap_dir := "bootstrap"
 build_time := datetime_utc("%Y-%m-%dT%H:%M:%SZ")
-wix_version := "6.0.2"
+wix_version := "7.0.0"
 
 # Default recipe: show available commands
 default:

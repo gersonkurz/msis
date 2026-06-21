@@ -28,19 +28,20 @@
     NOTE: those copies are used by other WiX installs (e.g. a standalone
     "WiX Toolset v5.0"); only use -Clean if you don't rely on those.
 
-.PARAMETER AcceptEula
-    Pre-accept the WiX EULA for this major version (useful for CI so the first
-    build doesn't have to). Best-effort; ignored on versions without a EULA.
+.NOTES
+    msis works with WiX 6 or 7 -- it detects the installed major version at build
+    time. This script installs ONE version (default 7.0.0). To stay on v6, pass
+    -Version 6.0.2. The WiX 7 EULA does not need pre-accepting here: msis passes
+    `-acceptEula wix7` automatically on every build.
 
 .EXAMPLE
     .\ensure-wix.ps1
-    .\ensure-wix.ps1 -Version 7.0.0 -Clean -AcceptEula
+    .\ensure-wix.ps1 -Version 6.0.2 -Clean
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = "6.0.2",
-    [switch]$Clean,
-    [switch]$AcceptEula
+    [string]$Version = "7.0.0",
+    [switch]$Clean
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,17 +132,7 @@ if ($Clean) {
     }
 }
 
-# --- 5. Optional EULA pre-acceptance -------------------------------------
-if ($AcceptEula) {
-    $major = ($Version -split '\.')[0]
-    if ([int]$major -ge 6) {
-        Step "Accepting WiX EULA (wix$major)"
-        try { & $wixExe eula accept "wix$major" *> $null; Ok "EULA wix$major accepted" }
-        catch { Warn "could not pre-accept EULA (msis will accept at build time)" }
-    }
-}
-
-# --- 6. Verify ------------------------------------------------------------
+# --- 5. Verify ------------------------------------------------------------
 Step "Result"
 $toolVer = & $wixExe --version
 Ok "wix tool: $toolVer"

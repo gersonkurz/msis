@@ -295,7 +295,7 @@ The WiX bundle provides:
 ## WiX Extensions
 
 Bundle builds automatically include these WiX extensions:
-- `WixToolset.BootstrapperApplications.wixext` - Bootstrapper Application Library (WiX 6)
+- `WixToolset.BootstrapperApplications.wixext` - Bootstrapper Application Library (WiX 6/7; renamed from `Bal` in WiX 6)
 - `WixToolset.Util.wixext` - Utility functions
 - `WixToolset.Netfx.wixext` - .NET Framework detection
 

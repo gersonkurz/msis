@@ -681,6 +681,13 @@ func printStatus(args *cliArgs) {
 		fmt.Printf("  Location: %s\n", cli.Filename(wixPath))
 		fmt.Printf("  Version:  %s\n", cli.Success(wix.GetWixVersion()))
 
+		// Show EULA handling for the detected major version
+		if major := wix.GetWixMajorVersion(); major >= 7 {
+			fmt.Printf("  EULA:     %s\n", cli.Info(fmt.Sprintf("OSMF (auto-accepted via -acceptEula wix%d)", major)))
+		} else if major > 0 {
+			fmt.Printf("  EULA:     %s\n", cli.Info("none (WiX 6 has no EULA gate)"))
+		}
+
 		// Show installed extensions
 		extensions := wix.GetInstalledExtensions()
 		if len(extensions) > 0 {

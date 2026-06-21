@@ -168,6 +168,49 @@ func TestCleanupWithoutRetainWxs(t *testing.T) {
 	}
 }
 
+func TestParseMajorVersion(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"6.0.2+b3f3403", 6},
+		{"7.0.0", 7},
+		{"7.0.0-rc.1", 7},
+		{"  6.0.2  ", 6},
+		{"5.0.2+aa65968c", 5},
+		{"10.1.0", 10},
+		{"(unavailable)", 0},
+		{"", 0},
+		{"vNext", 0},
+	}
+	for _, c := range cases {
+		if got := parseMajorVersion(c.in); got != c.want {
+			t.Errorf("parseMajorVersion(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestEulaAcceptArgs(t *testing.T) {
+	// WiX 6 and earlier: no EULA gate, no flag.
+	for _, major := range []int{0, 5, 6} {
+		if got := eulaAcceptArgs(major); got != nil {
+			t.Errorf("eulaAcceptArgs(%d) = %v, want nil", major, got)
+		}
+	}
+
+	// WiX 7+: -acceptEula wix<major>.
+	cases := map[int][]string{
+		7: {"-acceptEula", "wix7"},
+		8: {"-acceptEula", "wix8"},
+	}
+	for major, want := range cases {
+		got := eulaAcceptArgs(major)
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Errorf("eulaAcceptArgs(%d) = %v, want %v", major, got, want)
+		}
+	}
+}
+
 func TestIsWixAvailable(t *testing.T) {
 	// This test just verifies the function doesn't panic
 	// The result depends on whether WiX is installed

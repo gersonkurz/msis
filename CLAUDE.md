@@ -17,8 +17,9 @@ all versions.
 
 ## Build & Test
 
-Requires Go and (for `/BUILD`) **WiX Toolset 6**: `dotnet tool install --global wix` plus the
-`WixToolset.UI.wixext` and `WixToolset.Util.wixext` extensions.
+Requires Go and (for `/BUILD`) **WiX Toolset 6 or 7** (auto-detected). Provision it with
+`scripts\ensure-wix.cmd` (or `just ensure-wix`), which installs the pinned WiX version and
+its extensions version-matched — see `scripts/ensure-wix.ps1`.
 
 ```bash
 just build              # Build current platform; auto-copies to C:\Program Files\MSIS if installed
@@ -91,10 +92,14 @@ location/version, template search order, prerequisite cache).
 
 Paths not matching these roots are treated as `INSTALLDIR` subpaths.
 
-## WiX 6 Conventions
+## WiX 6 / 7 Conventions
 
 - Namespace: `http://wixtoolset.org/schemas/v4/wxs`; root element `<Package>` (not `<Product>`).
-- Build: `wix build -out file.msi -arch x64 -b bindpath`; requires `-acceptEula wix6`.
+  The namespace and generated WXS are **identical** across WiX 6 and 7 — templates are version-agnostic.
+- Build: `wix build -out file.msi -arch x64 -b bindpath`.
+- **EULA**: WiX 6 has no EULA gate. WiX 7 enforces the OSMF EULA; msis detects the major version
+  (`wix.GetWixMajorVersion()`) and adds `-acceptEula wix<major>` to the build for v7+ only.
+  Helpers `parseMajorVersion`/`eulaAcceptArgs` in `internal/wix/builder.go` are unit-tested.
 - Default architecture is **x64** (msis-2.x defaulted to x86); set `PLATFORM=x86`/`arm64` to change.
 
 ## Key Dependencies
