@@ -150,11 +150,37 @@ Most scripts work unchanged. See the [Tutorial](docs/tutorial.md) for the full e
 
 ## History
 
+msis has had three generations, all sharing the same `.msis` script format:
+
 - **msis-1.x** (C++) - Original implementation, internal use
 - **msis-2.x** (C#) - Expanded features, production use since 2013
 - **msis-3.x** (Go) - Current version, clean rewrite for WiX 6/7
 
-All versions share the same `.msis` format.
+### msis-3.x version history
+
+Reconstructed from the Git log. No releases are tagged yet, so each version is identified by
+its commit SHA. `3.0.3` is the current in-progress baseline (not yet released).
+
+**3.0.3** — *current, unreleased*
+- WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
+- `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
+- `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`).
+- Fixes: preserved registry keys; `quiet` attribute on `<execute>`; vcredist detection via Burn variables; LOCALAPPDATADIR/INSTALLDIR path collision; `fail-on-error` on `<execute>`; options-dialog browse button; test/coverage tooling.
+
+**3.0.2** — 2026-04-23 (`3ab349f`)
+- Registry preservation on upgrade: keep existing values, remove only those msis created (UUID fix).
+- Services: fixed sub-feature services (no duplicate `ComponentRef`); added `start-after-install`.
+- Added the `create-folder` operation; permanent/non-permanent environment variables; variable replacement for Windows standard dirs (e.g. `APPDATADIR`).
+
+**3.0.1** — 2026-03-13 (`0a1b6c9`)
+- New `/SET:NAME=VALUE` command-line override for `.msis` variables.
+- `INSTALL_DIR_DIALOG` support; stackable install dirs (e.g. `FOO\BAR`); writeability check before invoking `wix.exe`.
+- Fixes: bundle generation, an omitted-Features bug, the `APPDATADIR` product-name path, and registry upgrade handling.
+
+**3.0.0** — 2026-02-05 (`2c42e3d`)
+- Initial Go rewrite of MSI-Simplified targeting WiX 6 (first commit 2026-01-28): `.msis` → IR → WiX XML → MSI.
+- Bundle (bootstrapper) support and prerequisites (.NET / C++ runtime); removed obsolete merge modules (MSM).
+- Visual Studio 2026 support; colored `/HELP` and `/STATUS`; `just build` updates an installed copy.
 
 ## License
 
