@@ -198,10 +198,10 @@ func TestEulaAcceptArgs(t *testing.T) {
 		}
 	}
 
-	// WiX 7+: -acceptEula wix<major>.
+	// WiX 7+: --acceptEula wix<major> (the build flag requires the EULA id value).
 	cases := map[int][]string{
-		7: {"-acceptEula", "wix7"},
-		8: {"-acceptEula", "wix8"},
+		7: {"--acceptEula", "wix7"},
+		8: {"--acceptEula", "wix8"},
 	}
 	for major, want := range cases {
 		got := eulaAcceptArgs(major)

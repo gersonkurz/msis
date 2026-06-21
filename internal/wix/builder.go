@@ -108,13 +108,15 @@ func GetWixMajorVersion() int {
 	return parseMajorVersion(GetWixVersion())
 }
 
-// eulaAcceptArgs returns the `wix build` arguments needed to accept the WiX
-// EULA for the given major version. WiX 7 enforces the OSMF EULA and accepts it
-// via `-acceptEula wix<major>`; WiX 6 and earlier have no EULA gate and do not
-// recognize the flag, so nothing is added for them.
+// eulaAcceptArgs returns the arguments needed to accept the WiX EULA for the
+// given major version, for one build invocation. WiX 7 enforces the OSMF EULA;
+// `wix build` accepts it via `--acceptEula wix<major>` (the flag requires the
+// EULA id as its value). This is defense-in-depth: `msis /SETUP-WIX` also
+// records a persistent acceptance, but the flag keeps builds working in fresh
+// environments (e.g. CI) with no acceptance file. WiX 6 and earlier have no EULA gate.
 func eulaAcceptArgs(major int) []string {
 	if major >= 7 {
-		return []string{"-acceptEula", fmt.Sprintf("wix%d", major)}
+		return []string{"--acceptEula", fmt.Sprintf("wix%d", major)}
 	}
 	return nil
 }

@@ -87,7 +87,17 @@ func EnsureWix(version string, clean bool, progress func(string)) error {
 
 	wixPath := GetWixPath()
 
-	// 3. Register extensions, pinned to the matching version.
+	// 3. Accept the EULA persistently (WiX 7+). Required before `extension add` and
+	//    `build` will run; writes a per-user acceptance file so it's a one-time step.
+	if major := parseMajorVersion(version); major >= 7 {
+		eulaID := fmt.Sprintf("wix%d", major)
+		progress("accepting WiX EULA (" + eulaID + ")")
+		if err := runQuiet(wixPath, "eula", "accept", eulaID); err != nil {
+			return fmt.Errorf("accepting WiX %d EULA: %w", major, err)
+		}
+	}
+
+	// 4. Register extensions, pinned to the matching version.
 	for _, ext := range AllExtensions {
 		spec := ext + "/" + version
 		progress("adding extension " + spec)
@@ -96,7 +106,7 @@ func EnsureWix(version string, clean bool, progress func(string)) error {
 		}
 	}
 
-	// 4. Optionally remove mismatched-version copies of the managed extensions.
+	// 5. Optionally remove mismatched-version copies of the managed extensions.
 	if clean {
 		cleanMismatchedExtensions(wixPath, version, progress)
 	}

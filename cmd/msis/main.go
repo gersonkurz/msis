@@ -735,7 +735,7 @@ func printStatus(args *cliArgs) {
 
 		// Show EULA handling for the detected major version
 		if major := wix.GetWixMajorVersion(); major >= 7 {
-			fmt.Printf("  EULA:     %s\n", cli.Info(fmt.Sprintf("OSMF (auto-accepted via -acceptEula wix%d)", major)))
+			fmt.Printf("  EULA:     %s\n", cli.Info("OSMF (builds pass --acceptEula; persistent acceptance via msis /SETUP-WIX)"))
 		} else if major > 0 {
 			fmt.Printf("  EULA:     %s\n", cli.Info("none (WiX 6 has no EULA gate)"))
 		}
