@@ -313,3 +313,47 @@ func TestRenderWithMinimalTemplate(t *testing.T) {
 		t.Error("expected output to contain install directory")
 	}
 }
+
+// TestBundleLaunchTarget renders the real bundle template and checks that the
+// success-page "Launch" button (LaunchTarget Burn variable) appears only when
+// LAUNCH_TARGET is set, and that a bracketed Formatted path passes through verbatim.
+func TestBundleLaunchTarget(t *testing.T) {
+	tmplPath := filepath.Join("..", "..", "templates", "bundle.wxs")
+	content, err := os.ReadFile(tmplPath)
+	if err != nil {
+		t.Fatalf("reading bundle template: %v", err)
+	}
+
+	base := map[string]interface{}{
+		"PRODUCT_NAME":    "MSIS",
+		"PRODUCT_VERSION": "3.0.3",
+		"MANUFACTURER":    "ACME",
+		"UPGRADE_CODE":    "{00000000-0000-0000-0000-000000000000}",
+		"LICENSE_URL":     "",
+		"CHAIN":           "<MsiPackage SourceFile='x.msi'/>",
+	}
+
+	// Absent: no LaunchTarget variable (the {{#if}} guard).
+	absent, err := RenderString(string(content), base)
+	if err != nil {
+		t.Fatalf("render (absent): %v", err)
+	}
+	if strings.Contains(absent, `Name="LaunchTarget"`) {
+		t.Errorf("LaunchTarget should be absent when LAUNCH_TARGET is unset:\n%s", absent)
+	}
+
+	// Present: LaunchTarget with the bracketed path passed through untouched.
+	withTarget := map[string]interface{}{}
+	for k, v := range base {
+		withTarget[k] = v
+	}
+	withTarget["LAUNCH_TARGET"] = `[InstallFolder]\environ.exe`
+	present, err := RenderString(string(content), withTarget)
+	if err != nil {
+		t.Fatalf("render (present): %v", err)
+	}
+	want := `<Variable Name="LaunchTarget" Value="[InstallFolder]\environ.exe"/>`
+	if !strings.Contains(present, want) {
+		t.Errorf("expected %q in output:\n%s", want, present)
+	}
+}

@@ -208,6 +208,9 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["DO_NOT_UPGRADE_FROM"] = r.Variables["DO_NOT_UPGRADE_FROM"]
 	ctx["DO_NOT_UPGRADE_MESSAGE"] = r.Variables["DO_NOT_UPGRADE_MESSAGE"]
 	ctx["START_EXE"] = r.Variables["START_EXE"]
+	// Bundle success-page "Launch" button (consumed by templates/bundle.wxs); the bundle
+	// render path forwards all variables, so this also flows through there.
+	ctx["LAUNCH_TARGET"] = r.Variables["LAUNCH_TARGET"]
 	ctx["SCHEDULE_REBOOT"] = r.Variables.GetBool("SCHEDULE_REBOOT")
 	ctx["USE_INSTALLER_HOOKS"] = r.Variables.GetBool("USE_INSTALLER_HOOKS")
 	// Note: INCLUDE_VCREDIST is deprecated. Use <requires type="vcredist" version="..."/> instead.

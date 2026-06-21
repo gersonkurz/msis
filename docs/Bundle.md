@@ -186,12 +186,28 @@ Attributes:
 | `LOGO_BOOTSTRAP` | Logo image for bootstrapper UI | `{LOGO_PREFIX}_LogoBootstrap.bmp` |
 | `LOGO_PREFIX` | Prefix for default logo files | Empty (uses WiX defaults) |
 | `PREREQUISITES_FOLDER` | Path to prerequisite installers | `./prerequisites` |
+| `LAUNCH_TARGET` | Program to offer launching from the success page (adds a "Launch" button) | Empty (no button) |
 
 **Logo customization example:**
 ```xml
 <set name="LOGO_PREFIX" value="MyCompany"/>
 <!-- Uses MyCompany_LogoBootstrap.bmp, MyCompany_WixUIBanner.bmp, etc. -->
 ```
+
+**Launch button example:**
+
+Set `LAUNCH_TARGET` to add a "Launch" button on the bundle's success page (the
+WixStandardBootstrapperApplication `LaunchTarget` variable). The value is a Burn *Formatted*
+path, so it may reference bundle variables in `[...]` brackets — most usefully `[InstallFolder]`,
+which msis already computes:
+
+```xml
+<set name="LAUNCH_TARGET" value="[InstallFolder]\MyApp.exe"/>
+```
+
+When `LAUNCH_TARGET` is unset, no button is shown. This is the bundle-level counterpart of the
+MSI-level `START_EXE`. Silent bundles have no success page, so the setting has no effect there.
+(For the analogous MSI behavior, see `START_EXE`.)
 
 ## Output
 
