@@ -111,7 +111,7 @@ clean:
 
 [windows]
 clean:
-    Remove-Item -Force -ErrorAction SilentlyContinue {{binary}}, {{binary}}.exe
+    foreach ($f in '{{binary}}', '{{binary}}.exe') { if (Test-Path $f) { Remove-Item -Force $f } }
 
 # Clean bootstrap directory (binaries and dist)
 [unix]
