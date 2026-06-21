@@ -59,7 +59,12 @@ func EnsureWix(version string, progress func(string)) error {
 	}
 
 	// 2. Install or update the dotnet global tool (the wix.exe msis resolves).
-	current, _ := dotnetToolVersion("wix")
+	//    A failed listing is distinct from "tool absent": never uninstall/reinstall
+	//    unless a successful check proves the wrong version is installed.
+	current, err := dotnetToolVersion("wix")
+	if err != nil {
+		return fmt.Errorf("listing installed dotnet tools: %w", err)
+	}
 	switch {
 	case current == "":
 		progress(fmt.Sprintf("installing wix %s", version))
@@ -71,8 +76,13 @@ func EnsureWix(version string, progress func(string)) error {
 		if err := runQuiet("dotnet", "tool", "update", "--global", "wix", "--version", version); err != nil {
 			return fmt.Errorf("updating wix: %w", err)
 		}
-		// `tool update --version` should land exactly that version; fall back hard if not.
-		if v, _ := dotnetToolVersion("wix"); v != version {
+		// `tool update --version` should land exactly that version; fall back hard
+		// only if a successful re-check confirms it did not.
+		after, err := dotnetToolVersion("wix")
+		if err != nil {
+			return fmt.Errorf("verifying wix version after update: %w", err)
+		}
+		if after != version {
 			progress("update did not land target; reinstalling")
 			_ = runQuiet("dotnet", "tool", "uninstall", "--global", "wix")
 			if err := runQuiet("dotnet", "tool", "install", "--global", "wix", "--version", version); err != nil {
@@ -84,6 +94,14 @@ func EnsureWix(version string, progress func(string)) error {
 	}
 
 	wixPath := GetWixPath()
+
+	// Guard against PATH / dotnet-tools disagreement: confirm the wix that msis
+	// resolves is actually the version we just provisioned, before EULA/extensions
+	// target the wrong binary.
+	if resolved := strings.SplitN(GetWixVersion(), "+", 2)[0]; resolved != version {
+		return fmt.Errorf("the wix resolved at %s reports version %q, not the requested %q; "+
+			"msis uses that binary, so ensure the dotnet global tool is the one on the path", wixPath, resolved, version)
+	}
 
 	// 3. Accept the EULA persistently (WiX 7+). Required before `extension add` and
 	//    `build` will run; writes a per-user acceptance file so it's a one-time step.
