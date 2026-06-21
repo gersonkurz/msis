@@ -135,11 +135,8 @@ func (b *Builder) runWixBuild() error {
 		args = append(args, "-arch", strings.ToLower(b.Platform))
 	}
 
-	// Extensions
-	args = append(args,
-		"-ext", "WixToolset.UI.wixext",
-		"-ext", "WixToolset.Util.wixext",
-	)
+	// Extensions (see setup.go for the canonical list)
+	args = append(args, extArgs(msiExtensions)...)
 
 	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
 	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)
@@ -368,12 +365,8 @@ func (b *BundleBuilder) runWixBuild() error {
 	wxsFilename := filepath.Base(absWxsFile)
 	args := []string{"build", wxsFilename}
 
-	// Bundle-specific extensions
-	args = append(args,
-		"-ext", "WixToolset.BootstrapperApplications.wixext", // Bootstrapper Application Library (renamed from Bal in WiX 6)
-		"-ext", "WixToolset.Util.wixext", // Utility functions
-		"-ext", "WixToolset.Netfx.wixext", // .NET Framework detection
-	)
+	// Bundle-specific extensions (see setup.go for the canonical list)
+	args = append(args, extArgs(bundleExtensions)...)
 
 	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
 	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)

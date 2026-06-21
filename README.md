@@ -32,19 +32,19 @@ Instead of 500+ lines of WiX XML. The tool handles component GUIDs, directory tr
 **WiX Toolset 7** (or 6) with the extensions msis needs. msis detects the installed WiX
 major version at build time and works with either — WiX 7 is recommended for new setups.
 
-The easiest and most reliable way is the setup script, which installs the correct WiX
-version, registers all required extensions *pinned to the matching version*, and verifies
-the result:
+msis can provision WiX for you (msis itself is a self-contained binary — grab it from
+[Get msis](#get-msis) first, then run this). It installs the correct WiX version, registers
+all required extensions *pinned to the matching version*, and verifies the result:
 
-```cmd
-scripts\ensure-wix.cmd
+```
+msis /SETUP-WIX
 ```
 
-> Why a script? WiX extensions live in a single global store shared across WiX versions.
-> Adding them without pinning a version (the common mistake) leaves mismatched copies that
-> trigger `WIX6101 ... compatible with WiX vN?` warnings and "(damaged)" labels. The script
-> avoids that. Re-run with `scripts\ensure-wix.cmd -Clean` to remove mismatched copies.
-> To stay on WiX 6 instead, run `scripts\ensure-wix.cmd -Version 6.0.2`.
+> Why let msis do it? WiX extensions live in a single global store shared across WiX
+> versions. Adding them without pinning a version (the common mistake) leaves mismatched
+> copies that trigger `WIX6101 ... compatible with WiX vN?` warnings and "(damaged)" labels.
+> `/SETUP-WIX` avoids that. Add `/CLEAN` to remove mismatched copies, or
+> `/WIX-VERSION:6.0.2` to stay on WiX 6.
 
 <details>
 <summary>Manual install (equivalent)</summary>
@@ -138,7 +138,7 @@ msis-3.x is largely compatible with msis-2.x scripts:
 | Bundle Engine | Custom C++ | WiX Burn |
 
 **Migration steps:**
-1. Install WiX + extensions: `scripts\ensure-wix.cmd`
+1. Install WiX + extensions: `msis /SETUP-WIX`
 2. Validate: `msis /DRY-RUN setup.msis`
 3. If you need x86: add `<set name="PLATFORM" value="x86"/>`
 4. Rebuild: `msis /BUILD setup.msis`

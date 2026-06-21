@@ -17,9 +17,11 @@ all versions.
 
 ## Build & Test
 
-Requires Go and (for `/BUILD`) **WiX Toolset 6 or 7** (auto-detected). Provision it with
-`scripts\ensure-wix.cmd` (or `just ensure-wix`), which installs the pinned WiX version and
-its extensions version-matched — see `scripts/ensure-wix.ps1`.
+Requires Go and (for `/BUILD`) **WiX Toolset 6 or 7** (auto-detected). msis provisions WiX
+itself: `msis /SETUP-WIX` (or `just setup-wix`) installs the pinned WiX version and its
+extensions version-matched. The implementation and the canonical extension list live in
+`internal/wix/setup.go` (`EnsureWix`, `AllExtensions`, `DefaultVersion`) — the build path in
+`builder.go` reads the same lists, so they cannot drift.
 
 ```bash
 just build              # Build current platform; auto-copies to C:\Program Files\MSIS if installed

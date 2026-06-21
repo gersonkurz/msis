@@ -10,13 +10,12 @@ This tutorial walks you through creating Windows installers with msis, from a si
 2. **WiX Toolset 7** (or 6) - The underlying MSI compiler. msis detects which major
    version is installed and adapts; WiX 7 is recommended for new setups.
 
-Install WiX and the extensions msis needs with the setup script (installs and
+Once you have msis, let it provision WiX and the extensions it needs (installs and
 verifies everything, pinned to the right version):
-```cmd
-scripts\ensure-wix.cmd
 ```
-See [Troubleshooting](#troubleshooting) for the manual equivalent, `-Clean`, and how to
-pin WiX 6 instead.
+msis /SETUP-WIX
+```
+See [Troubleshooting](#troubleshooting) for `/CLEAN`, `/WIX-VERSION`, and the manual equivalent.
 
 Verify your setup:
 ```bash
@@ -719,20 +718,22 @@ msis /BUILD /RETAINWXS acme.msis
 
 ### "wix CLI not found" or "Extension not found"
 
-Both usually mean WiX or its extensions aren't installed at a matching version. Run the
-setup script — it installs the correct WiX version and all required extensions, pinned to
+Both usually mean WiX or its extensions aren't installed at a matching version. Let msis
+provision them — it installs the correct WiX version and all required extensions, pinned to
 that version, and verifies the result:
 
-```cmd
-scripts\ensure-wix.cmd
+```
+msis /SETUP-WIX
 ```
 
 If `wix` commands print `WIX6101 ... compatible with WiX vN?` warnings or list extensions as
 "(damaged)", you have mismatched extension versions in the global store. Clean them up with:
 
-```cmd
-scripts\ensure-wix.cmd -Clean
 ```
+msis /SETUP-WIX /CLEAN
+```
+
+To install a specific WiX version (e.g. stay on WiX 6), add `/WIX-VERSION:6.0.2`.
 
 <details>
 <summary>Manual install (equivalent)</summary>

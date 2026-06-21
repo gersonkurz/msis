@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -36,6 +37,9 @@ type cliArgs struct {
 	status          bool
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	noColor         bool              // Disable colored output
+	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
+	clean           bool              // /CLEAN: with /SETUP-WIX, remove mismatched-version extensions
+	wixVersion      string            // /WIX-VERSION:VER override for /SETUP-WIX
 	setOverrides    map[string]string // /SET:NAME=VALUE overrides
 	files           []string
 }
@@ -46,6 +50,14 @@ func main() {
 	// Apply --no-color flag
 	if args.noColor {
 		cli.DisableColors()
+	}
+
+	if args.setupWix {
+		if err := runSetupWix(args); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", cli.Error("Setup failed:"), err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	if args.status {
@@ -64,6 +76,39 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// setupHint points users at the self-provisioning command when a build fails in a way
+// that a missing WiX tool or extension would explain.
+const setupHint = "if WiX or its extensions are missing, run: msis /SETUP-WIX"
+
+// runSetupWix installs/repairs the WiX toolset and the extensions msis needs.
+func runSetupWix(args *cliArgs) error {
+	version := args.wixVersion
+	if version == "" {
+		version = wix.DefaultVersion
+	}
+
+	mode := ""
+	if args.clean {
+		mode = " (with cleanup)"
+	}
+	fmt.Printf("%s WiX %s%s\n", cli.Bold("Setting up"), version, mode)
+
+	progress := func(msg string) { fmt.Printf("  %s\n", cli.Info(msg)) }
+	if err := wix.EnsureWix(version, args.clean, progress); err != nil {
+		return err
+	}
+
+	fmt.Printf("%s WiX %s ready with the extensions msis needs.\n", cli.Success("Done:"), version)
+
+	// Warn if `wix` on PATH is a different install than the one msis uses.
+	if pathWix, lookErr := exec.LookPath("wix"); lookErr == nil {
+		if resolved := wix.GetWixPath(); resolved != "wix" && !strings.EqualFold(pathWix, resolved) {
+			fmt.Printf("  %s\n", cli.Warning(fmt.Sprintf("note: 'wix' on PATH (%s) differs from the tool msis uses (%s); msis uses the latter.", pathWix, resolved)))
+		}
+	}
+	return nil
 }
 
 func processFile(filename string, args *cliArgs) error {
@@ -216,12 +261,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	// Milestone 3.5 - WiX CLI integration
 	if args.build {
 		if !wix.IsWixAvailable() {
-			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
+			return fmt.Errorf("wix CLI not found; run: msis /SETUP-WIX")
 		}
 
 		builder := wix.NewBuilder(vars, wxsFile, templateFolder, customTemplates, workDir, args.retainWxs)
 		if err := builder.Build(); err != nil {
-			return fmt.Errorf("building MSI: %w", err)
+			return fmt.Errorf("building MSI: %w\n  hint: %s", err, setupHint)
 		}
 
 		// Compute actual MSI output path (same logic as wix.NewBuilder)
@@ -297,7 +342,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// Build bundle
 	bundleBuilder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
 	if err := bundleBuilder.Build(); err != nil {
-		return fmt.Errorf("building bundle: %w", err)
+		return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 	}
 
 	fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
@@ -415,12 +460,12 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// Build bundle
 	if args.build {
 		if !wix.IsWixAvailable() {
-			return fmt.Errorf("wix CLI not found in PATH; install WiX Toolset 6")
+			return fmt.Errorf("wix CLI not found; run: msis /SETUP-WIX")
 		}
 
 		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
 		if err := builder.Build(); err != nil {
-			return fmt.Errorf("building bundle: %w", err)
+			return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 		}
 
 		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
@@ -529,6 +574,9 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.status, "status", false, "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
+	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
+	fs.BoolVar(&args.clean, "clean", false, "")
+	fs.StringVar(&args.wixVersion, "wix-version", "", "")
 
 	// Help flags
 	var showHelp bool
@@ -630,6 +678,9 @@ func printUsage() {
 	fmt.Printf("  %s            Parse and validate only, no output\n", cli.Info("/DRY-RUN"))
 	fmt.Printf("  %s         Skip auto-bundling, use launch conditions only\n", cli.Info("/STANDALONE"))
 	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
+	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
+	fmt.Printf("  %s     With /SETUP-WIX: also remove mismatched extensions\n", cli.Info("/CLEAN"))
+	fmt.Printf("  %s With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
@@ -645,6 +696,7 @@ func printUsage() {
 	fmt.Printf("  %s       Build MSI only (no auto-bundle)\n", cli.Filename("msis /BUILD /STANDALONE setup.msis"))
 	fmt.Printf("  %s\n", cli.Filename("msis /SET:PRODUCT_VERSION=2.0.0 /BUILD setup.msis"))
 	fmt.Printf("  %s                 Validate only\n", cli.Filename("msis /DRY-RUN setup.msis"))
+	fmt.Printf("  %s                      Install WiX + extensions\n", cli.Filename("msis /SETUP-WIX"))
 }
 
 func printStatus(args *cliArgs) {
@@ -698,7 +750,7 @@ func printStatus(args *cliArgs) {
 		}
 	} else {
 		fmt.Printf("  Location: %s\n", cli.Warning("(not found)"))
-		fmt.Printf("  Install with: %s\n", cli.Info("dotnet tool install --global wix"))
+		fmt.Printf("  Install with: %s\n", cli.Info("msis /SETUP-WIX"))
 	}
 	fmt.Println()
 
