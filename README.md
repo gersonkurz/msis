@@ -29,12 +29,35 @@ Instead of 500+ lines of WiX XML. The tool handles component GUIDs, directory tr
 
 ### Prerequisites
 
-**WiX Toolset 6** - Install via .NET:
-```bash
-dotnet tool install --global wix
-wix extension add WixToolset.UI.wixext
-wix extension add WixToolset.Util.wixext
+**WiX Toolset 6** (with the extensions msis needs).
+
+The easiest and most reliable way is the setup script, which installs the correct WiX
+version, registers all required extensions *pinned to the matching version*, and verifies
+the result:
+
+```cmd
+scripts\ensure-wix.cmd
 ```
+
+> Why a script? WiX extensions live in a single global store shared across WiX versions.
+> Adding them without pinning a version (the common mistake) leaves mismatched copies that
+> trigger `WIX6101 ... compatible with WiX vN?` warnings and "(damaged)" labels. The script
+> avoids that. Re-run with `scripts\ensure-wix.cmd -Clean` to remove mismatched copies.
+
+<details>
+<summary>Manual install (equivalent)</summary>
+
+```bash
+dotnet tool install --global wix --version 6.0.2
+wix extension add -g WixToolset.UI.wixext/6.0.2
+wix extension add -g WixToolset.Util.wixext/6.0.2
+wix extension add -g WixToolset.BootstrapperApplications.wixext/6.0.2   # bundles
+wix extension add -g WixToolset.Netfx.wixext/6.0.2                      # bundles
+```
+
+Note the `-g` (global) flag and the `/6.0.2` version pin on every package — omitting either
+is the usual cause of extension trouble.
+</details>
 
 ### Get msis
 
@@ -113,7 +136,7 @@ msis-3.x is largely compatible with msis-2.x scripts:
 | Bundle Engine | Custom C++ | WiX Burn |
 
 **Migration steps:**
-1. Install WiX 6: `dotnet tool install --global wix`
+1. Install WiX 6 + extensions: `scripts\ensure-wix.cmd`
 2. Validate: `msis /DRY-RUN setup.msis`
 3. If you need x86: add `<set name="PLATFORM" value="x86"/>`
 4. Rebuild: `msis /BUILD setup.msis`

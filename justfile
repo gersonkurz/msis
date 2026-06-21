@@ -7,10 +7,25 @@ binary := "msis"
 cmd_path := "./cmd/msis"
 bootstrap_dir := "bootstrap"
 build_time := datetime_utc("%Y-%m-%dT%H:%M:%SZ")
+wix_version := "6.0.2"
 
 # Default recipe: show available commands
 default:
     @just --list
+
+# Ensure the correct WiX toolset version + extensions are installed
+[windows]
+ensure-wix:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-wix.ps1 -Version {{wix_version}}
+
+# Ensure WiX + extensions, removing mismatched-version extensions (silences WIX6101 noise)
+[windows]
+ensure-wix-clean:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ensure-wix.ps1 -Version {{wix_version}} -Clean
+
+[unix]
+ensure-wix:
+    @echo "ensure-wix targets Windows. Run: dotnet tool install --global wix --version {{wix_version}}"
 
 # Build for current platform
 build:

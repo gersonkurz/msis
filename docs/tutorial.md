@@ -9,10 +9,12 @@ This tutorial walks you through creating Windows installers with msis, from a si
 1. **msis** - The installer generator ([download](https://github.com/gersonkurz/msis/releases) or build from source)
 2. **WiX Toolset 6** - The underlying MSI compiler
 
-Install WiX 6 via .NET:
-```bash
-dotnet tool install --global wix
+Install WiX 6 and the extensions msis needs with the setup script (installs and
+verifies everything, pinned to the right version):
+```cmd
+scripts\ensure-wix.cmd
 ```
+See [Troubleshooting](#troubleshooting) for the manual equivalent and `-Clean`.
 
 Verify your setup:
 ```bash
@@ -713,25 +715,41 @@ msis /BUILD /RETAINWXS acme.msis
 
 ## Troubleshooting
 
-### "wix CLI not found"
+### "wix CLI not found" or "Extension not found"
 
-Install WiX 6:
-```bash
-dotnet tool install --global wix
+Both usually mean WiX or its extensions aren't installed at a matching version. Run the
+setup script — it installs the correct WiX version and all required extensions, pinned to
+that version, and verifies the result:
+
+```cmd
+scripts\ensure-wix.cmd
 ```
 
-### "Extension not found"
+If `wix` commands print `WIX6101 ... compatible with WiX vN?` warnings or list extensions as
+"(damaged)", you have mismatched extension versions in the global store. Clean them up with:
 
-Install the required WiX extensions:
-```bash
-wix extension add WixToolset.UI.wixext
-wix extension add WixToolset.Util.wixext
+```cmd
+scripts\ensure-wix.cmd -Clean
 ```
 
-For bundles, also add:
+<details>
+<summary>Manual install (equivalent)</summary>
+
 ```bash
-wix extension add WixToolset.BootstrapperApplications.wixext
-wix extension add WixToolset.Netfx.wixext
+dotnet tool install --global wix --version 6.0.2
+wix extension add -g WixToolset.UI.wixext/6.0.2
+wix extension add -g WixToolset.Util.wixext/6.0.2
+wix extension add -g WixToolset.BootstrapperApplications.wixext/6.0.2   # bundles
+wix extension add -g WixToolset.Netfx.wixext/6.0.2                      # bundles
+```
+
+The `-g` (global) flag and `/6.0.2` version pin matter on every line: WiX shares one global
+extension store across versions, so an unpinned add leaves mismatched copies behind.
+</details>
+
+Confirm what msis actually resolves (it uses the dotnet-tool `wix`, not whatever is on PATH):
+```bash
+msis /STATUS
 ```
 
 ### "ICE validation error"
