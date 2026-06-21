@@ -3,7 +3,6 @@ package wix
 import (
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 )
 
@@ -40,14 +39,13 @@ func extArgs(exts []string) []string {
 }
 
 // EnsureWix installs/updates the WiX dotnet global tool to the given version and registers
-// the extensions msis needs, pinned to that version. If clean is true, other-version copies
-// of the managed extensions are removed from the shared global store (silences WIX6101
-// "compatible with WiX vN?" warnings). progress receives human-readable status lines.
+// the extensions msis needs, pinned to that version. progress receives human-readable status lines.
 //
-// WiX extensions live in a single global per-user store shared across WiX major versions and
-// tagged by version; pinning every add to one version is what avoids the mixed-version mess
-// that otherwise plagues manual installs.
-func EnsureWix(version string, clean bool, progress func(string)) error {
+// WiX extensions live in a global per-user store tagged by version; pinning every add to one
+// version is what avoids the mixed-version mess that otherwise plagues manual installs. Copies
+// from older WiX majors may linger in the store and show as "(damaged)" in `wix extension list`,
+// but they are harmless: builds only load the version-matched extensions and never warn.
+func EnsureWix(version string, progress func(string)) error {
 	if version == "" {
 		version = DefaultVersion
 	}
@@ -106,11 +104,6 @@ func EnsureWix(version string, clean bool, progress func(string)) error {
 		}
 	}
 
-	// 5. Optionally remove mismatched-version copies of the managed extensions.
-	if clean {
-		cleanMismatchedExtensions(wixPath, version, progress)
-	}
-
 	progress(fmt.Sprintf("WiX %s ready (%s)", version, wixPath))
 	return nil
 }
@@ -134,37 +127,6 @@ func parseDotnetToolVersion(output, pkg string) string {
 		}
 	}
 	return ""
-}
-
-var extListLine = regexp.MustCompile(`^\s*(WixToolset\.\S+)\s+(\d[\w.\-+]*)`)
-
-// cleanMismatchedExtensions removes copies of the managed extensions whose version differs
-// from the target, leaving the global store free of the noise that triggers WIX6101 warnings.
-func cleanMismatchedExtensions(wixPath, version string, progress func(string)) {
-	out, err := exec.Command(wixPath, "extension", "list", "-g").Output()
-	if err != nil {
-		progress("warning: could not list extensions for cleanup: " + err.Error())
-		return
-	}
-	managed := make(map[string]bool, len(AllExtensions))
-	for _, e := range AllExtensions {
-		managed[e] = true
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		m := extListLine.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		name, ver := m[1], m[2]
-		if managed[name] && ver != version {
-			spec := name + "/" + ver
-			if err := runQuiet(wixPath, "extension", "remove", "-g", spec); err != nil {
-				progress("warning: could not remove " + spec)
-			} else {
-				progress("removed " + spec)
-			}
-		}
-	}
 }
 
 // runQuiet runs a command, suppressing its output on success and surfacing it on failure.

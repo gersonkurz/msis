@@ -15,7 +15,7 @@ verifies everything, pinned to the right version):
 ```
 msis /SETUP-WIX
 ```
-See [Troubleshooting](#troubleshooting) for `/CLEAN`, `/WIX-VERSION`, and the manual equivalent.
+See [Troubleshooting](#troubleshooting) for `/WIX-VERSION`, harmless extension warnings, and the manual equivalent.
 
 Verify your setup:
 ```bash
@@ -726,14 +726,13 @@ that version, and verifies the result:
 msis /SETUP-WIX
 ```
 
-If `wix` commands print `WIX6101 ... compatible with WiX vN?` warnings or list extensions as
-"(damaged)", you have mismatched extension versions in the global store. Clean them up with:
-
-```
-msis /SETUP-WIX /CLEAN
-```
-
 To install a specific WiX version (e.g. stay on WiX 6), add `/WIX-VERSION:6.0.2`.
+
+If `wix extension list` prints `WIX6101 ... compatible with WiX vN?` warnings or shows
+extensions as "(damaged)", those are leftover copies from a different WiX major in the shared
+cache. They are **harmless** — builds only load the version-matched extensions and stay quiet
+(an actual `msis /BUILD` never prints these). The WiX CLI cannot remove other-major copies, so
+msis leaves them alone.
 
 <details>
 <summary>Manual install (equivalent)</summary>

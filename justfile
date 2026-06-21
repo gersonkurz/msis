@@ -16,10 +16,6 @@ default:
 setup-wix:
     go run {{cmd_path}} /SETUP-WIX
 
-# Same, but also remove mismatched-version extensions (silences WIX6101 noise)
-setup-wix-clean:
-    go run {{cmd_path}} /SETUP-WIX /CLEAN
-
 # Build for current platform
 build:
     go build -ldflags "-s -w -X main.Version={{version}} -X main.BuildTime={{build_time}}" -o {{binary}}{{ext}} {{cmd_path}}

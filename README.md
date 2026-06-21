@@ -43,8 +43,11 @@ msis /SETUP-WIX
 > Why let msis do it? WiX extensions live in a single global store shared across WiX
 > versions. Adding them without pinning a version (the common mistake) leaves mismatched
 > copies that trigger `WIX6101 ... compatible with WiX vN?` warnings and "(damaged)" labels.
-> `/SETUP-WIX` avoids that. Add `/CLEAN` to remove mismatched copies, or
-> `/WIX-VERSION:6.0.2` to stay on WiX 6.
+> `/SETUP-WIX` avoids that. Add `/WIX-VERSION:6.0.2` to stay on WiX 6.
+>
+> Copies from older WiX majors may remain in the cache and show as "(damaged)" in
+> `wix extension list`; this is harmless — builds only load the version-matched
+> extensions and an actual `/BUILD` never prints those warnings.
 
 <details>
 <summary>Manual install (equivalent)</summary>

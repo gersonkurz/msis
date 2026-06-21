@@ -54,25 +54,3 @@ func TestAllExtensionsCoversBuildSets(t *testing.T) {
 		}
 	}
 }
-
-func TestExtListLineRegex(t *testing.T) {
-	cases := map[string][2]string{
-		"WixToolset.UI.wixext 6.0.2":               {"WixToolset.UI.wixext", "6.0.2"},
-		"  WixToolset.Util.wixext 7.0.0 (damaged)": {"WixToolset.Util.wixext", "7.0.0"},
-		"WixToolset.Netfx.wixext 7.0.0-rc.1":       {"WixToolset.Netfx.wixext", "7.0.0-rc.1"},
-	}
-	for line, want := range cases {
-		m := extListLine.FindStringSubmatch(line)
-		if m == nil {
-			t.Errorf("extListLine did not match %q", line)
-			continue
-		}
-		if m[1] != want[0] || m[2] != want[1] {
-			t.Errorf("extListLine(%q) = (%q, %q), want (%q, %q)", line, m[1], m[2], want[0], want[1])
-		}
-	}
-	// A header / warning line must not match.
-	if extListLine.FindStringSubmatch("Package Id      Version") != nil {
-		t.Error("extListLine matched a header line")
-	}
-}

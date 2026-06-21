@@ -38,7 +38,6 @@ type cliArgs struct {
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
-	clean           bool              // /CLEAN: with /SETUP-WIX, remove mismatched-version extensions
 	wixVersion      string            // /WIX-VERSION:VER override for /SETUP-WIX
 	setOverrides    map[string]string // /SET:NAME=VALUE overrides
 	files           []string
@@ -89,14 +88,10 @@ func runSetupWix(args *cliArgs) error {
 		version = wix.DefaultVersion
 	}
 
-	mode := ""
-	if args.clean {
-		mode = " (with cleanup)"
-	}
-	fmt.Printf("%s WiX %s%s\n", cli.Bold("Setting up"), version, mode)
+	fmt.Printf("%s WiX %s\n", cli.Bold("Setting up"), version)
 
 	progress := func(msg string) { fmt.Printf("  %s\n", cli.Info(msg)) }
-	if err := wix.EnsureWix(version, args.clean, progress); err != nil {
+	if err := wix.EnsureWix(version, progress); err != nil {
 		return err
 	}
 
@@ -575,7 +570,6 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
 	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
-	fs.BoolVar(&args.clean, "clean", false, "")
 	fs.StringVar(&args.wixVersion, "wix-version", "", "")
 
 	// Help flags
@@ -679,7 +673,6 @@ func printUsage() {
 	fmt.Printf("  %s         Skip auto-bundling, use launch conditions only\n", cli.Info("/STANDALONE"))
 	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
 	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
-	fmt.Printf("  %s     With /SETUP-WIX: also remove mismatched extensions\n", cli.Info("/CLEAN"))
 	fmt.Printf("  %s With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
