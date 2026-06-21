@@ -1,0 +1,31 @@
+# Normalize line endings. The repository stores text as LF; these rules also
+# force LF in the working tree (incl. Windows) so gofmt/`just check` stay green.
+* text=auto eol=lf
+
+# Source and text files — always LF.
+*.go     text eol=lf
+*.mod    text eol=lf
+*.sum    text eol=lf
+*.md     text eol=lf
+*.xsd    text eol=lf
+*.wxs    text eol=lf
+*.wxl    text eol=lf
+*.wxi    text eol=lf
+*.msis   text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+justfile text eol=lf
+
+# Windows batch scripts must keep CRLF.
+*.cmd    text eol=crlf
+*.bat    text eol=crlf
+
+# Binary assets — never normalize.
+*.exe    binary
+*.msi    binary
+*.dll    binary
+*.png    binary
+*.ico    binary
+*.bmp    binary
+*.jpg    binary
