@@ -140,6 +140,7 @@ The standard MSI templates support optional dialogs for license agreement and in
 |----------|---------|-------|
 | `LICENSE_FILE` | Show license agreement dialog | Path to RTF file |
 | `INSTALL_DIR_DIALOG` | Show install directory selection dialog | `true` to enable |
+| `START_EXE` | Offer "Launch *Product*" checkbox on the final dialog | WiX **File Id** of an installed file (used as `[#FileId]`) |
 
 ### Dialog Flow
 
@@ -188,6 +189,26 @@ When enabled, users can:
 - The selected path is used for all `[INSTALLDIR]` targets
 
 **Note**: The install directory dialog only affects `INSTALLDIR`. Files targeting other roots (like `APPDATADIR`) are not affected by this selection.
+
+### MSI vs Bundle: license and launch settings
+
+A standalone `.msi` and a bundle `.exe` use **different engines** for their UI — Windows
+Installer for the MSI, Burn / WixStandardBootstrapperApplication for the bundle. The same
+capability therefore has a **different variable, value format, and presentation** in each, and a
+value set for one does **not** carry over to the other:
+
+| Capability | Single MSI | Bundle (`.exe`) |
+|------------|------------|-----------------|
+| Show a license | `LICENSE_FILE` — path to an **RTF file**; shown in a license dialog with an accept-to-continue checkbox | `LICENSE_URL` — a **URL**; shown as a hyperlink on the welcome page |
+| Offer to launch on finish | `START_EXE` — a WiX **File Id** (`[#FileId]`); a "Launch *Product*" **checkbox** on the exit dialog | `LAUNCH_TARGET` — a Burn **Formatted path** (e.g. `[InstallFolder]\App.exe`); a "Launch" **button** on the success page |
+
+Practical consequence: setting only `LICENSE_URL` shows the license in the **bundle** but not in
+the individual MSIs — for those you must also set `LICENSE_FILE` (an RTF). Likewise `START_EXE`
+(MSI) and `LAUNCH_TARGET` (bundle) are independent. When you ship MSIs wrapped in a bundle, the
+bundle drives the visible UI, so set the bundle variables (`LICENSE_URL`, `LAUNCH_TARGET`) for what
+the user sees, and the MSI variables only if the MSIs are also distributed standalone.
+
+See [Bundle.md](Bundle.md) for the bundle-side variables.
 
 ## Custom Templates Folder
 
