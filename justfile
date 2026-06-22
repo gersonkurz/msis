@@ -21,10 +21,11 @@ build:
     go build -ldflags "-s -w -X main.Version={{version}} -X main.BuildTime={{build_time}}" -o {{binary}}{{ext}} {{cmd_path}}
     @just _install-if-exists
 
-# Copy to Program Files if installed (requires elevation on Windows)
+# Copy exe + refresh templates if installed (requires elevation on Windows for Program Files)
 [windows]
 _install-if-exists:
-    @if (Test-Path "C:\Program Files\MSIS") { Copy-Item {{binary}}.exe "C:\Program Files\MSIS\msis.exe"; Write-Host "Updated installed version at C:\Program Files\MSIS\msis.exe" }
+    @if (Test-Path "C:\Program Files\MSIS") { Copy-Item -Force {{binary}}.exe "C:\Program Files\MSIS\msis.exe"; Write-Host "Updated installed version at C:\Program Files\MSIS\msis.exe" }
+    @if (Test-Path "$env:LOCALAPPDATA\MSIS\templates") { robocopy templates "$env:LOCALAPPDATA\MSIS\templates" /MIR /NFL /NDL /NJH /NJS /NP /NS /NC | Out-Null; if ($LASTEXITCODE -ge 8) { throw "template sync (robocopy) failed: $LASTEXITCODE" }; Write-Host "Refreshed installed templates at $env:LOCALAPPDATA\MSIS\templates (mirror; user overlay in MSIS\custom is untouched)" }; exit 0
 
 [unix]
 _install-if-exists:
