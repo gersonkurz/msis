@@ -1,10 +1,114 @@
 package variables
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gersonkurz/msis/internal/ir"
 )
+
+func TestCheckInstallerHookUsage(t *testing.T) {
+	has := func(ws []string, substr string) bool {
+		for _, w := range ws {
+			if strings.Contains(w, substr) {
+				return true
+			}
+		}
+		return false
+	}
+	const danger = "recursively deletes"
+	const foldersNoEffect = "REMOVE_FOLDERS_ON_UNINSTALL has no effect unless USE_INSTALLER_HOOKS"
+	const retainNoEffect = "RETAIN_FILES_ON_UNINSTALL has no effect"
+
+	t.Run("nothing set", func(t *testing.T) {
+		w := Dictionary{}.CheckInstallerHookUsage()
+		if len(w) != 0 {
+			t.Errorf("expected no warnings, got %v", w)
+		}
+	})
+
+	t.Run("folders+hooks: danger only", func(t *testing.T) {
+		w := Dictionary{"REMOVE_FOLDERS_ON_UNINSTALL": "True", "USE_INSTALLER_HOOKS": "True"}.CheckInstallerHookUsage()
+		if !has(w, danger) || has(w, foldersNoEffect) {
+			t.Errorf("expected danger warning only, got %v", w)
+		}
+	})
+
+	t.Run("folders without hooks: danger + no-effect", func(t *testing.T) {
+		w := Dictionary{"REMOVE_FOLDERS_ON_UNINSTALL": "True"}.CheckInstallerHookUsage()
+		if !has(w, danger) || !has(w, foldersNoEffect) {
+			t.Errorf("expected danger + folders-no-effect, got %v", w)
+		}
+	})
+
+	t.Run("retain without active cleanup: retain no-effect", func(t *testing.T) {
+		w := Dictionary{"RETAIN_FILES_ON_UNINSTALL": "[APPDATADIR]DATABASE\\proakt.db"}.CheckInstallerHookUsage()
+		if !has(w, retainNoEffect) {
+			t.Errorf("expected retain-no-effect, got %v", w)
+		}
+	})
+
+	t.Run("retain with active cleanup: no retain warning", func(t *testing.T) {
+		w := Dictionary{
+			"REMOVE_FOLDERS_ON_UNINSTALL": "True",
+			"USE_INSTALLER_HOOKS":         "True",
+			"RETAIN_FILES_ON_UNINSTALL":   "[APPDATADIR]DATABASE\\proakt.db",
+		}.CheckInstallerHookUsage()
+		if has(w, retainNoEffect) {
+			t.Errorf("did not expect retain-no-effect when cleanup active, got %v", w)
+		}
+	})
+}
+
+func TestRegistryTreeActive(t *testing.T) {
+	active := []string{`HKLM\Software\X`, `HKEY_CLASSES_ROOT\Y`, `  HKCU\Z  `, "anything-nonempty"}
+	for _, v := range active {
+		if !(Dictionary{"REMOVE_REGISTRY_TREE": v}).RegistryTreeActive() {
+			t.Errorf("expected active for %q", v)
+		}
+	}
+	inactive := []string{"", "   ", "False", "false", "No", "OFF", "off", "0"}
+	for _, v := range inactive {
+		if (Dictionary{"REMOVE_REGISTRY_TREE": v}).RegistryTreeActive() {
+			t.Errorf("expected inactive for %q", v)
+		}
+	}
+	if (Dictionary{}).RegistryTreeActive() {
+		t.Error("missing REMOVE_REGISTRY_TREE should be inactive")
+	}
+}
+
+func TestCheckInstallerHookUsageRegistry(t *testing.T) {
+	has := func(ws []string, substr string) bool {
+		for _, w := range ws {
+			if strings.Contains(w, substr) {
+				return true
+			}
+		}
+		return false
+	}
+	const danger = "REMOVE_REGISTRY_TREE recursively deletes"
+	const noEffect = "REMOVE_REGISTRY_TREE has no effect"
+
+	t.Run("active + hooks: danger only", func(t *testing.T) {
+		w := Dictionary{"REMOVE_REGISTRY_TREE": `HKLM\Software\X`, "USE_INSTALLER_HOOKS": "True"}.CheckInstallerHookUsage()
+		if !has(w, danger) || has(w, noEffect) {
+			t.Errorf("expected registry danger only, got %v", w)
+		}
+	})
+	t.Run("active without hooks: danger + no-effect", func(t *testing.T) {
+		w := Dictionary{"REMOVE_REGISTRY_TREE": `HKLM\Software\X`}.CheckInstallerHookUsage()
+		if !has(w, danger) || !has(w, noEffect) {
+			t.Errorf("expected registry danger + no-effect, got %v", w)
+		}
+	})
+	t.Run("false-value: no registry warnings", func(t *testing.T) {
+		w := Dictionary{"REMOVE_REGISTRY_TREE": "False", "USE_INSTALLER_HOOKS": "True"}.CheckInstallerHookUsage()
+		if has(w, danger) || has(w, noEffect) {
+			t.Errorf("false-value REMOVE_REGISTRY_TREE must not warn, got %v", w)
+		}
+	})
+}
 
 func TestNewDictionaryHasDefaults(t *testing.T) {
 	d := New()

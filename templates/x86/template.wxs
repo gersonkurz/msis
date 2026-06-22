@@ -26,6 +26,9 @@
         {{#if REMOVE_REGISTRY_TREE }}
         <Property Id="REMOVE_REGISTRY_TREE" Value="{{ REMOVE_REGISTRY_TREE }}" Secure="yes" />
         {{/if}}
+        {{#if RETAIN_FILES_ON_UNINSTALL }}
+        <Property Id="RETAIN_FILES_ON_UNINSTALL" Value="{{ RETAIN_FILES_ON_UNINSTALL }}" Secure="yes" />
+        {{/if}}
         {{#if DO_NOT_UPGRADE_FROM }}
         <Upgrade Id="{{ DO_NOT_UPGRADE_FROM }}">
             <UpgradeVersion IncludeMaximum="yes" IncludeMinimum="yes" Maximum="255.255.65535.65535" Minimum="1.0.0.0" MigrateFeatures="no" Property="OLDPRODUCTISINSTALLED" OnlyDetect="yes" />      

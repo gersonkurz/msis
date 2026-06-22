@@ -121,6 +121,33 @@ variable dictionary. Full reference: `docs/templates.md` (MSI) and `docs/Bundle.
 (Note: `START_EXE` takes a WiX File Id, but msis generates opaque ids like `FILE_ID00007` — its
 practical usability is unverified; see git history for the LAUNCH_TARGET discussion.)
 
+## Installer hooks & uninstall folder removal (dangerous, gated)
+
+`USE_INSTALLER_HOOKS=True` enables the native hook DLL (`DLL_ENTRY`, e.g. `msi-simplica.dll`) that
+provides the `Before/After *` custom actions plus two cleanup actions. `REMOVE_FOLDERS_ON_UNINSTALL`
+makes that DLL **recursively delete the entire `INSTALLDIR` and `APPDATADIR` trees** on full
+uninstall — including runtime/customer files the MSI never installed (this is what deleted a
+customer's SQLite DB). `REMOVE_REGISTRY_TREE` is the registry analogue: a **comma-separated list of
+registry roots** (not a boolean) that the same DLL recursively `RegDeleteTree`s. Both only take
+effect when `USE_INSTALLER_HOOKS=True`; CA definitions and scheduling are gated on both variables.
+`RETAIN_FILES_ON_UNINSTALL` is a `;`-separated keep-list, passed through as an MSI property and
+interpreted by the DLL (no-op until an updated DLL honors it).
+
+- `variables.RegistryTreeActive()` decides registry "active" (false-like `False/No/Off/0/empty` →
+  inactive); the renderer normalizes a false-like value to `""` so `{{#if REMOVE_REGISTRY_TREE}}`
+  gates correctly (a bare `"False"` is otherwise Handlebars-truthy).
+- Build-time warnings: `variables.CheckInstallerHookUsage()` (unit-tested) warns on active
+  folder/registry removal, plus "no effect" when a setting lacks its prerequisite.
+- `validateInstallerHooks()` in `main.go` fails the build if the platform's hook DLL is missing
+  (checked across the same bind paths WiX uses), and rejects `arm64` + hooks (no native arm64 DLL yet).
+- Templates: regular + the x86 silent template gate hooks consistently. `x64/template-silent.wxs`
+  was **removed** (a silent x64 build falls back to the regular x64 template) pending a clean
+  reconstruction. VC++ merge modules are obsolete — VC runtime is `<requires type="vcredist">` only;
+  the regular templates still carry legacy `<Merge>` blocks (separate cleanup, affects live customers).
+- The native DLL source lives in `../msis-2.x/msi-simplica/` and is **not built or shipped by this
+  repo** — owning it (deterministic x86/x64[/arm64] build, the `RETAIN_FILES_ON_UNINSTALL` logic) is
+  Stage 2.
+
 ## Key Dependencies
 
 - `github.com/aymerick/raymond` — Handlebars template engine

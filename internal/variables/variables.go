@@ -153,6 +153,57 @@ func (d Dictionary) BuildTarget() string {
 	return d.Get("BUILD_TARGET")
 }
 
+// RegistryTreeActive reports whether REMOVE_REGISTRY_TREE requests registry cleanup. The variable
+// holds a comma-separated list of registry roots, NOT a boolean, so a non-empty value is "active"
+// unless it is an explicit false-like token (False/No/Off/0, case-insensitive) or empty/missing.
+func (d Dictionary) RegistryTreeActive() bool {
+	v := strings.TrimSpace(d["REMOVE_REGISTRY_TREE"])
+	if v == "" {
+		return false
+	}
+	switch strings.ToLower(v) {
+	case "false", "no", "off", "0":
+		return false
+	}
+	return true
+}
+
+// CheckInstallerHookUsage returns build-time warnings about the installer-hook variables
+// (REMOVE_FOLDERS_ON_UNINSTALL / RETAIN_FILES_ON_UNINSTALL / REMOVE_REGISTRY_TREE). These behaviors
+// are implemented by the native installer-hook DLL, so they only take effect when
+// USE_INSTALLER_HOOKS=True.
+func (d Dictionary) CheckInstallerHookUsage() []string {
+	removeFolders := d.GetBool("REMOVE_FOLDERS_ON_UNINSTALL")
+	useHooks := d.GetBool("USE_INSTALLER_HOOKS")
+	retain := strings.TrimSpace(d["RETAIN_FILES_ON_UNINSTALL"])
+	registryActive := d.RegistryTreeActive()
+	cleanupActive := removeFolders && useHooks
+
+	var warnings []string
+	if removeFolders {
+		warnings = append(warnings, "REMOVE_FOLDERS_ON_UNINSTALL=True recursively deletes the INSTALLDIR "+
+			"and APPDATADIR trees on full uninstall, including files your application created at runtime "+
+			"(databases, logs, config). RETAIN_FILES_ON_UNINSTALL can exempt specific files, but only when "+
+			"built against an updated hook DLL that honors it.")
+	}
+	if removeFolders && !useHooks {
+		warnings = append(warnings, "REMOVE_FOLDERS_ON_UNINSTALL has no effect unless USE_INSTALLER_HOOKS=True "+
+			"(folder removal is performed by the installer-hook DLL).")
+	}
+	if registryActive {
+		warnings = append(warnings, "REMOVE_REGISTRY_TREE recursively deletes the listed registry trees on "+
+			"full uninstall. This can remove state not owned by the MSI.")
+	}
+	if registryActive && !useHooks {
+		warnings = append(warnings, "REMOVE_REGISTRY_TREE has no effect unless USE_INSTALLER_HOOKS=True.")
+	}
+	if retain != "" && !cleanupActive {
+		warnings = append(warnings, "RETAIN_FILES_ON_UNINSTALL has no effect unless folder cleanup is active "+
+			"(set both REMOVE_FOLDERS_ON_UNINSTALL=True and USE_INSTALLER_HOOKS=True).")
+	}
+	return warnings
+}
+
 // DeprecatedVariable describes a deprecated variable with migration guidance.
 type DeprecatedVariable struct {
 	Name    string

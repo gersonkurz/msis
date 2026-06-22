@@ -20,11 +20,10 @@ Files in earlier locations override later ones, so you can selectively replace i
 ```
 templates/
 ├── x64/                    # 64-bit MSI templates
+│   └── template.wxs        # Full UI installer (a silent x64 build falls back to this)
+├── x86/                    # 32-bit MSI templates
 │   ├── template.wxs        # Full UI installer
 │   └── template-silent.wxs # Silent/minimal installer
-├── x86/                    # 32-bit MSI templates
-│   ├── template.wxs
-│   └── template-silent.wxs
 ├── minimal/                # Minimal templates (no UI)
 │   └── template.wxs
 ├── minimal-x86/            # Minimal 32-bit templates
@@ -32,9 +31,13 @@ templates/
 ├── bundle.wxs              # Bundle with UI
 ├── bundle-silent.wxs       # Silent bundle
 ├── wixlib/                 # Shared WiX libraries
-├── custom/                 # User customizations (empty by default)
-└── mergemodules/           # Merge modules
+└── custom/                 # User customizations (empty by default)
 ```
+
+The recommended way to handle the VC++ runtime is `<requires type="vcredist" version="2022"/>` (see
+[Prerequisites](prerequisites.md)) — VC++ merge modules are deprecated by Microsoft. The `minimal`
+and x86 silent templates are MSM-free; the regular `x64`/`x86` templates still carry legacy
+`<Merge>`/`<MergeRef>` blocks pending a separate, customer-affecting migration.
 
 ## Selecting Templates
 
@@ -209,6 +212,64 @@ bundle drives the visible UI, so set the bundle variables (`LICENSE_URL`, `LAUNC
 the user sees, and the MSI variables only if the MSIs are also distributed standalone.
 
 See [Bundle.md](Bundle.md) for the bundle-side variables.
+
+## Uninstall behavior and installer hooks
+
+By default, uninstalling an MSIS package is a **standard Windows Installer uninstall**: it removes
+only what the MSI installed (files, registry, shortcuts). Files your application creates at runtime
+— databases, logs, user config — are **left in place**. Three opt-in variables change this, and all
+of them depend on the native installer-hook DLL.
+
+### `USE_INSTALLER_HOOKS`
+
+Enables the native hook DLL (named by `DLL_ENTRY`, e.g. `msi-simplica.dll`), which provides the
+`Before/After Install/Upgrade/Uninstall` custom actions and the cleanup actions below. When
+`USE_INSTALLER_HOOKS=True`, msis checks that the hook DLL for the target platform exists **before**
+the WiX build and **fails with a clear message** if it is missing. It is **not supported on arm64**
+yet — msis rejects `arm64` + hooks rather than silently loading the x64 DLL under emulation.
+
+### `REMOVE_FOLDERS_ON_UNINSTALL`
+
+> ⚠️ **Dangerous.** On a full uninstall this **recursively deletes the entire `INSTALLDIR` and
+> `APPDATADIR` trees**, including files the MSI never installed (runtime databases, logs, customer
+> data). Only use it when you genuinely want the install *and* app-data folders wiped.
+
+It requires `USE_INSTALLER_HOOKS=True` (the deletion is performed by the hook DLL). msis emits a
+build-time warning whenever `REMOVE_FOLDERS_ON_UNINSTALL=True`, plus a "no effect" warning if hooks
+are off. It is retained mainly for legacy packages; prefer leaving it off so standard uninstall
+preserves user data.
+
+### `REMOVE_REGISTRY_TREE`
+
+> ⚠️ **Dangerous.** On a full uninstall this **recursively deletes the listed registry trees**
+> (`RegDeleteTree`), which can remove state not owned by the MSI.
+
+A **comma-separated list of registry roots** (not a boolean), preserved for compatibility:
+
+```xml
+<set name="REMOVE_REGISTRY_TREE"
+     value="HKEY_LOCAL_MACHINE\Software\Pergamon,HKEY_CLASSES_ROOT\WOSA/XFS_ROOT"/>
+```
+
+It is "active" when it holds a real value; `False`/`No`/`Off`/`0`/empty/missing (case-insensitive)
+disable it. Like folder removal it requires `USE_INSTALLER_HOOKS=True` (the deletion is done by the
+hook DLL), and msis warns when it is active, plus a "no effect" warning if hooks are off.
+
+### `RETAIN_FILES_ON_UNINSTALL`
+
+A semicolon-separated list of files that folder cleanup must **not** delete. It is interpreted by
+the hook DLL — msis only passes it through as an MSI property and warns if it is set while folder
+cleanup is inactive. Paths may reference MSI properties such as `[APPDATADIR]`.
+
+> **Note:** this only protects files when built against an **updated hook DLL** that honors
+> `RETAIN_FILES_ON_UNINSTALL`. Older DLLs ignore it and still delete everything.
+
+```xml
+<set name="USE_INSTALLER_HOOKS" value="True"/>
+<set name="REMOVE_FOLDERS_ON_UNINSTALL" value="True"/>
+<set name="RETAIN_FILES_ON_UNINSTALL"
+     value="[APPDATADIR]DATABASE\proakt.db;[APPDATADIR]CONFIG\local.ini"/>
+```
 
 ## Custom Templates Folder
 

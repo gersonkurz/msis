@@ -206,8 +206,18 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["DLL_CUSTOM"] = r.Variables["DLL_CUSTOM"]
 	ctx["REPAIR_ENABLED"] = r.Variables.GetBool("REPAIR_ENABLED")
 	ctx["REMOVE_ENABLED"] = r.Variables.GetBool("REMOVE_ENABLED")
-	ctx["REMOVE_REGISTRY_TREE"] = r.Variables["REMOVE_REGISTRY_TREE"]
+	// REMOVE_REGISTRY_TREE is a comma-separated path list, not a boolean. Normalize false-like
+	// values (False/No/Off/0/empty) to "" so {{#if REMOVE_REGISTRY_TREE}} gates correctly
+	// (a non-empty "False" would otherwise be truthy in Handlebars and emit the cleanup).
+	if r.Variables.RegistryTreeActive() {
+		ctx["REMOVE_REGISTRY_TREE"] = r.Variables["REMOVE_REGISTRY_TREE"]
+	} else {
+		ctx["REMOVE_REGISTRY_TREE"] = ""
+	}
 	ctx["REMOVE_FOLDERS_ON_UNINSTALL"] = r.Variables.GetBool("REMOVE_FOLDERS_ON_UNINSTALL")
+	// Semicolon-separated list of files the native hook DLL must NOT delete during folder cleanup.
+	// msis only passes it through as an MSI property; the DLL parses and interprets it.
+	ctx["RETAIN_FILES_ON_UNINSTALL"] = r.Variables["RETAIN_FILES_ON_UNINSTALL"]
 	ctx["DO_NOT_UPGRADE_FROM"] = r.Variables["DO_NOT_UPGRADE_FROM"]
 	ctx["DO_NOT_UPGRADE_MESSAGE"] = r.Variables["DO_NOT_UPGRADE_MESSAGE"]
 	ctx["START_EXE"] = r.Variables["START_EXE"]

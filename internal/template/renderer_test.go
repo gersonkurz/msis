@@ -317,6 +317,129 @@ func TestRenderWithMinimalTemplate(t *testing.T) {
 	}
 }
 
+// TestRegularTemplateHookGating renders the real x64/x86 MSI templates and verifies the
+// folder-wipe custom action appears only when BOTH REMOVE_FOLDERS_ON_UNINSTALL and
+// USE_INSTALLER_HOOKS are set, and that the RETAIN_FILES_ON_UNINSTALL property is emitted
+// only when the variable is non-empty.
+func TestRegularTemplateHookGating(t *testing.T) {
+	for _, arch := range []string{"x64", "x86"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", "templates", arch, "template.wxs"))
+		if err != nil {
+			t.Fatalf("reading %s template: %v", arch, err)
+		}
+		base := func() map[string]interface{} {
+			return map[string]interface{}{
+				"PRODUCT_NAME": "App", "PRODUCT_VERSION": "1.0.0", "MANUFACTURER": "ACME",
+				"UPGRADE_CODE": "{00000000-0000-0000-0000-000000000000}", "DLL_ENTRY": "msi-simplica.dll",
+			}
+		}
+		render := func(ctx map[string]interface{}) string {
+			out, err := RenderString(string(content), ctx)
+			if err != nil {
+				t.Fatalf("%s render: %v", arch, err)
+			}
+			return out
+		}
+
+		// folders + hooks => action present
+		c := base()
+		c["REMOVE_FOLDERS_ON_UNINSTALL"] = true
+		c["USE_INSTALLER_HOOKS"] = true
+		if !strings.Contains(render(c), "RemoveAllFoldersOnUninstall") {
+			t.Errorf("%s: expected RemoveAllFoldersOnUninstall when both flags set", arch)
+		}
+
+		// folders but no hooks => action absent (the bug that wiped data without hooks)
+		c = base()
+		c["REMOVE_FOLDERS_ON_UNINSTALL"] = true
+		if strings.Contains(render(c), "RemoveAllFoldersOnUninstall") {
+			t.Errorf("%s: RemoveAllFoldersOnUninstall must NOT appear without USE_INSTALLER_HOOKS", arch)
+		}
+
+		// retain property only when set
+		c = base()
+		if strings.Contains(render(c), `Id="RETAIN_FILES_ON_UNINSTALL"`) {
+			t.Errorf("%s: RETAIN property must be absent when variable unset", arch)
+		}
+		c["RETAIN_FILES_ON_UNINSTALL"] = `[APPDATADIR]DATABASE\proakt.db`
+		out := render(c)
+		if !strings.Contains(out, `Id="RETAIN_FILES_ON_UNINSTALL"`) || !strings.Contains(out, `DATABASE\proakt.db`) {
+			t.Errorf("%s: expected RETAIN property with value when set:\n%s", arch, out)
+		}
+	}
+}
+
+// TestRegistryCleanupGating renders the real x86 regular AND silent templates and verifies the
+// registry-tree cleanup (prep CA that supplies CustomActionData + the deferred CA) is emitted only
+// when both REMOVE_REGISTRY_TREE is active and USE_INSTALLER_HOOKS=True.
+func TestRegistryCleanupGating(t *testing.T) {
+	for _, tpl := range []string{"template.wxs", "template-silent.wxs"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", "templates", "x86", tpl))
+		if err != nil {
+			t.Fatalf("reading %s: %v", tpl, err)
+		}
+		base := func() map[string]interface{} {
+			return map[string]interface{}{
+				"PRODUCT_NAME": "App", "PRODUCT_VERSION": "1.0.0", "MANUFACTURER": "ACME",
+				"UPGRADE_CODE": "{00000000-0000-0000-0000-000000000000}", "DLL_ENTRY": "msi-simplica.dll",
+				"TEMPLATE_FOLDER": "/tpl",
+			}
+		}
+		render := func(ctx map[string]interface{}) string {
+			out, err := RenderString(string(content), ctx)
+			if err != nil {
+				t.Fatalf("%s render: %v", tpl, err)
+			}
+			return out
+		}
+
+		// active + hooks => prep CA (CustomActionData) AND deferred CA present
+		c := base()
+		c["REMOVE_REGISTRY_TREE"] = `HKLM\Software\X`
+		c["USE_INSTALLER_HOOKS"] = true
+		out := render(c)
+		if !strings.Contains(out, "RemoveRegistryTreeOnUninstallPrep") || !strings.Contains(out, `DllEntry="RemoveRegistryTreeOnUninstall"`) {
+			t.Errorf("%s: expected prep + deferred registry CA when active+hooks", tpl)
+		}
+
+		// active + NO hooks => no registry cleanup at all
+		c = base()
+		c["REMOVE_REGISTRY_TREE"] = `HKLM\Software\X`
+		if strings.Contains(render(c), "RemoveRegistryTree") {
+			t.Errorf("%s: registry cleanup must NOT render without USE_INSTALLER_HOOKS", tpl)
+		}
+
+		// inactive (empty, as the renderer normalizes false-like) + hooks => no registry cleanup
+		c = base()
+		c["REMOVE_REGISTRY_TREE"] = ""
+		c["USE_INSTALLER_HOOKS"] = true
+		if strings.Contains(render(c), "RemoveRegistryTree") {
+			t.Errorf("%s: registry cleanup must NOT render when inactive", tpl)
+		}
+	}
+}
+
+// TestBuildContextRegistryTreeNormalization verifies false-like REMOVE_REGISTRY_TREE values become
+// empty in the render context (so {{#if REMOVE_REGISTRY_TREE}} gates correctly), while a real path
+// passes through.
+func TestBuildContextRegistryTreeNormalization(t *testing.T) {
+	data := &generator.GeneratedOutput{}
+	for _, falsey := range []string{"False", "no", "OFF", "0", "", "  "} {
+		vars := variables.New()
+		vars["REMOVE_REGISTRY_TREE"] = falsey
+		ctx := NewRenderer(vars, "/t", "", data).buildContext()
+		if ctx["REMOVE_REGISTRY_TREE"] != "" {
+			t.Errorf("REMOVE_REGISTRY_TREE=%q should normalize to empty, got %q", falsey, ctx["REMOVE_REGISTRY_TREE"])
+		}
+	}
+	vars := variables.New()
+	vars["REMOVE_REGISTRY_TREE"] = `HKLM\Software\X`
+	ctx := NewRenderer(vars, "/t", "", data).buildContext()
+	if ctx["REMOVE_REGISTRY_TREE"] != `HKLM\Software\X` {
+		t.Errorf("active path should pass through, got %q", ctx["REMOVE_REGISTRY_TREE"])
+	}
+}
+
 // TestBundleLaunchTarget renders the real bundle template and checks that the
 // success-page "Launch" button (LaunchTarget Burn variable) appears only when
 // LAUNCH_TARGET is set, and that a bracketed Formatted path passes through verbatim.

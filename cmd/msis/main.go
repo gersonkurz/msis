@@ -81,6 +81,56 @@ func main() {
 // that a missing WiX tool or extension would explain.
 const setupHint = "if WiX or its extensions are missing, run: msis /SETUP-WIX"
 
+// hookArchFolder returns the template subfolder whose native hook DLL applies to the platform,
+// mirroring the template selection (x86 -> x86, everything 64-bit -> x64).
+func hookArchFolder(platform string) string {
+	if strings.EqualFold(platform, "x86") {
+		return "x86"
+	}
+	return "x64"
+}
+
+// validateInstallerHooks fails the build, with a clear message, when USE_INSTALLER_HOOKS=True but
+// the native hook DLL for the target platform is unavailable. arm64 is rejected outright: it maps
+// to the x64 template, and we must not silently load the x64 DLL under emulation (no native arm64
+// hook DLL is shipped yet).
+//
+// bindDirs must be the same set of bind paths, in the same order, that the WiX build resolves the
+// template's "<arch>/<DLL_ENTRY>" Binary against (work dir, .msis source dir, custom templates,
+// template folder) so validation is never stricter than the build itself — legacy setups may carry
+// the DLL beside the .msis or the generated WXS.
+func validateInstallerHooks(vars variables.Dictionary, bindDirs []string) error {
+	if !vars.GetBool("USE_INSTALLER_HOOKS") {
+		return nil
+	}
+	platform := vars.Platform()
+	if strings.EqualFold(platform, "arm64") {
+		return fmt.Errorf("USE_INSTALLER_HOOKS is not supported on arm64 yet (no native arm64 hook DLL); " +
+			"set USE_INSTALLER_HOOKS=False, or build for x86/x64")
+	}
+	dllEntry := vars["DLL_ENTRY"]
+	if dllEntry == "" {
+		return fmt.Errorf("USE_INSTALLER_HOOKS=True requires DLL_ENTRY to name the native hook DLL")
+	}
+	archFolder := hookArchFolder(platform)
+	var checked []string
+	seen := map[string]bool{}
+	for _, dir := range bindDirs {
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		cand := filepath.Join(dir, archFolder, dllEntry)
+		if _, err := os.Stat(cand); err == nil {
+			return nil
+		}
+		checked = append(checked, cand)
+	}
+	return fmt.Errorf("USE_INSTALLER_HOOKS=True but the native hook DLL %q was not found for platform %s "+
+		"(looked in: %s); build it with 'just build-hooks' or place it on a bind path",
+		dllEntry, archFolder, strings.Join(checked, ", "))
+}
+
 // runSetupWix installs/repairs the WiX toolset and the extensions msis needs.
 func runSetupWix(args *cliArgs) error {
 	version := args.wixVersion
@@ -149,6 +199,11 @@ func processFile(filename string, args *cliArgs) error {
 		for _, warning := range deprecatedWarnings {
 			fmt.Printf("  %s\n", cli.Warning("Warning: "+warning))
 		}
+	}
+
+	// Warn about dangerous / ineffective installer-hook variable combinations.
+	for _, warning := range vars.CheckInstallerHookUsage() {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+warning))
 	}
 
 	workDir := filepath.Dir(filename)
@@ -255,6 +310,10 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 	// Milestone 3.5 - WiX CLI integration
 	if args.build {
+		// Mirror the WiX build's bind-path resolution order (see wix.Builder.runWixBuild).
+		if err := validateInstallerHooks(vars, []string{filepath.Dir(wxsFile), workDir, customTemplates, templateFolder}); err != nil {
+			return err
+		}
 		if !wix.IsWixAvailable() {
 			return fmt.Errorf("wix CLI not found; run: msis /SETUP-WIX")
 		}
