@@ -126,10 +126,13 @@ func (r *Renderer) getTemplatePath(platform string, silent bool) string {
 		templateName = "template.wxs"
 	}
 
-	// Map platform to folder
-	platformFolder := "x86"
-	if strings.EqualFold(platform, "x64") {
-		platformFolder = "x64"
+	// Map platform to template folder. x64 and arm64 are both 64-bit and install under
+	// ProgramFiles64Folder (the x64 template); only x86 uses the 32-bit ProgramFilesFolder
+	// template. Mapping arm64 to x86 here would install an ARM64 MSI under Program Files (x86),
+	// disagreeing with the bundle's native [InstallFolder] (and breaking the Launch button).
+	platformFolder := "x64"
+	if strings.EqualFold(platform, "x86") {
+		platformFolder = "x86"
 	}
 
 	// Use overlay resolution

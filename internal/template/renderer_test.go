@@ -92,7 +92,10 @@ func TestGetTemplatePath(t *testing.T) {
 		{"x64", false, "x64/template.wxs"},
 		{"x64", true, "x64/template-silent.wxs"},
 		{"x86", false, "x86/template.wxs"},
-		{"X64", false, "x64/template.wxs"}, // Case insensitive
+		{"X64", false, "x64/template.wxs"},         // Case insensitive
+		{"arm64", false, "x64/template.wxs"},       // arm64 is 64-bit -> ProgramFiles64Folder
+		{"ARM64", true, "x64/template-silent.wxs"}, // case insensitive
+		{"", false, "x64/template.wxs"},            // default to 64-bit, matching msis's x64 default
 	}
 
 	for _, tt := range tests {
