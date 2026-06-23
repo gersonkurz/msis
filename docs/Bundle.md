@@ -216,7 +216,7 @@ different value format — and one does not substitute for the other:
 | Capability | Bundle variable (here) | MSI variable (standalone `.msi`) |
 |------------|------------------------|----------------------------------|
 | License | `LICENSE_URL` — a **URL**, shown as a hyperlink | `LICENSE_FILE` — an **RTF file**, shown in an accept-to-continue dialog |
-| Launch on finish | `LAUNCH_TARGET` — a Burn Formatted path (`[InstallFolder]\App.exe`) | `START_EXE` — a WiX File Id (`[#FileId]`) |
+| Launch on finish | `LAUNCH_TARGET` — a Burn Formatted path (`[InstallFolder]\App.exe`) | `START_EXE` — an MSI Formatted path (`[INSTALLDIR]App.exe`, no leading `\`) |
 
 So a bundle that only sets `LICENSE_URL` shows the license in the bundle UI but **not** in the
 individual MSIs; set `LICENSE_FILE` on the MSI side too if those are distributed on their own.

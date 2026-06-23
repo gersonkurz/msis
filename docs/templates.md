@@ -143,7 +143,7 @@ The standard MSI templates support optional dialogs for license agreement and in
 |----------|---------|-------|
 | `LICENSE_FILE` | Show license agreement dialog | Path to RTF file |
 | `INSTALL_DIR_DIALOG` | Show install directory selection dialog | `true` to enable |
-| `START_EXE` | Offer "Launch *Product*" checkbox on the final dialog | WiX **File Id** of an installed file (used as `[#FileId]`) |
+| `START_EXE` | Offer "Launch *Product*" checkbox on the final dialog | MSI **Formatted path** to the installed exe (e.g. `[INSTALLDIR]App.exe`) |
 
 ### Dialog Flow
 
@@ -193,6 +193,29 @@ When enabled, users can:
 
 **Note**: The install directory dialog only affects `INSTALLDIR`. Files targeting other roots (like `APPDATADIR`) are not affected by this selection.
 
+### Launch on finish (`START_EXE`)
+
+Set `START_EXE` to add a "Launch *Product*" checkbox on the exit dialog that runs your application
+after a successful install. The value is an MSI **Formatted path**, so it references the installed
+file through a directory property:
+
+```xml
+<set name="START_EXE" value="[INSTALLDIR]MyApp.exe"/>
+```
+
+The value flows into `WixShellExecTarget`, which `WixShellExec` resolves with `MsiFormatRecord` at
+launch time, so `[INSTALLDIR]` (and the other [directory roots](#supported-directory-roots)) expand
+to their final installed paths. Note that MSI directory properties **already include a trailing
+backslash**, so write `[INSTALLDIR]MyApp.exe` with **no** extra `\` (unlike the bundle's
+`[InstallFolder]\App.exe`).
+
+> Earlier versions required a WiX **File Id** wrapped as `[#FileId]`. Because msis generates opaque,
+> per-run ids (`FILE_ID00007`), that form was effectively unusable — `START_EXE` is now a Formatted
+> path, matching the bundle's `LAUNCH_TARGET`. The template no longer wraps the value, so you may
+> still pass an explicit `[#FileId]` if you know the id.
+
+This is the MSI-level counterpart of the bundle's [`LAUNCH_TARGET`](Bundle.md).
+
 ### MSI vs Bundle: license and launch settings
 
 A standalone `.msi` and a bundle `.exe` use **different engines** for their UI — Windows
@@ -203,7 +226,7 @@ value set for one does **not** carry over to the other:
 | Capability | Single MSI | Bundle (`.exe`) |
 |------------|------------|-----------------|
 | Show a license | `LICENSE_FILE` — path to an **RTF file**; shown in a license dialog with an accept-to-continue checkbox | `LICENSE_URL` — a **URL**; shown as a hyperlink on the welcome page |
-| Offer to launch on finish | `START_EXE` — a WiX **File Id** (`[#FileId]`); a "Launch *Product*" **checkbox** on the exit dialog | `LAUNCH_TARGET` — a Burn **Formatted path** (e.g. `[InstallFolder]\App.exe`); a "Launch" **button** on the success page |
+| Offer to launch on finish | `START_EXE` — an MSI **Formatted path** (e.g. `[INSTALLDIR]App.exe`, no leading `\`); a "Launch *Product*" **checkbox** on the exit dialog | `LAUNCH_TARGET` — a Burn **Formatted path** (e.g. `[InstallFolder]\App.exe`); a "Launch" **button** on the success page |
 
 Practical consequence: setting only `LICENSE_URL` shows the license in the **bundle** but not in
 the individual MSIs — for those you must also set `LICENSE_FILE` (an RTF). Likewise `START_EXE`

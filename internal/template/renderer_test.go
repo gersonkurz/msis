@@ -369,6 +369,52 @@ func TestRegularTemplateHookGating(t *testing.T) {
 	}
 }
 
+// TestStartExe renders the real MSI templates and checks the "Launch Product" exit-dialog wiring:
+// it appears only when START_EXE is set, and the value is passed into WixShellExecTarget verbatim
+// (a Formatted path like [INSTALLDIR]App.exe), NOT wrapped in the old [#FileId] form.
+func TestStartExe(t *testing.T) {
+	for _, arch := range []string{"x64", "x86"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", "templates", arch, "template.wxs"))
+		if err != nil {
+			t.Fatalf("reading %s template: %v", arch, err)
+		}
+		base := map[string]interface{}{
+			"PRODUCT_NAME": "App", "PRODUCT_VERSION": "1.0.0", "MANUFACTURER": "ACME",
+			"UPGRADE_CODE": "{00000000-0000-0000-0000-000000000000}", "DLL_ENTRY": "msi-simplica.dll",
+		}
+		render := func(ctx map[string]interface{}) string {
+			out, err := RenderString(string(content), ctx)
+			if err != nil {
+				t.Fatalf("%s render: %v", arch, err)
+			}
+			return out
+		}
+
+		// Absent: no launch wiring.
+		if got := render(base); strings.Contains(got, "WixShellExecTarget") || strings.Contains(got, "LaunchApplication") {
+			t.Errorf("%s: launch wiring must be absent when START_EXE is unset", arch)
+		}
+
+		// Present: value passes through verbatim into WixShellExecTarget, no [#...] wrapper.
+		c := map[string]interface{}{}
+		for k, v := range base {
+			c[k] = v
+		}
+		c["START_EXE"] = `[INSTALLDIR]App.exe`
+		out := render(c)
+		want := `<Property Id="WixShellExecTarget" Value="[INSTALLDIR]App.exe" />`
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: expected %q in output:\n%s", arch, want, out)
+		}
+		if strings.Contains(out, `Value="[#`) {
+			t.Errorf("%s: START_EXE must not be wrapped in the legacy [#FileId] form:\n%s", arch, out)
+		}
+		if !strings.Contains(out, `DllEntry="WixShellExec"`) {
+			t.Errorf("%s: expected LaunchApplication custom action when START_EXE is set", arch)
+		}
+	}
+}
+
 // TestHookDllDirInTemplate verifies the hook DLL Binary SourceFile is arch-native, driven by
 // HOOK_DLL_DIR (so an arm64 build — which uses the x64 template — loads the arm64 DLL).
 func TestHookDllDirInTemplate(t *testing.T) {

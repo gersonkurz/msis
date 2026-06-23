@@ -141,7 +141,9 @@
         </UI>
         {{#if START_EXE}}
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch {{PRODUCT_NAME}}" />
-		<Property Id="WixShellExecTarget" Value="[#{{START_EXE}}]" />
+		<!-- START_EXE is an MSI Formatted path (e.g. [INSTALLDIR]App.exe); WixShellExec runs it
+		     through MsiFormatRecord, so directory-property refs resolve at launch time. -->
+		<Property Id="WixShellExecTarget" Value="{{START_EXE}}" />
 		<CustomAction Id="LaunchApplication" DllEntry="WixShellExec" Impersonate="yes" BinaryRef="Wix4UtilCA_X86" />
         {{/if}}
         <UIRef Id="WixUI_Common" />

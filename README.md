@@ -166,6 +166,7 @@ baseline (not yet released or tagged).
 - WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
 - `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
 - `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`), with the ARM64 path resolved correctly.
+- `START_EXE` (the MSI "Launch *Product*" checkbox) is now an MSI Formatted path like `[INSTALLDIR]App.exe`, matching `LAUNCH_TARGET`'s semantics. It previously needed a WiX File Id, which msis generates opaquely per run — making it effectively unusable.
 - **Installer-hook safety overhaul.** The native hook DLL's recursive uninstall cleanup
   (`REMOVE_FOLDERS_ON_UNINSTALL`, `REMOVE_REGISTRY_TREE`) once deleted runtime/customer data
   (e.g. a customer's SQLite database). It is now explicit and warned at build time, gated
