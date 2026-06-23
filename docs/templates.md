@@ -215,6 +215,10 @@ See [Bundle.md](Bundle.md) for the bundle-side variables.
 
 ## Uninstall behavior and installer hooks
 
+> For the full picture — the rationale (a real data-loss incident), the native DLL, and how to
+> write your own hooks — see **[Installer Hooks](installer-hooks.md)**. This section is the
+> variable quick-reference.
+
 By default, uninstalling an MSIS package is a **standard Windows Installer uninstall**: it removes
 only what the MSI installed (files, registry, shortcuts). Files your application creates at runtime
 — databases, logs, user config — are **left in place**. Three opt-in variables change this, and all

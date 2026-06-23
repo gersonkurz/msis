@@ -110,6 +110,7 @@ That's it. Your installer is ready at `setup.msi`.
 | **[Tutorial](docs/tutorial.md)** | Step-by-step guides: files, shortcuts, registry, services, and more |
 | **[Templates & Customization](docs/templates.md)** | Template locations, logo branding, custom templates |
 | **[Bundle Guide](docs/Bundle.md)** | Multi-architecture installers and prerequisites |
+| **[Installer Hooks](docs/installer-hooks.md)** | Native hooks, destructive uninstall cleanup, and `RETAIN_FILES_ON_UNINSTALL` |
 | **[Schema](docs/msis.xsd)** | Complete XML element and attribute reference |
 | **[Roadmap](docs/roadmap.md)** | Planned features and future direction |
 | **[Developer Overview](docs/overview.md)** | Architecture, code structure, and internals |
@@ -164,7 +165,14 @@ baseline (not yet released or tagged).
 **3.0.3** — *current, unreleased*
 - WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
 - `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
-- `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`).
+- `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`), with the ARM64 path resolved correctly.
+- **Installer-hook safety overhaul.** The native hook DLL's recursive uninstall cleanup
+  (`REMOVE_FOLDERS_ON_UNINSTALL`, `REMOVE_REGISTRY_TREE`) once deleted runtime/customer data
+  (e.g. a customer's SQLite database). It is now explicit and warned at build time, gated
+  consistently across templates, false-value-aware, and exempt-able per file via the new
+  `RETAIN_FILES_ON_UNINSTALL`. The hook DLL (`msi-simplica.dll`) is now **built and shipped by
+  this repo** (`native/msi-simplica/`, x86/x64/arm64) instead of being a stale external
+  dependency — see [Installer Hooks](docs/installer-hooks.md).
 - Fixes: preserved registry keys; `quiet` attribute on `<execute>`; vcredist detection via Burn variables; LOCALAPPDATADIR/INSTALLDIR path collision; `fail-on-error` on `<execute>`; options-dialog browse button; test/coverage tooling.
 
 **3.0.2** — 2026-04-23 (tag [`v3.0.2`](../../releases/tag/v3.0.2))
