@@ -159,10 +159,10 @@ msis has had three generations, all sharing the same `.msis` script format:
 
 ### msis-3.x version history
 
-Reconstructed from the Git log and tagged retroactively. `3.0.3` is the current in-progress
-baseline (not yet released or tagged).
+Earlier versions were reconstructed from the Git log and tagged retroactively. `3.0.3` is the
+current release.
 
-**3.0.3** — *current, unreleased*
+**3.0.3** — 2026-06-23 (tag [`v3.0.3`](../../releases/tag/v3.0.3))
 - WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
 - `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
 - `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`), with the ARM64 path resolved correctly.
