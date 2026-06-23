@@ -5,7 +5,7 @@
         <SetProperty Id="COMPUTERNAME" Before="InstallInitialize" Sequence="execute" Value="[%COMPUTERNAME]" />
         <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed. Setup will now exit." />
         <util:QueryWindowsWellKnownSIDs />
-		{{#if USE_INSTALLER_HOOKS}}<Binary Id="binary.dll" SourceFile="x86/{{DLL_ENTRY}}" />{{/if}}
+		{{#if USE_INSTALLER_HOOKS}}<Binary Id="binary.dll" SourceFile="{{HOOK_DLL_DIR}}/{{DLL_ENTRY}}" />{{/if}}
         {{#if SETUP_ICON }}
         <Icon Id="ngbt_setup_icon.ico" SourceFile="{{SETUP_ICON}}" />
         <Property Id="ARPPRODUCTICON" Value="ngbt_setup_icon.ico" />

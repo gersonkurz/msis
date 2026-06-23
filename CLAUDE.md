@@ -138,15 +138,22 @@ interpreted by the DLL (no-op until an updated DLL honors it).
   gates correctly (a bare `"False"` is otherwise Handlebars-truthy).
 - Build-time warnings: `variables.CheckInstallerHookUsage()` (unit-tested) warns on active
   folder/registry removal, plus "no effect" when a setting lacks its prerequisite.
-- `validateInstallerHooks()` in `main.go` fails the build if the platform's hook DLL is missing
-  (checked across the same bind paths WiX uses), and rejects `arm64` + hooks (no native arm64 DLL yet).
+- `validateInstallerHooks()` in `main.go` fails the build if the arch-native hook DLL is missing
+  (checked across the same bind paths WiX uses). x86/x64/arm64 are all supported.
+- `variables.HookDllDir()` gives the arch-native DLL subfolder (x86/x64/**arm64**); the templates
+  reference it via `{{HOOK_DLL_DIR}}/{{DLL_ENTRY}}` so an arm64 build (which uses the x64 *template*)
+  loads the arm64 DLL.
+- **The native DLL lives in `native/msi-simplica/`** (migrated from msis-2.x, modernized: v145,
+  ARM64, WiX-native libs via pinned `PackageReference` — no hardcoded paths). `just build-hooks`
+  (VS 2026 Developer shell) builds x86/x64/arm64 and stages them into `templates/<arch>/`. The DLLs
+  are **build artifacts** (gitignored); `just release`/`release-all` build them and the installer
+  ships them. `RETAIN_FILES_ON_UNINSTALL` parsing/skip logic lives in `CustomAction.cpp`.
 - Templates: regular + the x86 silent template gate hooks consistently. `x64/template-silent.wxs`
-  was **removed** (a silent x64 build falls back to the regular x64 template) pending a clean
-  reconstruction. VC++ merge modules are obsolete — VC runtime is `<requires type="vcredist">` only;
-  the regular templates still carry legacy `<Merge>` blocks (separate cleanup, affects live customers).
-- The native DLL source lives in `../msis-2.x/msi-simplica/` and is **not built or shipped by this
-  repo** — owning it (deterministic x86/x64[/arm64] build, the `RETAIN_FILES_ON_UNINSTALL` logic) is
-  Stage 2.
+  was **removed** (silent x64 falls back to the regular template) pending a clean reconstruction.
+  VC++ merge modules are obsolete (`<requires type="vcredist">`); the regular templates still carry
+  legacy `<Merge>` blocks (separate, customer-affecting migration).
+- `Before*/After*` lifecycle hooks are an **extension contract** — the reference DLL implements only
+  the cleanup actions; custom `DLL_ENTRY` DLLs may implement the lifecycle hooks (unimplemented are ignored).
 
 ## Key Dependencies
 

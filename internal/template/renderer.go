@@ -226,6 +226,9 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["LAUNCH_TARGET"] = r.Variables["LAUNCH_TARGET"]
 	ctx["SCHEDULE_REBOOT"] = r.Variables.GetBool("SCHEDULE_REBOOT")
 	ctx["USE_INSTALLER_HOOKS"] = r.Variables.GetBool("USE_INSTALLER_HOOKS")
+	// Arch-native subfolder for the hook DLL Binary SourceFile (x86/x64/arm64). arm64 uses the x64
+	// template but must load the arm64 DLL, so this is distinct from template selection.
+	ctx["HOOK_DLL_DIR"] = r.Variables.HookDllDir()
 	// Note: INCLUDE_VCREDIST is deprecated. Use <requires type="vcredist" version="..."/> instead.
 	// Variable is no longer passed to templates; deprecation warning is shown by variables.CheckDeprecated()
 

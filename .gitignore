@@ -9,6 +9,11 @@
 *.dylib
 /msis
 
+# Native hook DLL (msi-simplica.dll) build artifacts. The DLL is produced by `just build-hooks`
+# (and staged into templates/<arch>/); only the C++ source under native/ is tracked.
+native/*/bin/
+native/*/obj/
+
 bootstrap/dist/
 
 # Generated installer files

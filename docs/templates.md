@@ -224,9 +224,17 @@ of them depend on the native installer-hook DLL.
 
 Enables the native hook DLL (named by `DLL_ENTRY`, e.g. `msi-simplica.dll`), which provides the
 `Before/After Install/Upgrade/Uninstall` custom actions and the cleanup actions below. When
-`USE_INSTALLER_HOOKS=True`, msis checks that the hook DLL for the target platform exists **before**
-the WiX build and **fails with a clear message** if it is missing. It is **not supported on arm64**
-yet — msis rejects `arm64` + hooks rather than silently loading the x64 DLL under emulation.
+`USE_INSTALLER_HOOKS=True`, msis checks that the arch-native hook DLL exists **before** the WiX
+build and **fails with a clear message** if it is missing. **x86, x64, and arm64 are all
+supported** — msis ships an arch-native DLL for each (an arm64 build uses the x64 *template* but
+loads the **arm64** DLL).
+
+**The hook DLL is built from `native/msi-simplica/`** with `just build-hooks` (from a VS 2026
+Developer shell), which stages `msi-simplica.dll` into `templates/x86,x64,arm64`. `just release` /
+`just release-all` run this automatically, and the installer ships the DLLs to
+`%LOCALAPPDATA%\MSIS\templates\<arch>\`. The `Before*/After*` entry points are an **extension
+contract**: the reference DLL implements only the cleanup actions, but a custom `DLL_ENTRY` DLL may
+implement any of the six lifecycle hooks (unimplemented ones are ignored).
 
 ### `REMOVE_FOLDERS_ON_UNINSTALL`
 

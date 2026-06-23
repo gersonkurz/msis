@@ -81,19 +81,9 @@ func main() {
 // that a missing WiX tool or extension would explain.
 const setupHint = "if WiX or its extensions are missing, run: msis /SETUP-WIX"
 
-// hookArchFolder returns the template subfolder whose native hook DLL applies to the platform,
-// mirroring the template selection (x86 -> x86, everything 64-bit -> x64).
-func hookArchFolder(platform string) string {
-	if strings.EqualFold(platform, "x86") {
-		return "x86"
-	}
-	return "x64"
-}
-
 // validateInstallerHooks fails the build, with a clear message, when USE_INSTALLER_HOOKS=True but
-// the native hook DLL for the target platform is unavailable. arm64 is rejected outright: it maps
-// to the x64 template, and we must not silently load the x64 DLL under emulation (no native arm64
-// hook DLL is shipped yet).
+// the native hook DLL for the target platform is unavailable. x86/x64/arm64 are all supported
+// (msis ships an arch-native DLL for each); a missing DLL is a clear, early failure.
 //
 // bindDirs must be the same set of bind paths, in the same order, that the WiX build resolves the
 // template's "<arch>/<DLL_ENTRY>" Binary against (work dir, .msis source dir, custom templates,
@@ -103,16 +93,11 @@ func validateInstallerHooks(vars variables.Dictionary, bindDirs []string) error 
 	if !vars.GetBool("USE_INSTALLER_HOOKS") {
 		return nil
 	}
-	platform := vars.Platform()
-	if strings.EqualFold(platform, "arm64") {
-		return fmt.Errorf("USE_INSTALLER_HOOKS is not supported on arm64 yet (no native arm64 hook DLL); " +
-			"set USE_INSTALLER_HOOKS=False, or build for x86/x64")
-	}
 	dllEntry := vars["DLL_ENTRY"]
 	if dllEntry == "" {
 		return fmt.Errorf("USE_INSTALLER_HOOKS=True requires DLL_ENTRY to name the native hook DLL")
 	}
-	archFolder := hookArchFolder(platform)
+	archFolder := vars.HookDllDir()
 	var checked []string
 	seen := map[string]bool{}
 	for _, dir := range bindDirs {

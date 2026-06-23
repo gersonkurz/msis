@@ -1,0 +1,7 @@
+LIBRARY "msi-simplica"
+
+EXPORTS
+
+ListAllKnownProperties
+RemoveAllFoldersOnUninstall
+RemoveRegistryTreeOnUninstall

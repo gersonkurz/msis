@@ -34,9 +34,12 @@
     <!-- Executable to Program Files\MSIS -->
     <files source="msis.exe" target="[INSTALLDIR]"/>
 
-    <!-- Templates to %LOCALAPPDATA%\MSIS\templates (LOCALAPPDATADIR inherits INSTALLDIR=MSIS) -->
+    <!-- Templates to %LOCALAPPDATA%\MSIS\templates (LOCALAPPDATADIR inherits INSTALLDIR=MSIS).
+         The x64/x86/arm64 folders also carry the native hook DLL (msi-simplica.dll) staged by
+         `just build-hooks`; arm64 holds only the DLL (arm64 builds use the x64 template). -->
     <files source="..\templates\x64" target="[LOCALAPPDATADIR]templates\x64"/>
     <files source="..\templates\x86" target="[LOCALAPPDATADIR]templates\x86"/>
+    <files source="..\templates\arm64" target="[LOCALAPPDATADIR]templates\arm64"/>
     <files source="..\templates\minimal" target="[LOCALAPPDATADIR]templates\minimal"/>
     <files source="..\templates\bundle.wxs" target="[LOCALAPPDATADIR]templates"/>
     <files source="..\templates\bundle-silent.wxs" target="[LOCALAPPDATADIR]templates"/>

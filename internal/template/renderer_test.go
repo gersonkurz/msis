@@ -369,6 +369,29 @@ func TestRegularTemplateHookGating(t *testing.T) {
 	}
 }
 
+// TestHookDllDirInTemplate verifies the hook DLL Binary SourceFile is arch-native, driven by
+// HOOK_DLL_DIR (so an arm64 build — which uses the x64 template — loads the arm64 DLL).
+func TestHookDllDirInTemplate(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "templates", "x64", "template.wxs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"x64", "arm64"} {
+		out, err := RenderString(string(content), map[string]interface{}{
+			"PRODUCT_NAME": "App", "PRODUCT_VERSION": "1.0.0", "MANUFACTURER": "ACME",
+			"UPGRADE_CODE":        "{00000000-0000-0000-0000-000000000000}",
+			"USE_INSTALLER_HOOKS": true, "DLL_ENTRY": "msi-simplica.dll", "HOOK_DLL_DIR": dir,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `SourceFile="` + dir + `/msi-simplica.dll"`
+		if !strings.Contains(out, want) {
+			t.Errorf("HOOK_DLL_DIR=%q: expected %q in rendered Binary", dir, want)
+		}
+	}
+}
+
 // TestRegistryCleanupGating renders the real x86 regular AND silent templates and verifies the
 // registry-tree cleanup (prep CA that supplies CustomActionData + the deferred CA) is emitted only
 // when both REMOVE_REGISTRY_TREE is active and USE_INSTALLER_HOOKS=True.

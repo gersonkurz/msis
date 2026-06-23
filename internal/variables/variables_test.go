@@ -60,6 +60,15 @@ func TestCheckInstallerHookUsage(t *testing.T) {
 	})
 }
 
+func TestHookDllDir(t *testing.T) {
+	cases := map[string]string{"x86": "x86", "X86": "x86", "x64": "x64", "arm64": "arm64", "ARM64": "arm64", "": "x64"}
+	for plat, want := range cases {
+		if got := (Dictionary{"PLATFORM": plat}).HookDllDir(); got != want {
+			t.Errorf("HookDllDir(PLATFORM=%q) = %q, want %q", plat, got, want)
+		}
+	}
+}
+
 func TestRegistryTreeActive(t *testing.T) {
 	active := []string{`HKLM\Software\X`, `HKEY_CLASSES_ROOT\Y`, `  HKCU\Z  `, "anything-nonempty"}
 	for _, v := range active {

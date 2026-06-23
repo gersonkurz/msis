@@ -9,15 +9,6 @@ import (
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
-func TestHookArchFolder(t *testing.T) {
-	cases := map[string]string{"x86": "x86", "x64": "x64", "arm64": "x64", "X64": "x64", "": "x64"}
-	for in, want := range cases {
-		if got := hookArchFolder(in); got != want {
-			t.Errorf("hookArchFolder(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestValidateInstallerHooks(t *testing.T) {
 	// helper: create <dir>/<arch>/msi-simplica.dll and return dir
 	withDLL := func(arch string) string {
@@ -37,10 +28,14 @@ func TestValidateInstallerHooks(t *testing.T) {
 		t.Errorf("hooks disabled should pass, got %v", err)
 	}
 
-	// arm64 + hooks is rejected (no native arm64 DLL; must not silently use x64).
+	// arm64 + hooks is supported: passes when the arm64 DLL is present (arch-native dir).
 	armVars := variables.Dictionary{"USE_INSTALLER_HOOKS": "True", "PLATFORM": "arm64", "DLL_ENTRY": "msi-simplica.dll"}
-	if err := validateInstallerHooks(armVars, []string{"/no/such"}); err == nil || !strings.Contains(err.Error(), "arm64") {
-		t.Errorf("arm64+hooks should be rejected, got %v", err)
+	if err := validateInstallerHooks(armVars, []string{withDLL("arm64")}); err != nil {
+		t.Errorf("arm64+hooks with arm64 DLL should pass, got %v", err)
+	}
+	// ...and fails clearly when the arm64 DLL is missing (must not fall back to x64).
+	if err := validateInstallerHooks(armVars, []string{withDLL("x64")}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("arm64+hooks without arm64 DLL should fail, got %v", err)
 	}
 
 	// hooks on, but DLL_ENTRY missing.

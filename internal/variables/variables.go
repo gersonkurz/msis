@@ -123,6 +123,20 @@ func (d Dictionary) Platform() string {
 	return d.Get("PLATFORM")
 }
 
+// HookDllDir returns the template subfolder that holds the native hook DLL for the target platform.
+// Unlike template selection (which maps arm64 to the x64 template), the hook DLL is arch-native:
+// x86 -> x86, arm64 -> arm64, everything else (incl. x64/default) -> x64.
+func (d Dictionary) HookDllDir() string {
+	switch strings.ToLower(d.Platform()) {
+	case "x86":
+		return "x86"
+	case "arm64":
+		return "arm64"
+	default:
+		return "x64"
+	}
+}
+
 // ProductName returns the product name.
 func (d Dictionary) ProductName() string {
 	return d.Get("PRODUCT_NAME")
