@@ -22,9 +22,20 @@ setup-wix:
 _require-devshell:
     @if ($env:VisualStudioVersion -ne "18.0") { Write-Error "build-hooks needs a Visual Studio 2026 Developer shell (Developer Command Prompt/PowerShell for VS 2026): expected VisualStudioVersion=18.0, found '$env:VisualStudioVersion'."; exit 1 }
 
+# Compile + run the dependency-free unit test for the hook retain/cleanup core (hookcore.h).
+[windows]
+test-hooks: _require-devshell
+    @New-Item -ItemType Directory -Force native/msi-simplica/test/bin | Out-Null
+    cl /nologo /std:c++17 /EHsc /W4 native/msi-simplica/test/hookcore_test.cpp /Fe:native/msi-simplica/test/bin/hookcore_test.exe /Fo:native/msi-simplica/test/bin/ /link /SUBSYSTEM:CONSOLE
+    native/msi-simplica/test/bin/hookcore_test.exe
+
+[unix]
+test-hooks:
+    @echo "test-hooks targets Windows (MSVC); run from a VS 2026 Developer shell on Windows."
+
 # Build the native installer-hook DLL (msi-simplica.dll) for x86/x64/arm64 and stage into templates/.
 [windows]
-build-hooks: _require-devshell
+build-hooks: _require-devshell test-hooks
     msbuild {{hook_project}} /t:Restore /p:Configuration=Release /p:Platform=x64 /nologo /v:minimal
     msbuild {{hook_project}} /t:Build /p:Configuration=Release /p:Platform=Win32 /m /nologo /v:minimal
     msbuild {{hook_project}} /t:Build /p:Configuration=Release /p:Platform=x64 /m /nologo /v:minimal

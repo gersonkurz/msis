@@ -109,6 +109,23 @@ and the MSIS installer ships the DLLs to `%LOCALAPPDATA%\MSIS\templates\<arch>\`
 **build artifacts** (git-ignored); a fresh clone must run `just build-hooks` before building a
 hook-using package. (An arm64 build uses the x64 *template* but loads the **arm64** DLL.)
 
+### Unit test
+
+The retain/cleanup core — the retain-list parser and the retain-aware recursive delete that the
+ProAKT incident was about — lives in [`native/msi-simplica/hookcore.h`](../native/msi-simplica/hookcore.h),
+deliberately MSI-independent (Win32 + STL only, diagnostics through an injected `HookLogf`). That
+lets it be exercised by a plain console test with no MSI session, no `wcautil`, and no NuGet:
+
+```
+just test-hooks
+```
+
+The test ([`native/msi-simplica/test/hookcore_test.cpp`](../native/msi-simplica/test/hookcore_test.cpp))
+builds real temp directory trees and asserts that retained files (and their ancestor folders)
+survive while everything else is removed, plus the edge cases (empty/blank list entries, trailing
+separators, missing folders). `just build-hooks` runs it first, so the DLL is never built on a
+broken core. It needs the same VS 2026 Developer shell (`cl` on `PATH`) as `build-hooks`.
+
 ## Hook ABI (extension contract)
 
 The hook DLL is a documented ABI, not a fixed binary. The templates define call sites for **eight**

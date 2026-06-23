@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "hookcore.h"
+#include <cstdarg>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -6,11 +8,15 @@
 #include <set>
 #include <algorithm>
 
-// Lower-case a wide string for case-insensitive path comparison.
-static std::wstring ToLowerWide(std::wstring s)
+// hookcore.h emits diagnostics through HookLogf; route them to the WiX custom-action log.
+void HookLogf(const char* fmt, ...)
 {
-    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
-    return s;
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, args);
+    va_end(args);
+    WcaLog(LOGMSG_STANDARD, "%s", buf);
 }
 
 static LPCWSTR KnownProperties[] = {
@@ -282,81 +288,7 @@ void DeleteRegistryTreeRecursive(LPCWSTR lpszwFolder)
 }
 
 
-// Recursively delete the contents of 'folder', skipping any file whose lower-cased full path is in
-// 'retain'. Returns true if anything was kept (the folder is preserved), false if the folder was
-// emptied and removed. Parent folders of a retained file are preserved automatically because a kept
-// child propagates "kept" upward. Undeletable files are also treated as kept (so we never try to
-// remove a non-empty directory).
-static bool DeleteFolderKeepingRetained(const std::wstring& folder, const std::set<std::wstring>& retain)
-{
-    bool kept = false;
-    WIN32_FIND_DATA wfd;
-    ZeroMemory(&wfd, sizeof(wfd));
-    const std::wstring pattern(folder + L"\\*");
-
-    HANDLE hFind = FindFirstFile(pattern.c_str(), &wfd);
-    if (INVALID_HANDLE_VALUE == hFind)
-        return false; // folder missing or unreadable: nothing to remove
-
-    do
-    {
-        if (wcscmp(wfd.cFileName, L".") == 0 || wcscmp(wfd.cFileName, L"..") == 0)
-            continue;
-
-        const std::wstring path(folder + L"\\" + wfd.cFileName);
-        if (wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-        {
-            if (DeleteFolderKeepingRetained(path, retain))
-                kept = true;
-        }
-        else if (retain.find(ToLowerWide(path)) != retain.end())
-        {
-            WcaLog(LOGMSG_STANDARD, "MSIS-CA: retaining file %S", path.c_str());
-            kept = true;
-        }
-        else
-        {
-            SetFileAttributes(path.c_str(), FILE_ATTRIBUTE_NORMAL);
-            if (DeleteFile(path.c_str()))
-            {
-                WcaLog(LOGMSG_STANDARD, "MSIS-CA: deleted file %S", path.c_str());
-            }
-            else
-            {
-                WcaLog(LOGMSG_STANDARD, "MSIS-CA: ERROR %ld: could not delete file %S", GetLastError(), path.c_str());
-                kept = true;
-            }
-        }
-    } while (FindNextFile(hFind, &wfd) != 0);
-    FindClose(hFind);
-
-    if (kept)
-    {
-        WcaLog(LOGMSG_STANDARD, "MSIS-CA: preserving folder %S (contains retained or undeletable items)", folder.c_str());
-        return true;
-    }
-
-    SetFileAttributes(folder.c_str(), FILE_ATTRIBUTE_NORMAL);
-    if (RemoveDirectory(folder.c_str()))
-    {
-        WcaLog(LOGMSG_STANDARD, "MSIS-CA: deleted folder %S", folder.c_str());
-        return false;
-    }
-    WcaLog(LOGMSG_STANDARD, "MSIS-CA: ERROR %ld: could not remove folder %S", GetLastError(), folder.c_str());
-    return true;
-}
-
-// Public entry: strip trailing separators from the root, then delegate.
-void DeleteFolderRecursive(LPCWSTR lpszwFolder, const std::set<std::wstring>& retain)
-{
-    if (!lpszwFolder || !*lpszwFolder)
-        return;
-    std::wstring root(lpszwFolder);
-    while (root.size() > 1 && (root.back() == L'\\' || root.back() == L'/'))
-        root.pop_back();
-    WcaLog(LOGMSG_STANDARD, "MSIS-CA: cleaning folder tree %S (%zu file(s) retained)", root.c_str(), retain.size());
-    DeleteFolderKeepingRetained(root, retain);
-}
+// DeleteFolderRecursive / DeleteFolderKeepingRetained now live in hookcore.h (shared with the unit test).
 
 std::wstring GetStringProperty(LPCWSTR lpszwName)
 {
@@ -406,42 +338,14 @@ static std::wstring FormatMsiString(MSIHANDLE hInstall, const std::wstring& inpu
     return buf;
 }
 
-// Build the set of files to retain from RETAIN_FILES_ON_UNINSTALL: a ';'-separated list, with
-// [PROPERTY] tokens resolved, entries trimmed and lower-cased for case-insensitive matching.
-// Empty entries are reported as warnings rather than silently ignored.
+// Build the retain set from RETAIN_FILES_ON_UNINSTALL: resolve [PROPERTY] tokens against the MSI
+// session, then parse the ';'-list (see hookcore.h::ParseRetainList).
 static std::set<std::wstring> BuildRetainSet(MSIHANDLE hInstall)
 {
-    std::set<std::wstring> retain;
     const std::wstring raw = GetStringProperty(L"RETAIN_FILES_ON_UNINSTALL");
     if (raw.empty())
-        return retain;
-
-    const std::wstring formatted = FormatMsiString(hInstall, raw);
-    size_t start = 0;
-    while (true)
-    {
-        const size_t sep = formatted.find(L';', start);
-        std::wstring item = formatted.substr(start, sep == std::wstring::npos ? std::wstring::npos : sep - start);
-
-        const size_t a = item.find_first_not_of(L" \t");
-        if (a == std::wstring::npos)
-        {
-            WcaLog(LOGMSG_STANDARD, "MSIS-CA: WARNING: ignoring empty RETAIN_FILES_ON_UNINSTALL entry");
-        }
-        else
-        {
-            const size_t b = item.find_last_not_of(L" \t");
-            std::wstring path = item.substr(a, b - a + 1);
-            std::replace(path.begin(), path.end(), L'/', L'\\');
-            WcaLog(LOGMSG_STANDARD, "MSIS-CA: will retain %S", path.c_str());
-            retain.insert(ToLowerWide(path));
-        }
-
-        if (sep == std::wstring::npos)
-            break;
-        start = sep + 1;
-    }
-    return retain;
+        return {};
+    return ParseRetainList(FormatMsiString(hInstall, raw));
 }
 
 inline bool IsRemoveAll()
@@ -464,8 +368,8 @@ UINT __stdcall RemoveAllFoldersOnUninstall(MSIHANDLE hInstall)
     if (IsRemoveAll())
     {
         const std::set<std::wstring> retain = BuildRetainSet(hInstall);
-        DeleteFolderRecursive(GetStringProperty(L"INSTALLDIR").c_str(), retain);
-        DeleteFolderRecursive(GetStringProperty(L"APPDATADIR").c_str(), retain);
+        DeleteFolderRecursive(GetStringProperty(L"INSTALLDIR"), retain);
+        DeleteFolderRecursive(GetStringProperty(L"APPDATADIR"), retain);
     }
 
     WcaLog(LOGMSG_STANDARD, "MSIS-CA: END RemoveAllFoldersOnUninstall");
