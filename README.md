@@ -167,6 +167,7 @@ baseline (not yet released or tagged).
 - `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
 - `LAUNCH_TARGET` adds a "Launch" button to the bundle success page (bundle counterpart of the MSI's `START_EXE`), with the ARM64 path resolved correctly.
 - `START_EXE` (the MSI "Launch *Product*" checkbox) is now an MSI Formatted path like `[INSTALLDIR]App.exe`, matching `LAUNCH_TARGET`'s semantics. It previously needed a WiX File Id, which msis generates opaquely per run — making it effectively unusable.
+- **Logo branding overhaul.** `LOGO_PREFIX` now resolves the **bundle** logo too (previously MSI-only); logo files are searched in the `.msis` directory → custom-templates → template folder, and the bundle build binds those same paths so an explicit source-relative `LOGO_BOOTSTRAP` resolves like it always did for the MSI; and a missing/mistyped logo now produces a **build-time warning** instead of silently falling back to the WiX default. Removed two dead `bootstrap*.wxs` templates.
 - **Installer-hook safety overhaul.** The native hook DLL's recursive uninstall cleanup
   (`REMOVE_FOLDERS_ON_UNINSTALL`, `REMOVE_REGISTRY_TREE`) once deleted runtime/customer data
   (e.g. a customer's SQLite database). It is now explicit and warned at build time, gated

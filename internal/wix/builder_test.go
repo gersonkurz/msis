@@ -45,6 +45,49 @@ func TestNewBuilderWithRetainWxs(t *testing.T) {
 	}
 }
 
+// TestNewBundleBuilderSourceDir verifies the bundle builder records the .msis source dir, so it can
+// be added to the WiX bind paths (the fix for source-relative LOGO_BOOTSTRAP not being bindable).
+func TestNewBundleBuilderSourceDir(t *testing.T) {
+	vars := variables.New()
+	vars["BUILD_TARGET"] = "setup.exe"
+
+	b := NewBundleBuilder(vars, "setup-bundle.wxs", "/templates", "/custom", "/project/src", false)
+	if b.SourceDir != "/project/src" {
+		t.Errorf("SourceDir = %q, want %q", b.SourceDir, "/project/src")
+	}
+}
+
+// TestBindPathArgs covers the shared bind-path ordering used by both builders: workDir first, then
+// the source dir (deduped against workDir), then custom templates, then template folder; empties
+// are skipped. Uses real temp dirs so the absolute paths are platform-correct.
+func TestBindPathArgs(t *testing.T) {
+	work := t.TempDir()
+	src := t.TempDir()
+	custom := t.TempDir()
+	tmpl := t.TempDir()
+
+	// All four distinct -> all present in order.
+	got := bindPathArgs(work, src, custom, tmpl)
+	want := []string{"-b", work, "-b", src, "-b", custom, "-b", tmpl}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("bindPathArgs(all distinct) = %v, want %v", got, want)
+	}
+
+	// Source dir equal to workDir is not duplicated.
+	got = bindPathArgs(work, work, "", "")
+	want = []string{"-b", work}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("bindPathArgs(src==work) = %v, want %v", got, want)
+	}
+
+	// The source dir is included even when custom/template are empty (the bundle regression case).
+	got = bindPathArgs(work, src, "", "")
+	want = []string{"-b", work, "-b", src}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("bindPathArgs(src only) = %v, want %v", got, want)
+	}
+}
+
 func TestGetLocalizationFile(t *testing.T) {
 	// Create temp directory with mock localization files
 	tmpDir, err := os.MkdirTemp("", "wix-test-*")

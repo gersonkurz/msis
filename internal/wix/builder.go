@@ -121,6 +121,39 @@ func eulaAcceptArgs(major int) []string {
 	return nil
 }
 
+// bindPathArgs builds the ordered "-b <dir>" arguments WiX uses to resolve source files (logos,
+// license, payloads). Order matters — WiX takes the first match — so it mirrors how paths are
+// authored: the generated WXS dir, then the .msis source dir, then the custom-templates overlay,
+// then the base template folder. Empty dirs are skipped; the source dir is omitted when it equals
+// workDir (already added). All inputs are made absolute. Shared by the MSI and bundle builders so
+// they cannot drift (a logo found beside the .msis must be bindable by both).
+func bindPathArgs(workDir, sourceDir, customTemplates, templateFolder string) []string {
+	abs := func(p string) string {
+		if p == "" {
+			return ""
+		}
+		if a, err := filepath.Abs(p); err == nil {
+			return a
+		}
+		return p
+	}
+	workDir = abs(workDir)
+
+	var args []string
+	add := func(dir string) {
+		if dir != "" {
+			args = append(args, "-b", dir)
+		}
+	}
+	add(workDir)
+	if sd := abs(sourceDir); sd != "" && sd != workDir {
+		add(sd)
+	}
+	add(abs(customTemplates))
+	add(abs(templateFolder))
+	return args
+}
+
 // runWixBuild executes wix build command.
 func (b *Builder) runWixBuild() error {
 	// Convert paths to absolute for consistent resolution
@@ -150,28 +183,8 @@ func (b *Builder) runWixBuild() error {
 		args = append(args, "-culture", b.Language)
 	}
 
-	// Bind paths (for file resolution) - use absolute paths
-	// Order: workDir, sourceDir (msis file location), custom templates, template folder
-	args = append(args, "-b", workDir)
-
-	// Source directory (where .msis file is) for resolving source paths
-	if b.SourceDir != "" {
-		absSourceDir, _ := filepath.Abs(b.SourceDir)
-		if absSourceDir != workDir {
-			args = append(args, "-b", absSourceDir)
-		}
-	}
-
-	// Template folder bind paths (use absolute paths)
-	// Custom templates first (takes precedence), then base folder
-	if b.CustomTemplates != "" {
-		absCustomTemplates, _ := filepath.Abs(b.CustomTemplates)
-		args = append(args, "-b", absCustomTemplates)
-	}
-	if b.TemplateFolder != "" {
-		absTemplateFolder, _ := filepath.Abs(b.TemplateFolder)
-		args = append(args, "-b", absTemplateFolder)
-	}
+	// Bind paths (for file resolution): workDir, .msis source dir, custom templates, template folder.
+	args = append(args, bindPathArgs(workDir, b.SourceDir, b.CustomTemplates, b.TemplateFolder)...)
 
 	// No PDB file (cleaner output)
 	args = append(args, "-pdbtype", "none")
@@ -297,12 +310,15 @@ type BundleBuilder struct {
 	OutputFile      string
 	TemplateFolder  string
 	CustomTemplates string
+	SourceDir       string // .msis directory; a bundle bind path so source-relative logos/payloads resolve
 	Variables       variables.Dictionary
 	RetainWxs       bool
 }
 
-// NewBundleBuilder creates a WiX bundle builder from variables and paths.
-func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates string, retainWxs bool) *BundleBuilder {
+// NewBundleBuilder creates a WiX bundle builder from variables and paths. sourceDir is the .msis
+// directory, added to the bind paths so an explicit source-relative LOGO_BOOTSTRAP (or other
+// payload) resolves the same way it does for the MSI build.
+func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates, sourceDir string, retainWxs bool) *BundleBuilder {
 	// Determine output file (bundles produce .exe)
 	outputFile := vars.BuildTarget()
 	if outputFile == "" {
@@ -315,6 +331,7 @@ func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, custom
 		OutputFile:      outputFile,
 		TemplateFolder:  templateFolder,
 		CustomTemplates: customTemplates,
+		SourceDir:       sourceDir,
 		Variables:       vars,
 		RetainWxs:       retainWxs,
 	}
@@ -373,16 +390,8 @@ func (b *BundleBuilder) runWixBuild() error {
 	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
 	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)
 
-	// Bind paths
-	args = append(args, "-b", workDir)
-	if b.CustomTemplates != "" {
-		absCustomTemplates, _ := filepath.Abs(b.CustomTemplates)
-		args = append(args, "-b", absCustomTemplates)
-	}
-	if b.TemplateFolder != "" {
-		absTemplateFolder, _ := filepath.Abs(b.TemplateFolder)
-		args = append(args, "-b", absTemplateFolder)
-	}
+	// Bind paths: workDir, .msis source dir, custom templates, template folder (same order as the MSI build).
+	args = append(args, bindPathArgs(workDir, b.SourceDir, b.CustomTemplates, b.TemplateFolder)...)
 
 	// No PDB file
 	args = append(args, "-pdbtype", "none")

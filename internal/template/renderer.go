@@ -19,6 +19,12 @@ type Renderer struct {
 	CustomTemplates string // Overlay folder (private overrides, takes precedence)
 	GeneratedData   *generator.GeneratedOutput
 	CustomTemplate  string // Optional: explicit template file path
+	SourceDir       string // Directory of the .msis script; first logo search root (matches WiX bind paths)
+
+	// LogoWarnings collects diagnostics from logo resolution during the last buildContext call
+	// (e.g. a LOGO_PREFIX-derived or explicit logo file that could not be found). The caller
+	// surfaces these to the user so a missing asset is not silently replaced by the WiX default.
+	LogoWarnings []string
 }
 
 // NewRenderer creates a template renderer.
@@ -157,30 +163,15 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["LCID"] = r.getLCID()
 	ctx["CODEPAGE"] = r.getCodepage()
 
-	// Apply logo defaults only if LOGO_PREFIX is explicitly set or logo files are specified
-	// Without explicit logos, WiX will use its built-in defaults
-	logoPrefix := r.Variables["LOGO_PREFIX"]
-	if logoPrefix != "" {
-		// User specified a logo prefix, resolve paths
-		if r.Variables["LOGO_BANNER"] == "" {
-			logoPath := r.resolveTemplatePath(logoPrefix + "_WixUiBanner.bmp")
-			if _, err := os.Stat(logoPath); err == nil {
-				ctx["LOGO_BANNER"] = logoPath
-			}
-		}
-		if r.Variables["LOGO_DIALOG"] == "" {
-			logoPath := r.resolveTemplatePath(logoPrefix + "_WixUiDialog.bmp")
-			if _, err := os.Stat(logoPath); err == nil {
-				ctx["LOGO_DIALOG"] = logoPath
-			}
-		}
-		if r.Variables["LOGO_BOOTSTRAP"] == "" {
-			logoPath := r.resolveTemplatePath(logoPrefix + "_LogoBootstrap.bmp")
-			if _, err := os.Stat(logoPath); err == nil {
-				ctx["LOGO_BOOTSTRAP"] = logoPath
-			}
-		}
+	// Resolve MSI logo branding (explicit LOGO_BANNER/LOGO_DIALOG or the LOGO_PREFIX convention)
+	// against the .msis source dir, the custom-templates overlay, then the base template folder —
+	// the same order WiX uses for bind paths. A missing asset produces a warning (collected in
+	// LogoWarnings) instead of silently falling back to the WiX default.
+	logos := ResolveLogos(r.Variables, MSILogoVars, r.SourceDir, r.CustomTemplates, r.TemplateFolder)
+	for name, value := range logos.Values {
+		ctx[name] = value
 	}
+	r.LogoWarnings = logos.Warnings
 
 	// Add generated content (triple-braced in template for unescaped output)
 	ctx["FEATURES"] = r.GeneratedData.FeatureXML

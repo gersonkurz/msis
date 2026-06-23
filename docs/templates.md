@@ -69,13 +69,31 @@ The installer UI displays logo images at various stages. msis supports customizi
 | `LOGO_BOOTSTRAP` | Bundle/bootstrapper UI logo | 75 x 75 pixels |
 | `LOGO_PREFIX` | Prefix for auto-discovered logo files | (none) |
 
+Both methods apply to the **MSI** (`LOGO_BANNER`, `LOGO_DIALOG`) and the **bundle**
+(`LOGO_BOOTSTRAP`) — `LOGO_PREFIX` resolves logos for both.
+
+### Where msis looks for logo files
+
+For both methods, msis searches these directories **in order** (the same order WiX uses for its
+build bind paths):
+
+1. the directory of your `.msis` script,
+2. the custom-templates overlay folder (`/CUSTOMTEMPLATES`),
+3. the base template folder (`/TEMPLATEFOLDER`).
+
+If a logo you asked for cannot be found in any of these, msis prints a **warning** at build time
+(naming the variable, the file it looked for, and the paths searched) and lets WiX fall back to its
+built-in default — it is no longer a silent no-op.
+
 ### Method 1: Explicit Logo Paths
 
-Set the logo variables directly in your `.msis` file:
+Set the logo variables directly in your `.msis` file. The value is passed to WiX verbatim and
+resolved against the search paths above, so a path relative to your `.msis` works:
 
 ```xml
 <set name="LOGO_BANNER" value="branding\banner.bmp"/>
 <set name="LOGO_DIALOG" value="branding\dialog.bmp"/>
+<set name="LOGO_BOOTSTRAP" value="branding\logo.bmp"/>   <!-- bundle only -->
 ```
 
 ### Method 2: Logo Prefix (Convention-Based)
@@ -86,12 +104,13 @@ Set `LOGO_PREFIX` and msis will look for files following a naming convention:
 <set name="LOGO_PREFIX" value="MyCompany"/>
 ```
 
-With this setting, msis looks for:
-- `MyCompany_WixUiBanner.bmp` (banner)
-- `MyCompany_WixUiDialog.bmp` (dialog)
+With this setting, msis looks for (in the search paths above):
+- `MyCompany_WixUiBanner.bmp` (MSI banner)
+- `MyCompany_WixUiDialog.bmp` (MSI dialog)
 - `MyCompany_LogoBootstrap.bmp` (bundle)
 
-Place these files in your custom templates folder or alongside your `.msis` file.
+An explicit `LOGO_BANNER`/`LOGO_DIALOG`/`LOGO_BOOTSTRAP` always wins over the prefix-derived name
+for that slot.
 
 ### Logo Image Requirements
 

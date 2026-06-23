@@ -191,8 +191,13 @@ Attributes:
 **Logo customization example:**
 ```xml
 <set name="LOGO_PREFIX" value="MyCompany"/>
-<!-- Uses MyCompany_LogoBootstrap.bmp, MyCompany_WixUIBanner.bmp, etc. -->
+<!-- Bundle uses MyCompany_LogoBootstrap.bmp; set LOGO_BOOTSTRAP directly to override. -->
 ```
+
+`LOGO_PREFIX` resolves the bundle logo too (not just the MSI). msis looks for the file in your
+`.msis` directory, the custom-templates folder, then the base template folder — and **warns** at
+build time if it set a logo but the file is missing. See
+[Logo Customization](templates.md#logo-customization) for the full resolution model shared with the MSI.
 
 **Launch button example:**
 

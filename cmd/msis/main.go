@@ -254,6 +254,13 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	// Milestone 3.4 - Template rendering
 	renderer := template.NewRenderer(vars, templateFolder, customTemplates, output)
 
+	// The .msis directory is the first logo search root (matches WiX's bind-path order).
+	if absWork, err := filepath.Abs(workDir); err == nil {
+		renderer.SourceDir = absWork
+	} else {
+		renderer.SourceDir = workDir
+	}
+
 	// Support custom template override via --template flag
 	if args.template != "" {
 		renderer.SetCustomTemplate(args.template)
@@ -279,6 +286,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		if err != nil {
 			return fmt.Errorf("rendering template: %w", err)
 		}
+	}
+
+	// Surface any logo-resolution warnings (missing branding assets) rather than silently
+	// falling back to the WiX defaults.
+	for _, w := range renderer.LogoWarnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
 	}
 
 	// Determine output filename
@@ -363,7 +376,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	fmt.Printf("  Auto-bundle: %s prerequisites + MSI\n", cli.Number(fmt.Sprintf("%d", len(prereqs))))
 
 	// Render bundle template
-	wxsContent, err := renderBundleTemplate(vars, templateFolder, customTemplates, bundleOutput, setup.Silent)
+	wxsContent, err := renderBundleTemplate(vars, workDir, templateFolder, customTemplates, bundleOutput, setup.Silent)
 	if err != nil {
 		return fmt.Errorf("rendering bundle template: %w", err)
 	}
@@ -379,7 +392,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
 
 	// Build bundle
-	bundleBuilder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
+	bundleBuilder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, workDir, args.retainWxs)
 	if err := bundleBuilder.Build(); err != nil {
 		return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 	}
@@ -477,7 +490,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	}
 
 	// Render bundle template
-	wxsContent, err := renderBundleTemplate(vars, templateFolder, customTemplates, bundleOutput, setup.Silent)
+	wxsContent, err := renderBundleTemplate(vars, workDir, templateFolder, customTemplates, bundleOutput, setup.Silent)
 	if err != nil {
 		return fmt.Errorf("rendering bundle template: %w", err)
 	}
@@ -502,7 +515,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			return fmt.Errorf("wix CLI not found; run: msis /SETUP-WIX")
 		}
 
-		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, args.retainWxs)
+		builder := wix.NewBundleBuilder(vars, wxsFile, templateFolder, customTemplates, workDir, args.retainWxs)
 		if err := builder.Build(); err != nil {
 			return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 		}
@@ -513,8 +526,9 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	return nil
 }
 
-// renderBundleTemplate renders the bundle WXS template.
-func renderBundleTemplate(vars variables.Dictionary, templateFolder, customTemplates string, bundleOutput *bundle.GeneratedBundle, silent bool) (string, error) {
+// renderBundleTemplate renders the bundle WXS template. sourceDir is the .msis directory, used as
+// the first logo search root so LOGO_PREFIX/LOGO_BOOTSTRAP resolve the same way they do for the MSI.
+func renderBundleTemplate(vars variables.Dictionary, sourceDir, templateFolder, customTemplates string, bundleOutput *bundle.GeneratedBundle, silent bool) (string, error) {
 	// Read bundle template
 	templateName := "bundle.wxs"
 	if silent {
@@ -534,12 +548,16 @@ func renderBundleTemplate(vars variables.Dictionary, templateFolder, customTempl
 		return "", fmt.Errorf("reading bundle template: %w", err)
 	}
 
-	// Build context for template
-	ctx := make(map[string]interface{})
-	for k, v := range vars {
-		ctx[k] = v
+	// Build context via the shared helper so the bundle logo resolves from LOGO_PREFIX too, not
+	// just an explicit LOGO_BOOTSTRAP. Logo search roots mirror WiX's bind-path order.
+	absSource := sourceDir
+	if abs, err := filepath.Abs(sourceDir); err == nil {
+		absSource = abs
 	}
-	ctx["CHAIN"] = bundleOutput.ChainXML
+	ctx, logoWarnings := template.BuildBundleContext(vars, bundleOutput.ChainXML, absSource, customTemplates, templateFolder)
+	for _, w := range logoWarnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
+	}
 
 	// Render using raymond (same as MSI templates)
 	return template.RenderString(string(tmplContent), ctx)
