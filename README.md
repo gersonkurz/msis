@@ -173,7 +173,8 @@ baseline (not yet released or tagged).
   consistently across templates, false-value-aware, and exempt-able per file via the new
   `RETAIN_FILES_ON_UNINSTALL`. The hook DLL (`msi-simplica.dll`) is now **built and shipped by
   this repo** (`native/msi-simplica/`, x86/x64/arm64) instead of being a stale external
-  dependency — see [Installer Hooks](docs/installer-hooks.md).
+  dependency, and its retain/cleanup core is **unit-tested** (`just test-hooks`, run automatically
+  before the DLL build) — see [Installer Hooks](docs/installer-hooks.md).
 - Fixes: preserved registry keys; `quiet` attribute on `<execute>`; vcredist detection via Burn variables; LOCALAPPDATADIR/INSTALLDIR path collision; `fail-on-error` on `<execute>`; options-dialog browse button; test/coverage tooling.
 
 **3.0.2** — 2026-04-23 (tag [`v3.0.2`](../../releases/tag/v3.0.2))
