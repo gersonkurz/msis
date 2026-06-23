@@ -1761,19 +1761,29 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 		if item.Folder != "" {
 			// Generate util:RemoveFolderEx for folder removal
 			// Need to set a property with the folder path, then use RemoveFolderEx
-			propID := fmt.Sprintf("REMOVE_FOLDER_%s", item.ID)
+			// A RegistrySearch-backed property must be PUBLIC (all uppercase).
+			propID := strings.ToUpper(fmt.Sprintf("REMOVE_FOLDER_%s", item.ID))
 			compID := fmt.Sprintf("C_%s", item.ID)
+			searchID := fmt.Sprintf("RS_%s", item.ID)
+			regKey := fmt.Sprintf("Software\\%s\\%s", c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"])
+			regName := fmt.Sprintf("RemoveFolderPath_%s", item.ID)
 
-			// SetProperty to define the folder path
-			sb.WriteString(fmt.Sprintf("        <SetProperty Id='%s' Value='%s' Before='CostFinalize' Sequence='first'/>\n",
-				propID, item.Folder))
+			// The WiX Util RemoveFoldersEx custom action is auto-scheduled by the extension
+			// BEFORE CostInitialize, so its folder Property must be populated that early.
+			// A SetProperty from [INSTALLDIR] can't do that (INSTALLDIR only resolves during
+			// costing) and re-scheduling the extension CA is rejected (duplicate WixAction).
+			// So: store the resolved folder path in the registry at install time, and read it
+			// back via RegistrySearch (runs in AppSearch, before the CA) into the property.
+			sb.WriteString(fmt.Sprintf("        <Property Id='%s'>\n", propID))
+			sb.WriteString(fmt.Sprintf("            <RegistrySearch Id='%s' Root='HKLM' Key='%s' Name='%s' Type='raw'/>\n",
+				searchID, regKey, regName))
+			sb.WriteString("        </Property>\n")
 
-			// Component with RemoveFolderEx
+			// Component with RemoveFolderEx; the registry value (resolved folder path) is the keypath.
 			sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
 			sb.WriteString(fmt.Sprintf("            <util:RemoveFolderEx On='uninstall' Property='%s'/>\n", propID))
-			// Need a keypath - use a registry value
-			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveFolder_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
-				c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
+			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKLM' Key='%s' Name='%s' Type='string' Value='%s' KeyPath='yes'/>\n",
+				regKey, regName, item.Folder))
 			sb.WriteString("        </Component>\n")
 
 			// Track component for feature
