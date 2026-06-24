@@ -222,11 +222,11 @@ file through a directory property:
 <set name="START_EXE" value="[INSTALLDIR]MyApp.exe"/>
 ```
 
-The value flows into `WixShellExecTarget`, which `WixShellExec` resolves with `MsiFormatRecord` at
-launch time, so `[INSTALLDIR]` (and the other [directory roots](#supported-directory-roots)) expand
-to their final installed paths. Note that MSI directory properties **already include a trailing
-backslash**, so write `[INSTALLDIR]MyApp.exe` with **no** extra `\` (unlike the bundle's
-`[InstallFolder]\App.exe`).
+msis assigns the value to `WixShellExecTarget` with an immediate property-setting custom action
+right before `WixShellExec` runs, so `[INSTALLDIR]` (and the other
+[directory roots](#supported-directory-roots)) expand to their final installed paths. Note that MSI
+directory properties **already include a trailing backslash**, so write `[INSTALLDIR]MyApp.exe` with
+**no** extra `\` (unlike the bundle's `[InstallFolder]\App.exe`).
 
 > Earlier versions required a WiX **File Id** wrapped as `[#FileId]`. Because msis generates opaque,
 > per-run ids (`FILE_ID00007`), that form was effectively unusable — `START_EXE` is now a Formatted

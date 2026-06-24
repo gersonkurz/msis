@@ -118,14 +118,14 @@ variables** — a value set for one side has no effect on the other:
 When advising users: for a standalone MSI use the MSI column; for a bundle (incl. auto-bundle
 wrappers, which drive the visible UI) use the bundle column. All four flow to templates via the
 variable dictionary. Full reference: `docs/templates.md` (MSI) and `docs/Bundle.md` (bundle).
-(`START_EXE` and `LAUNCH_TARGET` are deliberately parallel: both are Formatted paths passed through
-verbatim, not opaque ids. The one engine difference is the separator — MSI directory properties
-already carry a trailing backslash (`[INSTALLDIR]App.exe`, no extra `\`), whereas Burn's
-`[InstallFolder]` does not (`[InstallFolder]\App.exe`). `START_EXE` flows into `WixShellExecTarget`,
-which `WixShellExec` runs through `MsiFormatRecord` at launch time. It previously required a WiX
-File Id wrapped as `[#FileId]`, but msis emits opaque ids like `FILE_ID00007`, so that form was
-unusable; the templates no longer wrap the value, so a power user can still pass `[#FileId]`
-explicitly.)
+(`START_EXE` and `LAUNCH_TARGET` are deliberately parallel: both are Formatted paths, not opaque
+ids. The one engine difference is the separator — MSI directory properties already carry a trailing
+backslash (`[INSTALLDIR]App.exe`, no extra `\`), whereas Burn's `[InstallFolder]` does not
+(`[InstallFolder]\App.exe`). `START_EXE` is assigned to `WixShellExecTarget` by an immediate
+property-setting custom action before `WixShellExec` runs, so MSI formats directory refs at launch
+time. It previously required a WiX File Id wrapped as `[#FileId]`, but msis emits opaque ids like
+`FILE_ID00007`, so that form was unusable; the templates no longer wrap the value, so a power user
+can still pass `[#FileId]` explicitly.)
 
 ## Installer hooks & uninstall folder removal (dangerous, gated)
 

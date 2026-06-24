@@ -80,7 +80,8 @@
             <DialogRef Id="LicenseAgreementDlg" />
             {{/if}}
             {{#if START_EXE}}
-            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="SetLaunchApplicationTarget" Order="1" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+            <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication" Order="2" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
             {{/if}}
             <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
 
@@ -141,9 +142,9 @@
         </UI>
         {{#if START_EXE}}
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch {{PRODUCT_NAME}}" />
-		<!-- START_EXE is an MSI Formatted path (e.g. [INSTALLDIR]App.exe); WixShellExec runs it
-		     through MsiFormatRecord, so directory-property refs resolve at launch time. -->
-		<Property Id="WixShellExecTarget" Value="{{START_EXE}}" />
+		<!-- START_EXE is an MSI Formatted path (e.g. [INSTALLDIR]App.exe). Set it through an
+		     immediate property-setting custom action so MSI formats directory refs at launch time. -->
+		<CustomAction Id="SetLaunchApplicationTarget" Property="WixShellExecTarget" Value="{{START_EXE}}" />
 		<CustomAction Id="LaunchApplication" DllEntry="WixShellExec" Impersonate="yes" BinaryRef="Wix4UtilCA_X86" />
         {{/if}}
         <UIRef Id="WixUI_Common" />
