@@ -1312,13 +1312,13 @@ func (c *Context) generateDirectoryXML(dir *Directory, sb *strings.Builder, dept
 	if dir.CustomID != "" {
 		// Root directory with custom ID (e.g., INSTALLDIR)
 		if dir.Name != "" {
-			sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.CustomID, dir.Name))
+			sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.CustomID, escapeWixPath(dir.Name)))
 		} else {
 			sb.WriteString(fmt.Sprintf("%s<Directory Id='%s'>\n", indent, dir.CustomID))
 		}
 	} else if dir.Name != "" {
 		// Regular subdirectory
-		sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.ID, dir.Name))
+		sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.ID, escapeWixPath(dir.Name)))
 	}
 
 	// Generate CreateFolder with permissions if enabled
@@ -1363,10 +1363,10 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 		}
 		shortName := ""
 		if file.ShortName != "" {
-			shortName = fmt.Sprintf(" ShortName='%s'", file.ShortName)
+			shortName = fmt.Sprintf(" ShortName='%s'", escapeWixPath(file.ShortName))
 		}
 		sb.WriteString(fmt.Sprintf("%s    <File Id='%s' Name='%s'%s Source='%s'%s/>\n",
-			indent, file.ID, file.Name, shortName, file.SourcePath, keyPath))
+			indent, file.ID, escapeWixPath(file.Name), shortName, escapeWixPath(file.SourcePath), keyPath))
 	}
 
 	// Environment
@@ -1540,6 +1540,15 @@ func escapeXMLAttr(s string) string {
 	s = strings.ReplaceAll(s, "\"", "&quot;")
 	s = strings.ReplaceAll(s, "'", "&apos;")
 	return s
+}
+
+// escapeWixPath escapes a filesystem-derived value (a File/@Name, File/@Source,
+// or Directory/@Name) for a WiX attribute. On top of the XML escaping it doubles
+// '$' to '$$', because the WiX binder treats '$' as the start of a variable
+// reference and collapses '$$' back to a single '$'. Real-world payloads contain
+// such names — e.g. projectM presets like "$$$ Royal - Mashup (110).milk".
+func escapeWixPath(s string) string {
+	return strings.ReplaceAll(escapeXMLAttr(s), "$", "$$")
 }
 
 // quietExecBinaryRef is the WiX Util custom-action binary used to run a command
