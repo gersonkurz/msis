@@ -319,6 +319,229 @@ func TestProcessService(t *testing.T) {
 	}
 }
 
+func TestProcessServicePathAnchorsToExistingComponent(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	if err := os.WriteFile(tmpDir+"\\myservice.exe", []byte("exe"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(tmpDir+"\\helper.dll", []byte("dll"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Files Feature",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: tmpDir, Target: "[INSTALLDIR]server"},
+				},
+			},
+			{
+				Name:    "Service Feature",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Service{
+						FileName:           "server\\myservice.exe",
+						ServiceName:        "MySvc",
+						ServiceDisplayName: "My Service",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// The ServiceInstall must live inside the 'server' directory.
+	serverDirStart := strings.Index(output.DirectoryXML, "Name='server'")
+	if serverDirStart < 0 {
+		t.Fatalf("expected a 'server' directory, got:\n%s", output.DirectoryXML)
+	}
+	svcPos := strings.Index(output.DirectoryXML, "ServiceInstall")
+	if svcPos < 0 {
+		t.Fatalf("expected 'ServiceInstall' in output, got:\n%s", output.DirectoryXML)
+	}
+	if svcPos < serverDirStart {
+		t.Errorf("ServiceInstall appears before the server directory, so it was emitted at the INSTALLDIR root:\n%s", output.DirectoryXML)
+	}
+	// Cross-feature: the service component duplicates the file in server dir.
+	if strings.Count(output.DirectoryXML, "Name='myservice.exe'") != 2 {
+		t.Errorf("expected the service component to install the file next to the original, got:\n%s", output.DirectoryXML)
+	}
+	// A path must never be emitted as a File/@Name (invalid WiX).
+	if strings.Contains(output.DirectoryXML, "Name='server\\myservice.exe'") {
+		t.Errorf("file-name path leaked verbatim into File/@Name:\n%s", output.DirectoryXML)
+	}
+}
+
+// Replicates the docs/tutorial.md "Tutorial 6: Windows Services" example.
+func TestProcessServiceTutorialSixForm(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	exePath := tmpDir + "\\MyService.exe"
+	if err := os.WriteFile(exePath, []byte("exe"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "MyService",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: exePath, Target: "[INSTALLDIR]"},
+					ir.Service{
+						FileName:           "[INSTALLDIR]MyService.exe",
+						ServiceName:        "MyService",
+						ServiceDisplayName: "My Background Service",
+						Start:              "auto",
+						Description:        "Performs important background tasks",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(output.DirectoryXML, "ServiceInstall") {
+		t.Fatalf("expected 'ServiceInstall' in output, got:\n%s", output.DirectoryXML)
+	}
+	if strings.Count(output.DirectoryXML, "Name='MyService.exe'") != 1 {
+		t.Errorf("expected exactly one MyService.exe file entry, got:\n%s", output.DirectoryXML)
+	}
+	if strings.Contains(output.DirectoryXML, "Name='[INSTALLDIR]MyService.exe'") {
+		t.Errorf("file-name leaked verbatim into File/@Name:\n%s", output.DirectoryXML)
+	}
+}
+
+func TestProcessServicePathSameFeatureAttachesInPlace(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "msis-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	if err := os.WriteFile(tmpDir+"\\myservice.exe", []byte("exe"), 0o644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Everything",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Files{Source: tmpDir, Target: "[INSTALLDIR]server"},
+					ir.Service{
+						FileName:    "[INSTALLDIR]server/myservice.exe",
+						ServiceName: "MySvc",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(output.DirectoryXML, "ServiceInstall") {
+		t.Fatalf("expected 'ServiceInstall' in output, got:\n%s", output.DirectoryXML)
+	}
+	if strings.Count(output.DirectoryXML, "Name='myservice.exe'") != 1 {
+		t.Errorf("expected the service to attach to the existing component without duplicating the file, got:\n%s", output.DirectoryXML)
+	}
+}
+
+func TestProcessServiceNonInstallDirRootFails(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Service Feature",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Service{
+						FileName:    "[APPDATADIR]myservice.exe",
+						ServiceName: "MySvc",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	if _, err := ctx.Generate(); err == nil {
+		t.Fatal("expected Generate to fail for a non-INSTALLDIR root in file-name")
+	}
+}
+
+func TestProcessServicePathUnknownFileFails(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{
+			{
+				Name:    "Service Feature",
+				Enabled: true,
+				Items: []ir.Item{
+					ir.Service{
+						FileName:    "server\\missing.exe",
+						ServiceName: "MySvc",
+					},
+				},
+			},
+		},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, ".")
+
+	if _, err := ctx.Generate(); err == nil {
+		t.Fatal("expected Generate to fail for a path file-name that matches no installed file")
+	}
+}
+
+func TestServiceFileRelPath(t *testing.T) {
+	cases := []struct {
+		in       string
+		want     string
+		anchored bool
+	}{
+		{"myservice.exe", "", false},
+		{"server\\myservice.exe", "server\\myservice.exe", true},
+		{"server/myservice.exe", "server\\myservice.exe", true},
+		{"[INSTALLDIR]server\\myservice.exe", "server\\myservice.exe", true},
+		{"[installdir]server/myservice.exe", "server\\myservice.exe", true},
+		{"[INSTALLDIR]myservice.exe", "myservice.exe", true},
+		{"[APPDATADIR]myservice.exe", "[APPDATADIR]myservice.exe", true},
+	}
+	for _, tc := range cases {
+		got, anchored := serviceFileRelPath(tc.in)
+		if got != tc.want || anchored != tc.anchored {
+			t.Errorf("serviceFileRelPath(%q) = (%q, %v), want (%q, %v)", tc.in, got, anchored, tc.want, tc.anchored)
+		}
+	}
+}
+
 func TestNestedFeatures(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{

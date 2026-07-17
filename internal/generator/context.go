@@ -1054,6 +1054,10 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 		StartAfterInstall: startAfterInstall,
 	}
 
+	if relPath, anchored := serviceFileRelPath(svc.FileName); anchored {
+		return c.processAnchoredService(svc, serviceDef, relPath, featureID)
+	}
+
 	fileKey := strings.ToLower(svc.FileName)
 
 	// If the service executable is already installed by a component in the
@@ -1106,6 +1110,124 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+	}
+
+	return nil
+}
+
+// serviceFileRelPath returns a service file-name as a path relative to
+// INSTALLDIR, and whether it addresses an installed location ("server\app.exe",
+// "[INSTALLDIR]app.exe") rather than a bare executable name.
+func serviceFileRelPath(fileName string) (string, bool) {
+	name := strings.ReplaceAll(fileName, "/", "\\")
+
+	const installDirPrefix = "[installdir]"
+	hadRootPrefix := strings.HasPrefix(strings.ToLower(name), installDirPrefix)
+	if hadRootPrefix {
+		name = name[len(installDirPrefix):]
+	}
+
+	// Other [ROOT] prefixes are rejected downstream with a clear error.
+	if !hadRootPrefix && strings.HasPrefix(name, "[") {
+		return name, true
+	}
+
+	if !hadRootPrefix && !strings.Contains(name, "\\") {
+		return "", false
+	}
+	return name, true
+}
+
+// processAnchoredService attaches the ServiceInstall to the file installed at
+// relPath (relative to INSTALLDIR), which must be declared by a preceding
+// <files> element.
+func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, relPath string, featureID string) error {
+	if strings.HasPrefix(relPath, "[") {
+		return fmt.Errorf("service %q: only the [INSTALLDIR] root is supported in file-name, got %q", svc.ServiceName, svc.FileName)
+	}
+	subPath, fileName := "", relPath
+	if idx := strings.LastIndex(relPath, "\\"); idx >= 0 {
+		subPath, fileName = relPath[:idx], relPath[idx+1:]
+	}
+
+	// Navigate only: a missing directory means the file was not declared,
+	// which must fail instead of minting an empty component.
+	root, ok := c.DirectoryTrees["INSTALLDIR"]
+	if !ok {
+		return fmt.Errorf("service %q: file-name %q does not match any installed file (declare it with <files> before the <service> element)", svc.ServiceName, svc.FileName)
+	}
+	dir := c.findDirectoryWithCustomID(root, "INSTALLDIR")
+	for _, part := range strings.Split(subPath, "\\") {
+		if part == "" {
+			continue
+		}
+		child, ok := dir.Children[strings.ToLower(part)]
+		if !ok {
+			return fmt.Errorf("service %q: file-name %q does not match any installed file (declare it with <files> before the <service> element)", svc.ServiceName, svc.FileName)
+		}
+		dir = child
+	}
+
+	var existingComp *Component
+	var existingFile *File
+	for _, comp := range dir.Components {
+		for _, f := range comp.Files {
+			if strings.EqualFold(f.Name, fileName) {
+				existingComp, existingFile = comp, f
+				break
+			}
+		}
+		if existingComp != nil {
+			break
+		}
+	}
+	if existingComp == nil {
+		return fmt.Errorf("service %q: file-name %q does not match any installed file (declare it with <files> before the <service> element)", svc.ServiceName, svc.FileName)
+	}
+
+	// Same feature: reuse the existing component instead of duplicating the file.
+	if featureID != "" {
+		for _, id := range c.FeatureComponents[featureID] {
+			if id == existingComp.ID {
+				if existingComp.Service != nil {
+					return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
+				}
+				existingComp.Service = serviceDef
+				return nil
+			}
+		}
+	}
+
+	// Different feature: create a sibling component in the same directory so
+	// the service feature keeps independent install control.
+	targetKey := dir.ID + ":" + strings.ToLower(fileName)
+	c.targetFileSeen[targetKey]++
+	occurrence := c.targetFileSeen[targetKey]
+	var shortName string
+	if occurrence > 1 {
+		shortName = generateShortName(fileName, occurrence)
+	}
+
+	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
+	comp := &Component{
+		ID:   compID,
+		GUID: GenerateGUID(compID),
+		Files: []*File{
+			{
+				ID:         c.NextFileID(),
+				Name:       fileName,
+				ShortName:  shortName,
+				SourcePath: existingFile.SourcePath,
+				KeyPath:    true,
+			},
+		},
+		Service: serviceDef,
+	}
+	dir.Components = append(dir.Components, comp)
+
+	if featureID != "" {
+		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
+		c.markDirectoryFeature(dir, featureID)
 	}
 
 	return nil
