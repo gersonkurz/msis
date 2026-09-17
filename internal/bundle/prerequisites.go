@@ -14,8 +14,20 @@ type PrerequisiteDef struct {
 	// Source file name (use {arch} placeholder for x86/x64 variants)
 	Source string
 
-	// DetectCondition is a WiX burn condition to check if already installed
+	// DetectCondition is a WiX burn condition to check if already installed.
+	// It is OS-driven: right for a bundle that chains several architectures and
+	// lets the runtime follow the machine.
 	DetectCondition string
+
+	// DetectConditionX86/X64 are the per-architecture forms, used when a bundle
+	// chains exactly ONE architecture of this prerequisite. That is the auto-bundle
+	// case, where PLATFORM fixes the wrapped MSI's architecture and the runtime must
+	// follow the PACKAGE rather than the OS — a 32-bit application needs the x86
+	// runtime on 64-bit Windows just as much as on 32-bit Windows.
+	// Empty means the prerequisite is architecture-neutral (netfx) and
+	// DetectCondition applies whatever the architecture.
+	DetectConditionX86 string
+	DetectConditionX64 string
 
 	// InstallArgs are default command-line arguments for silent install
 	InstallArgs string
@@ -29,32 +41,40 @@ type PrerequisiteDef struct {
 var Prerequisites = map[string]map[string]PrerequisiteDef{
 	"vcredist": {
 		"2022": {
-			DisplayName:     "Microsoft Visual C++ 2015-2022 Redistributable ({arch})",
-			Source:          "vc_redist.{arch}.exe",
-			DetectCondition: vcRedistDetect2022,
-			InstallArgs:     "/install /quiet /norestart",
-			PerMachine:      true,
+			DisplayName:        "Microsoft Visual C++ 2015-2022 Redistributable ({arch})",
+			Source:             "vc_redist.{arch}.exe",
+			DetectCondition:    vcRedistDetect2022,
+			DetectConditionX86: vcRedistDetectX86,
+			DetectConditionX64: vcRedistDetectX64,
+			InstallArgs:        "/install /quiet /norestart",
+			PerMachine:         true,
 		},
 		"2019": {
-			DisplayName:     "Microsoft Visual C++ 2015-2019 Redistributable ({arch})",
-			Source:          "vc_redist.{arch}.exe",
-			DetectCondition: vcRedistDetect2019,
-			InstallArgs:     "/install /quiet /norestart",
-			PerMachine:      true,
+			DisplayName:        "Microsoft Visual C++ 2015-2019 Redistributable ({arch})",
+			Source:             "vc_redist.{arch}.exe",
+			DetectCondition:    vcRedistDetect2019,
+			DetectConditionX86: vcRedistDetectX86,
+			DetectConditionX64: vcRedistDetectX64,
+			InstallArgs:        "/install /quiet /norestart",
+			PerMachine:         true,
 		},
 		"2017": {
-			DisplayName:     "Microsoft Visual C++ 2017 Redistributable ({arch})",
-			Source:          "vc_redist.{arch}.exe",
-			DetectCondition: vcRedistDetect2017,
-			InstallArgs:     "/install /quiet /norestart",
-			PerMachine:      true,
+			DisplayName:        "Microsoft Visual C++ 2017 Redistributable ({arch})",
+			Source:             "vc_redist.{arch}.exe",
+			DetectCondition:    vcRedistDetect2017,
+			DetectConditionX86: vcRedistDetectX86,
+			DetectConditionX64: vcRedistDetectX64,
+			InstallArgs:        "/install /quiet /norestart",
+			PerMachine:         true,
 		},
 		"2015": {
-			DisplayName:     "Microsoft Visual C++ 2015 Redistributable ({arch})",
-			Source:          "vc_redist.{arch}.exe",
-			DetectCondition: vcRedistDetect2015,
-			InstallArgs:     "/install /quiet /norestart",
-			PerMachine:      true,
+			DisplayName:        "Microsoft Visual C++ 2015 Redistributable ({arch})",
+			Source:             "vc_redist.{arch}.exe",
+			DetectCondition:    vcRedistDetect2015,
+			DetectConditionX86: vcRedistDetectX86,
+			DetectConditionX64: vcRedistDetectX64,
+			InstallArgs:        "/install /quiet /norestart",
+			PerMachine:         true,
 		},
 	},
 	"netfx": {
@@ -113,6 +133,16 @@ var Prerequisites = map[string]map[string]PrerequisiteDef{
 
 // 2022 (14.30+) - same key as 2015-2019, higher version
 const vcRedistDetect2022 = `(VersionNT64 AND VcppRuntimeX64Installed) OR (NOT VersionNT64 AND VcppRuntimeX86Installed)`
+
+// Per-architecture forms, for a bundle that chains exactly one architecture.
+// Both variables come from the bundle templates' util:RegistrySearch elements.
+// VcppRuntimeX86Installed uses Bitness="always32", so on 64-bit Windows it reads
+// HKLM\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86 — the key
+// vc_redist.x86.exe writes, and the same physical key a 32-bit MSI's own
+// launch-condition search reads under WOW64 redirection. Bundle and MSI therefore
+// agree on what "installed" means, which is the property the fix turns on.
+const vcRedistDetectX86 = `VcppRuntimeX86Installed`
+const vcRedistDetectX64 = `VcppRuntimeX64Installed`
 
 // 2019 (14.20-14.29)
 const vcRedistDetect2019 = vcRedistDetect2022 // Same detection, different installer

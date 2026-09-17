@@ -48,6 +48,46 @@ func NewGenerator(setup *ir.Setup, vars variables.Dictionary, workDir string) *G
 	}
 }
 
+// singlePrereqArch returns the one architecture this bundle chains, or "" when it
+// may chain several. The auto-bundle sets AllowedPrereqArchs from PLATFORM, which
+// fixes the wrapped MSI's architecture; an explicit multi-architecture bundle
+// leaves it nil and keeps the OS-driven conditions, where the runtime rightly
+// follows the machine.
+func (g *Generator) singlePrereqArch() string {
+	if g.AllowedPrereqArchs == nil {
+		return ""
+	}
+	sole := ""
+	for arch, allowed := range g.AllowedPrereqArchs {
+		if !allowed {
+			continue
+		}
+		if sole != "" {
+			return ""
+		}
+		sole = arch
+	}
+	return sole
+}
+
+// archDetectCondition returns the detect condition to use for a prerequisite when
+// the bundle chains exactly one architecture. It falls back to the OS-driven
+// condition for a multi-architecture bundle, and for prerequisites that are
+// architecture-neutral (netfx) and so define no per-architecture form.
+func (g *Generator) archDetectCondition(def *PrerequisiteDef) string {
+	switch g.singlePrereqArch() {
+	case "x86":
+		if def.DetectConditionX86 != "" {
+			return def.DetectConditionX86
+		}
+	case "x64":
+		if def.DetectConditionX64 != "" {
+			return def.DetectConditionX64
+		}
+	}
+	return def.DetectCondition
+}
+
 func allowedPrereqArchsForPlatform(platform string) map[string]bool {
 	switch strings.ToLower(platform) {
 	case "x86":
@@ -209,7 +249,11 @@ func (g *Generator) generatePrerequisitePackage(prereq ir.Prerequisite, index in
 		installArgs := ""
 		if def != nil {
 			displayName = def.DisplayName
-			detectCondition = def.DetectCondition
+			// Same single-architecture rule as the well-known packages below: with
+			// the architecture fixed, detect the runtime the package needs rather
+			// than the one the OS would use. This branch emits no InstallCondition
+			// at all, so there is nothing to relax here.
+			detectCondition = g.archDetectCondition(def)
 			installArgs = def.InstallArgs
 		}
 
@@ -297,24 +341,38 @@ func (g *Generator) generatePrerequisitePackage(prereq ir.Prerequisite, index in
 			escapeXMLAttr(def.DetectCondition), escapeXMLAttr(def.InstallArgs)))
 	}
 
+	soleArch := g.singlePrereqArch()
+
 	if includeX64 {
 		condition := "VersionNT64"
 		if includeArm64 {
 			condition = "VersionNT64 AND NOT NativeMachine = 43620"
 		}
+		// A sole-x64 bundle detects the x64 runtime directly. The OS-driven form
+		// reduces to the same test on 64-bit Windows, so this is a clarity fix
+		// rather than a behaviour change; VersionNT64 stays, because an x64 MSI
+		// cannot install on 32-bit Windows anyway.
 		sb.WriteString(fmt.Sprintf("      <ExePackage Id='%s_x64' DisplayName='%s' SourceFile='%s' "+
 			"DetectCondition='%s' InstallArguments='%s' Permanent='yes' Vital='yes' "+
 			"InstallCondition='%s'/>\n",
 			id, escapeXMLAttr(displayName64), escapeXMLAttr(sourcePath64),
-			escapeXMLAttr(def.DetectCondition), escapeXMLAttr(def.InstallArgs), condition))
+			escapeXMLAttr(g.archDetectCondition(def)), escapeXMLAttr(def.InstallArgs), condition))
 	}
 
 	if includeX86 {
+		// A sole-x86 bundle is the one that was broken: a 32-bit application needs
+		// the x86 runtime on 64-bit Windows just as much as on 32-bit Windows, so
+		// the package must not be gated on 'NOT VersionNT64', and the detect must
+		// test the x86 runtime rather than whichever one matches the OS.
+		// A multi-architecture bundle keeps both, where x86 is the 32-bit-Windows arm.
+		installCondition := " InstallCondition='NOT VersionNT64'"
+		if soleArch == "x86" {
+			installCondition = ""
+		}
 		sb.WriteString(fmt.Sprintf("      <ExePackage Id='%s_x86' DisplayName='%s' SourceFile='%s' "+
-			"DetectCondition='%s' InstallArguments='%s' Permanent='yes' Vital='yes' "+
-			"InstallCondition='NOT VersionNT64'/>\n",
+			"DetectCondition='%s' InstallArguments='%s' Permanent='yes' Vital='yes'%s/>\n",
 			id, escapeXMLAttr(displayName32), escapeXMLAttr(sourcePath32),
-			escapeXMLAttr(def.DetectCondition), escapeXMLAttr(def.InstallArgs)))
+			escapeXMLAttr(g.archDetectCondition(def)), escapeXMLAttr(def.InstallArgs), installCondition))
 	}
 
 	return sb.String(), nil

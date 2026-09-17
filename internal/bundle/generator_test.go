@@ -535,3 +535,128 @@ func TestGeneratorWithCachedPathsArm64(t *testing.T) {
 		t.Error("expected x64 condition to exclude ARM64")
 	}
 }
+
+// TestAutoBundleX86RuntimeFollowsPackage guards issue #8. For PLATFORM=x86 the
+// auto-bundle wraps a 32-bit MSI, so the VC++ runtime must follow the PACKAGE, not
+// the OS: it has to install on 64-bit Windows too, and detection has to test the
+// x86 runtime. Previously the package was gated on 'NOT VersionNT64' (skipped on
+// every 64-bit machine) while detection tested the x64 runtime (reporting a machine
+// with only the x64 runtime as satisfied). The MSI's own VCREDIST_X86_* launch
+// condition then refused the install, so no clean 64-bit PC could install at all.
+func TestAutoBundleX86RuntimeFollowsPackage(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "x86"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "vcredist", Version: "2022"}})
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(result.ChainXML, "DetectCondition='VcppRuntimeX86Installed'") {
+		t.Errorf("x86 auto-bundle should detect the x86 runtime, got:\n%s", result.ChainXML)
+	}
+	// The gate that made this unusable on every modern machine.
+	if strings.Contains(result.ChainXML, "InstallCondition='NOT VersionNT64'") {
+		t.Errorf("x86 auto-bundle must not skip the runtime on 64-bit Windows, got:\n%s", result.ChainXML)
+	}
+	// The OS-driven form must be gone, not merely supplemented.
+	if strings.Contains(result.ChainXML, "VcppRuntimeX64Installed") {
+		t.Errorf("x86 auto-bundle must not test the x64 runtime, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestAutoBundleX64DetectsX64Runtime is the x64 counterpart. The OS-driven
+// condition reduced to the same test on 64-bit Windows, so this pins the intent
+// rather than changing behaviour. VersionNT64 stays: an x64 MSI cannot install on
+// 32-bit Windows anyway.
+func TestAutoBundleX64DetectsX64Runtime(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "x64"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "vcredist", Version: "2022"}})
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(result.ChainXML, "DetectCondition='VcppRuntimeX64Installed'") {
+		t.Errorf("x64 auto-bundle should detect the x64 runtime, got:\n%s", result.ChainXML)
+	}
+	if !strings.Contains(result.ChainXML, "InstallCondition='VersionNT64'") {
+		t.Errorf("x64 package should still be gated on VersionNT64, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestMultiArchBundleKeepsOSDrivenConditions is the other half of the contract.
+// An explicit bundle that chains several architectures is NOT restricted by
+// PLATFORM, and there the runtime rightly follows the machine — so the OS-driven
+// detect and the 'NOT VersionNT64' gate on x86 must both survive the #8 fix.
+func TestMultiArchBundleKeepsOSDrivenConditions(t *testing.T) {
+	gen := &Generator{
+		Variables:           variables.New(),
+		WorkDir:             ".",
+		PrerequisitesFolder: "prereq",
+		// AllowedPrereqArchs nil: an explicit multi-architecture bundle.
+	}
+
+	xml, err := gen.generatePrerequisitePackage(ir.Prerequisite{Type: "vcredist", Version: "2022"}, 0)
+	if err != nil {
+		t.Fatalf("generatePrerequisitePackage failed: %v", err)
+	}
+
+	if !strings.Contains(xml, "(VersionNT64 AND VcppRuntimeX64Installed) OR (NOT VersionNT64 AND VcppRuntimeX86Installed)") {
+		t.Errorf("multi-arch bundle should keep the OS-driven detect, got:\n%s", xml)
+	}
+	if !strings.Contains(xml, "InstallCondition='NOT VersionNT64'") {
+		t.Errorf("multi-arch bundle should keep the x86 gate, got:\n%s", xml)
+	}
+	// A multi-arch bundle may also chain ARM64, so the x64 gate additionally
+	// excludes ARM64 machines. That is pre-existing behaviour and must survive.
+	if !strings.Contains(xml, "InstallCondition='VersionNT64 AND NOT NativeMachine = 43620'") {
+		t.Errorf("multi-arch bundle should keep the ARM64-aware x64 gate, got:\n%s", xml)
+	}
+}
+
+// TestSingleArchNeutralPrerequisiteUnchanged: netfx is architecture-neutral and
+// defines no per-architecture detect, so restricting the bundle to one
+// architecture must leave its condition alone rather than blanking it.
+func TestSingleArchNeutralPrerequisiteUnchanged(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "x86"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "netfx", Version: "4.8"}})
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(result.ChainXML, "NETFRAMEWORK45 &gt;= 528040") {
+		t.Errorf("netfx detect condition should be unchanged, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestCustomSourceSingleArchDetect: the custom-source branch returns early, so it
+// needs the same single-architecture rule. It emits no InstallCondition at all,
+// so only the detect matters here.
+func TestCustomSourceSingleArchDetect(t *testing.T) {
+	gen := &Generator{
+		Variables:           variables.New(),
+		WorkDir:             ".",
+		PrerequisitesFolder: "prereq",
+		AllowedPrereqArchs:  map[string]bool{"x86": true},
+	}
+
+	xml, err := gen.generatePrerequisitePackage(
+		ir.Prerequisite{Type: "vcredist", Version: "2022", Source: "custom/vc_redist.x86.exe"}, 0)
+	if err != nil {
+		t.Fatalf("generatePrerequisitePackage failed: %v", err)
+	}
+
+	if !strings.Contains(xml, "DetectCondition='VcppRuntimeX86Installed'") {
+		t.Errorf("custom-source x86 should detect the x86 runtime, got:\n%s", xml)
+	}
+}
