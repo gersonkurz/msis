@@ -68,11 +68,52 @@ func (d Dictionary) Has(name string) bool {
 // Escaping belongs to the .wxs render (internal/template), which does it
 // deliberately and documents which placeholders are escaped.
 func (d Dictionary) Resolve(s string) (string, error) {
-	tpl, err := raymond.Parse(s)
+	tpl, err := raymond.Parse(keepBackslashBeforeReference(s))
 	if err != nil {
 		return "", err
 	}
 	return tpl.Exec(d.verbatimContext())
+}
+
+// keepBackslashBeforeReference stops a backslash immediately before a {{ from being
+// read as Handlebars' escape for a literal mustache.
+//
+// On Windows a backslash there is a path separator, and these strings are paths:
+// Resolve is applied to <files source=>, <setenv> values and the bundle's MSI source
+// paths. Treating it as an escape both suppressed the substitution and swallowed the
+// separator, so "bin\{{PLATFORM}}\app.exe" silently became "bin{{PLATFORM}}\app.exe"
+// (issue #13). Nothing errored; the broken path simply flowed on.
+//
+// Handlebars consumes one backslash from a run before {{ — one leaves a literal
+// mustache, two leave one backslash and substitute, three leave two, and so on. Adding
+// one to the run therefore makes every authored backslash survive as a separator and
+// the reference always substitute.
+//
+// The deliberate cost: \{{...}} can no longer produce a literal mustache. A .msis has
+// no use for one, and Windows paths are the common case by a wide margin.
+func keepBackslashBeforeReference(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	for i := 0; i < len(s); {
+		if s[i] != '\\' {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		run := i
+		for run < len(s) && s[run] == '\\' {
+			run++
+		}
+		b.WriteString(s[i:run])
+		if strings.HasPrefix(s[run:], "{{") {
+			b.WriteByte('\\')
+		}
+		i = run
+	}
+	return b.String()
 }
 
 // verbatimContext exposes every variable as a SafeString, so raymond substitutes
@@ -156,7 +197,7 @@ func (r *resolver) resolve(key string, chain []string) error {
 	// Every round either finishes the value or resolves at least one dependency,
 	// so the number of rounds cannot exceed the number of variables.
 	for round := 0; round <= len(r.dict); round++ {
-		tpl, err := raymond.Parse(r.dict[key])
+		tpl, err := raymond.Parse(keepBackslashBeforeReference(r.dict[key]))
 		if err != nil {
 			return fmt.Errorf("variable %s: %w", key, err)
 		}
@@ -200,9 +241,8 @@ func (r *resolver) resolve(key string, chain []string) error {
 		if err != nil {
 			return fmt.Errorf("variable %s: %w", key, err)
 		}
-		// Mark resolved rather than re-testing for "{{", so that a value which
-		// legitimately renders TO a mustache — from the \{{literal}} escape — is
-		// not mistaken for an unresolved reference and rendered a second time.
+		// Mark resolved rather than re-testing the text for "{{": completion is a fact
+		// about this walk, not something to re-derive from the output.
 		r.dict[key] = out
 		r.resolved[key] = true
 		return nil

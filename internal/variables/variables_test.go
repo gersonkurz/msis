@@ -473,23 +473,55 @@ func TestResolveAllUntakenBranchIsNotACycle(t *testing.T) {
 	}
 }
 
-// TestResolveAllLiteralMustacheIsNotReResolved: \{{X}} is Handlebars' escape for a
-// literal mustache, so the resolved value legitimately CONTAINS "{{". Testing for
-// "{{" to decide what still needs resolving would render it a second time and lose
-// it; completion is tracked explicitly instead.
-func TestResolveAllLiteralMustacheIsNotReResolved(t *testing.T) {
+// TestBackslashBeforeReferenceIsAPathSeparator guards issue #13. A backslash
+// immediately before {{ is Handlebars' escape for a literal mustache, so on Windows
+// "bin\{{PLATFORM}}\app.exe" silently lost both the substitution and the separator.
+// These strings are paths — Resolve is applied to <files source=> and bundle source
+// paths — so a backslash there is now always a separator.
+//
+// The deliberate cost is that \{{...}} can no longer produce a literal mustache.
+func TestBackslashBeforeReferenceIsAPathSeparator(t *testing.T) {
+	d := Dictionary{"V": "Acme", "SHARE": "Public"}
+
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"single separator", `bin\{{V}}\app.exe`, `bin\Acme\app.exe`},
+		{"leading separator", `\{{V}}\app.exe`, `\Acme\app.exe`},
+		{"UNC path", `\\server\{{SHARE}}\x`, `\\server\Public\x`},
+		{"two backslashes both survive", `a\\{{V}}b`, `a\\Acmeb`},
+		{"forward slashes unaffected", `bin/{{V}}/app.exe`, `bin/Acme/app.exe`},
+		{"no reference at all", `bin\plain\app.exe`, `bin\plain\app.exe`},
+		{"backslash not before a reference", `a\b {{V}}`, `a\b Acme`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := d.Resolve(c.in)
+			if err != nil {
+				t.Fatalf("Resolve(%q): %v", c.in, err)
+			}
+			if got != c.want {
+				t.Errorf("Resolve(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// TestResolveAllBackslashInDictionaryValue: the same rule has to hold inside the
+// dictionary, not only for one-off strings, since nested <set> values carry paths too.
+func TestResolveAllBackslashInDictionaryValue(t *testing.T) {
 	d := Dictionary{
-		"LITERAL": `\{{NOT_A_VAR}}`,
-		"USER":    "{{LITERAL}} done",
+		"PLATFORM": "x64",
+		"BINDIR":   `bin\{{PLATFORM}}`,
+		"APPPATH":  `{{BINDIR}}\app.exe`,
 	}
 	if err := d.ResolveAll(); err != nil {
 		t.Fatal(err)
 	}
-	if d["LITERAL"] != "{{NOT_A_VAR}}" {
-		t.Errorf("LITERAL = %q, want %q", d["LITERAL"], "{{NOT_A_VAR}}")
-	}
-	if d["USER"] != "{{NOT_A_VAR}} done" {
-		t.Errorf("USER = %q, want %q", d["USER"], "{{NOT_A_VAR}} done")
+	if d["APPPATH"] != `bin\x64\app.exe` {
+		t.Errorf("APPPATH = %q, want %q", d["APPPATH"], `bin\x64\app.exe`)
 	}
 }
 
