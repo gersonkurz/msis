@@ -409,7 +409,7 @@ func (p *Processor) generatePreservationPropertiesRecursive(key *RegistryKey, ro
 		defaultValue := encodePreservationDefault(val)
 		valueAttr := ""
 		if defaultValue != "" {
-			valueAttr = fmt.Sprintf(" Value='%s'", defaultValue)
+			valueAttr = fmt.Sprintf(" Value='%s'", escapeXML(defaultValue))
 		}
 		nameAttr := ""
 		if val.Name != "" {

@@ -615,6 +615,53 @@ func TestPreserveBinaryValues(t *testing.T) {
 	}
 }
 
+// TestPreserveEscapesDefaultValue guards issue #9: the preserved default was the one
+// attribute in this file interpolated without escaping, so a legal .reg default
+// containing an apostrophe or an ampersand produced malformed WXS and failed the
+// build with WIX0104.
+func TestPreserveEscapesDefaultValue(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Owner"="O'Brien"
+"Pair"="A&B"
+"Markup"="<tag attr=\"v\">"
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "escape.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "escape.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	xml := proc.GeneratePreservationXML(components, allIDs)
+
+	for _, want := range []string{
+		"Value='O&apos;Brien'",
+		"Value='A&amp;B'",
+		"Value='&lt;tag attr=&quot;v&quot;&gt;'",
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("Preservation XML should contain %s, got:\n%s", want, xml)
+		}
+	}
+
+	// The raw apostrophe would terminate the attribute early; the raw ampersand is
+	// an undefined entity reference. Either one makes the WXS unparseable.
+	if strings.Contains(xml, "Value='O'Brien'") {
+		t.Errorf("Apostrophe must not be emitted raw, got:\n%s", xml)
+	}
+	if strings.Contains(xml, "Value='A&B'") {
+		t.Errorf("Ampersand must not be emitted raw, got:\n%s", xml)
+	}
+}
+
 func TestPreserveEmptyBinaryValue(t *testing.T) {
 	// A zero-byte REG_BINARY default is "#x" with nothing after it. Omitting the
 	// Value attribute instead leaves the property undefined, which strips the type
