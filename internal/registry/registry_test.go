@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -516,15 +517,12 @@ func TestPreserveBasicStringValues(t *testing.T) {
 	allIDs := proc.BuildAllPreservedIDs(components)
 	xml := proc.GeneratePreservationXML(components, allIDs)
 
-	// Should have default Property (PS_RV_) and search Property (PS_RS_)
+	// Should have a default Property (PS_RV_) with the search nested inside it
 	if !strings.Contains(xml, "<Property Id='PS_RV_") {
 		t.Error("Preservation XML should contain default Property elements")
 	}
-	if !strings.Contains(xml, "<Property Id='PS_RS_") {
-		t.Error("Preservation XML should contain search Property elements")
-	}
-	if !strings.Contains(xml, "<RegistrySearch") {
-		t.Error("Preservation XML should contain RegistrySearch elements")
+	if !strings.Contains(xml, "<RegistrySearch Id='PS_RV_") {
+		t.Error("Preservation XML should contain RegistrySearch elements nested in the PS_RV_ property")
 	}
 	if !strings.Contains(xml, "Type='raw'") {
 		t.Error("RegistrySearch should have Type='raw'")
@@ -532,16 +530,17 @@ func TestPreserveBasicStringValues(t *testing.T) {
 	if !strings.Contains(xml, "Root='HKLM'") {
 		t.Error("RegistrySearch should have Root='HKLM'")
 	}
-	// Default values should be string literals on PS_RV_ (not PS_RS_)
+	// Default values should be string literals on PS_RV_
 	if !strings.Contains(xml, "Value='C:\\Logs\\app.log'") {
 		t.Error("Default Property should have string default value")
 	}
-	// Should have SetProperty to conditionally override
-	if !strings.Contains(xml, "<SetProperty") {
-		t.Error("Preservation XML should contain SetProperty elements")
+	// No custom actions: a SetProperty per preserved value cannot be sequenced
+	// around AppSearch beyond ~100 values (WIX0179, issue #5).
+	if strings.Contains(xml, "<SetProperty") {
+		t.Errorf("Preservation XML must not contain SetProperty custom actions, got:\n%s", xml)
 	}
-	if !strings.Contains(xml, "After='AppSearch'") {
-		t.Error("SetProperty should run After='AppSearch'")
+	if strings.Contains(xml, "PS_RS_") {
+		t.Errorf("Preservation XML must not contain separate PS_RS_ search properties, got:\n%s", xml)
 	}
 	// Properties must be Secure to survive client→server handoff in elevated installs
 	if !strings.Contains(xml, "Secure='yes'") {
@@ -871,8 +870,51 @@ func TestPreserveEmptyStringValue(t *testing.T) {
 	allIDs := proc.BuildAllPreservedIDs(components)
 	preserveXML := proc.GeneratePreservationXML(components, allIDs)
 
-	// Empty string should produce default Property without Value attribute (but with Secure)
-	if !strings.Contains(preserveXML, "<Property Id='PS_RV_00000' Secure='yes'/>") {
-		t.Errorf("Empty string should produce self-closing Property without Value attribute, got:\n%s", preserveXML)
+	// Empty string should produce a default Property without a Value attribute
+	// (WiX rejects Value=''), still carrying Secure and the nested search.
+	if !strings.Contains(preserveXML, "<Property Id='PS_RV_00000' Secure='yes'>") {
+		t.Errorf("Empty string should produce Property without Value attribute, got:\n%s", preserveXML)
+	}
+	if !strings.Contains(preserveXML, "<RegistrySearch Id='PS_RV_00000_Registry'") {
+		t.Errorf("Empty-default property should still nest its RegistrySearch, got:\n%s", preserveXML)
+	}
+}
+
+// TestPreserveManyValuesEmitsNoCustomActions guards issue #5: preservation used to
+// emit a SetProperty custom action per value, all sequenced After='AppSearch'.
+// Only ~100 sequence numbers exist in that gap, so a .reg file with a few hundred
+// preserved values failed to build at all (WIX0179).
+func TestPreserveManyValuesEmitsNoCustomActions(t *testing.T) {
+	const count = 1500
+
+	var content strings.Builder
+	content.WriteString("Windows Registry Editor Version 5.00\n\n[HKEY_LOCAL_MACHINE\\SOFTWARE\\MyApp]\n")
+	for i := 0; i < count; i++ {
+		fmt.Fprintf(&content, "\"Value%04d\"=\"default%04d\"\n", i, i)
+	}
+
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "many.reg")
+	if err := os.WriteFile(regFile, []byte(content.String()), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "many.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	xml := proc.GeneratePreservationXML(components, allIDs)
+
+	if n := strings.Count(xml, "<SetProperty"); n != 0 {
+		t.Errorf("Preservation of %d values emitted %d SetProperty custom actions, want 0", count, n)
+	}
+	if n := strings.Count(xml, "<RegistrySearch"); n != count {
+		t.Errorf("Got %d RegistrySearch elements, want %d", n, count)
+	}
+	if n := strings.Count(xml, "<Property Id='PS_RV_"); n != count {
+		t.Errorf("Got %d PS_RV_ properties, want %d", n, count)
 	}
 }

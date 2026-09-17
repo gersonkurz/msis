@@ -2477,21 +2477,20 @@ func TestPreserveRegistryIntegration(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	// PreservationPropertiesXML should contain default Property, search Property, and SetProperty
+	// PreservationPropertiesXML should contain a default Property per preserved
+	// value, each with its RegistrySearch nested inside — and no custom actions
+	// (a SetProperty per value cannot be sequenced around AppSearch; issue #5).
 	if output.PreservationPropertiesXML == "" {
 		t.Fatal("PreservationPropertiesXML should not be empty for preserved registry")
 	}
 	if !strings.Contains(output.PreservationPropertiesXML, "<Property Id='PS_RV_") {
 		t.Error("PreservationPropertiesXML should contain default Property elements")
 	}
-	if !strings.Contains(output.PreservationPropertiesXML, "<Property Id='PS_RS_") {
-		t.Error("PreservationPropertiesXML should contain search Property elements")
+	if !strings.Contains(output.PreservationPropertiesXML, "<RegistrySearch Id='PS_RV_") {
+		t.Error("PreservationPropertiesXML should nest RegistrySearch elements in the PS_RV_ properties")
 	}
-	if !strings.Contains(output.PreservationPropertiesXML, "<SetProperty") {
-		t.Error("PreservationPropertiesXML should contain SetProperty elements")
-	}
-	if !strings.Contains(output.PreservationPropertiesXML, "<RegistrySearch") {
-		t.Error("PreservationPropertiesXML should contain RegistrySearch elements")
+	if strings.Contains(output.PreservationPropertiesXML, "<SetProperty") {
+		t.Errorf("PreservationPropertiesXML must not contain SetProperty custom actions, got:\n%s", output.PreservationPropertiesXML)
 	}
 
 	// DWord default should have # prefix

@@ -381,13 +381,16 @@ func shouldPreserveValue(val *RegistryValue) bool {
 }
 
 // generatePreservationPropertiesRecursive walks the key tree and generates
-// preservation XML for each preservable value. Uses a three-element pattern:
-//  1. PS_RV_XXXXX — Property holding the default value from the .reg file
-//  2. PS_RS_XXXXX — Search property with RegistrySearch (empty if value not found)
-//  3. SetProperty — conditionally copies found value into PS_RV_XXXXX
+// preservation XML for each preservable value: one PS_RV_XXXXX Property holding
+// the .reg file default, with the RegistrySearch nested inside it. AppSearch
+// overwrites the default only when the search finds an existing value; a failed
+// search leaves the Property table default in place. This is the same two-element
+// idiom msis-2.x emits (msi-simplified/WxsItem/RegistryKey.cs).
 //
-// This avoids the MSI AppSearch behavior where a failed RegistrySearch clears
-// the Property default, which would lose the .reg file default on first install.
+// Deliberately NOT a separate search property plus a SetProperty that copies it:
+// every SetProperty is a custom action needing its own sequence number in the
+// narrow gap around AppSearch, so a .reg file with a few hundred preserved values
+// could not be built at all (WIX0179).
 func (p *Processor) generatePreservationPropertiesRecursive(key *RegistryKey, root string, sb *strings.Builder, preservedIDs map[string]int) {
 	for _, val := range key.Values {
 		if val.RemoveFlag || !shouldPreserveValue(val) {
@@ -399,30 +402,24 @@ func (p *Processor) generatePreservationPropertiesRecursive(key *RegistryKey, ro
 			continue
 		}
 
-		// Encode default value based on type
+		// Encode default value based on type. An empty default omits the Value
+		// attribute entirely — WiX rejects Value=''.
+		// Secure='yes' lets the searched value survive the client→server handoff
+		// during an elevated install.
 		defaultValue := encodePreservationDefault(val)
-
-		// 1. Default property — holds the .reg file default, never touched by AppSearch.
-		//    Secure='yes' ensures the value survives client→server handoff during elevated installs.
-		if defaultValue == "" {
-			sb.WriteString(fmt.Sprintf("    <Property Id='PS_RV_%05d' Secure='yes'/>\n", id))
-		} else {
-			sb.WriteString(fmt.Sprintf("    <Property Id='PS_RV_%05d' Value='%s' Secure='yes'/>\n", id, defaultValue))
+		valueAttr := ""
+		if defaultValue != "" {
+			valueAttr = fmt.Sprintf(" Value='%s'", defaultValue)
 		}
-
-		// 2. Search property — RegistrySearch reads existing value (or clears to empty)
 		nameAttr := ""
 		if val.Name != "" {
 			nameAttr = fmt.Sprintf(" Name='%s'", escapeXML(val.Name))
 		}
-		sb.WriteString(fmt.Sprintf("    <Property Id='PS_RS_%05d' Secure='yes'>\n", id))
-		sb.WriteString(fmt.Sprintf("        <RegistrySearch Id='PS_RS_%05d_Registry' Type='raw' Root='%s' Key='%s'%s/>\n",
+
+		sb.WriteString(fmt.Sprintf("    <Property Id='PS_RV_%05d'%s Secure='yes'>\n", id, valueAttr))
+		sb.WriteString(fmt.Sprintf("        <RegistrySearch Id='PS_RV_%05d_Registry' Type='raw' Root='%s' Key='%s'%s/>\n",
 			id, root, escapeXML(key.Key), nameAttr))
 		sb.WriteString("    </Property>\n")
-
-		// 3. Conditional override — only copies search result when the search found something
-		sb.WriteString(fmt.Sprintf("    <SetProperty Id='PS_RV_%05d' Value='[PS_RS_%05d]' After='AppSearch' Sequence='both' Condition='PS_RS_%05d'/>\n",
-			id, id, id))
 	}
 
 	for _, subKey := range key.SubKeys {

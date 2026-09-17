@@ -179,3 +179,22 @@ The C# version at `../msis-2.x/` defines expected behavior. Most relevant files:
 - `docs/msis.xsd` — authoritative `.msis` schema (element/attribute reference)
 - `docs/Bundle.md`, `docs/Prerequisites.md`, `docs/tutorial.md`, `docs/templates.md`,
   `docs/overview.md` — feature and architecture documentation
+
+## Review loop
+
+@C:/Projects/yaaadabi/protocol.md
+
+Loop parameters:
+- Verify: `just fmt-check && just vet && go test -count=1 -p=1 ./...`
+  (`just check` is the same three steps; spell the test step out so the Go test
+  cache cannot replay results, and keep `-p=1` — some tests drive the real `wix`
+  CLI and the filesystem)
+- Yardstick docs: this file (architecture, WiX 6/7 conventions, directory roots,
+  the MSI-vs-bundle variable table); the reference implementation under
+  `../msis-2.x/` — it defines expected behavior; `docs/msis.xsd` for the `.msis`
+  surface; `AGENTS.md` for project intent
+- Review focus: behavior parity with msis-2.x; deterministic, diffable output (no
+  clocks, no randomness, no map-order dependence); correctness on paths that can
+  destroy customer data — preserved registry values, the uninstall folder/registry
+  removal hooks, upgrade sequencing
+- Task list: `TODO.md` at the repo root
