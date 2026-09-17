@@ -1,10 +1,12 @@
 # TODO
 
-Follow-up tasks from the review loop.
+Follow-up tasks from the review loop. Checks that need a real machine (an elevated
+install, not just a green build) live in [`todo-testme.md`](todo-testme.md) instead.
 
 ## Preserved defaults are inserted into XML without escaping
 
-Reviewer finding, recorded verbatim (issue #5 review, 2026-09-17):
+Filed as [#9](https://github.com/gersonkurz/msis/issues/9). Reviewer finding from the
+#5 review, recorded verbatim:
 
 > **[task] Preserved defaults are inserted into XML without escaping.** At
 > [registry.go:412](C:/NGBT/MSIS/msis-3.x/internal/registry/registry.go:412),
@@ -16,31 +18,8 @@ Reviewer finding, recorded verbatim (issue #5 review, 2026-09-17):
 > three-element implementation, so it is deferrable: issue #5 addresses
 > custom-action sequence exhaustion, not XML escaping.
 
-Note: the non-preserved path already escapes (`escapeXML(val.Value)` in
-`generateRegistryValueXML`); only the preservation path is missing it.
-
-## Runtime probe: preserved value that already exists as an empty string
-
-Issue #5 replaced the three-element preservation pattern (`PS_RV_` default +
-`PS_RS_` search + `SetProperty`) with the two-element form (`PS_RV_` default with
-the `RegistrySearch` nested inside), removing the per-value custom action.
-
-One behaviour delta was reasoned about but **never observed at runtime**: when the
-target value already exists in the registry as an *empty* `REG_SZ` and the `.reg`
-file's default is non-empty, `RegistrySearch Type='raw'` returns `""`, and setting
-an MSI property to the empty string undefines it. Expected result: the live empty
-value is preserved (written back as empty) rather than overwritten by the `.reg`
-default — which is what `preserve="yes"` should mean, and matches msis-2.x. The old
-pattern wrote the default in that case, because the `SetProperty` condition was false.
-
-This could not be executed in the session that made the change: `msiexec` needs
-elevation. A ready-to-run probe was prepared (seed `HKLM\SOFTWARE\MsisPreserveProbe`
-with a live empty string, a live non-empty string and a live DWORD, leave two values
-absent, install silently with `/l*v`, dump the resulting values and types, uninstall).
-
-Also unobserved, same reason: the elevated per-machine client→server handoff, and the
-unnamed/default-value case (MS RegLocator docs qualify retrieval of a default value
-with "if it is not empty").
-
-Reported by the reviewer as a [suggestion] during the approach consultation for issue #5;
-deferred with the product owner's explicit acceptance on 2026-09-17.
+Reproduced against WiX 7.0.0 (`error WIX0104: ... 'Brien' is an unexpected token`) and
+confirmed pre-existing — the pre-#5 three-element form emits the same unescaped
+`Value='O'Brien'`. The non-preserved path already escapes
+(`escapeXML(val.Value)` in `generateRegistryValueXML`); only the preservation path
+is missing it. Full repro in #9.
