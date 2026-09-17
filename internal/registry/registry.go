@@ -46,6 +46,11 @@ type RegistryValue struct {
 	Value      string   // For simple types
 	MultiValue []string // For multiString type
 	RemoveFlag bool
+
+	// FromQword marks a value the .reg file declared as REG_QWORD. Type is
+	// "integer" like a DWORD, because that is all MSI can write, but the two must
+	// stay distinguishable: a QWORD cannot be preserved (see shouldPreserveValue).
+	FromQword bool
 }
 
 // Processor handles registry file parsing and WiX generation.
@@ -244,8 +249,16 @@ func (p *Processor) convertValue(entry *regis3.ValueEntry) *RegistryValue {
 		val.Type = "integer"
 		val.Value = fmt.Sprintf("%d", entry.GetDword(0))
 	case regis3.RegQword:
+		// MSI cannot express a REG_QWORD: the Registry table's "#N" form and WiX's
+		// Type='integer' are both REG_DWORD, and there is no 64-bit counterpart.
+		// So a QWORD is deliberately TRUNCATED to its low 32 bits rather than
+		// emitted at full width, which produced an out-of-range "#N" that MSI does
+		// not define a meaning for. Truncating is lossy and documented as such
+		// (docs/tutorial.md, registry value types); it is chosen over rejecting the
+		// value so existing packages keep building.
 		val.Type = "integer"
-		val.Value = fmt.Sprintf("%d", entry.GetQword(0))
+		val.Value = fmt.Sprintf("%d", uint32(entry.GetQword(0)))
+		val.FromQword = true
 	case regis3.RegMultiSz:
 		val.Type = "multiString"
 		val.MultiValue = entry.GetMultiString()
@@ -364,13 +377,35 @@ func (p *Processor) collectPreservedIDs(key *RegistryKey, ids map[string]int) {
 
 // shouldPreserveValue determines if a registry value should be preserved.
 // String values starting with "[" are skipped (they're already WiX property references).
-// MultiString values are not preserved (no simple default encoding).
+// MultiString and expandable values are not preserved — see below.
 func shouldPreserveValue(val *RegistryValue) bool {
 	if val.RemoveFlag {
 		return false
 	}
 	// Skip multiString - no simple default encoding for preservation
 	if val.Type == "multiString" {
+		return false
+	}
+	// Skip REG_EXPAND_SZ. Preservation reads the live value with a Type='raw'
+	// RegistrySearch, and that search EXPANDS a REG_EXPAND_SZ and drops its type
+	// marker: an install probe showed a live "%TEMP%" arriving in the property as
+	// "C:\Users\<name>\AppData\Local\Temp", which was then written back as a plain
+	// REG_SZ. Preserving such a value therefore both loses the type and bakes a
+	// machine-specific path into the customer's registry. No default encoding can
+	// fix that, because the damage happens in the search. Left unpreserved, the
+	// value is written normally as a proper, unexpanded REG_EXPAND_SZ; a live edit
+	// is overwritten by the .reg default, which is the lesser harm.
+	if val.Type == "expandable" {
+		return false
+	}
+	// Skip REG_QWORD, for the same reason and with worse consequences. The raw
+	// search returns the QWORD's raw bytes reinterpreted as UTF-16 text: an install
+	// probe seeded 0xFEDCBA9876543210 and AppSearch handed back "㈐癔몘ﻜ" — which is
+	// exactly those eight bytes read as UTF-16LE — and it was then written back as a
+	// REG_SZ. Preserving a live QWORD therefore destroys it. Unpreserved, the .reg
+	// value is written as the documented 32-bit truncation instead: lossy, but
+	// deterministic and a number rather than mojibake.
+	if val.FromQword {
 		return false
 	}
 	// Skip string values starting with "[" (already property references)
@@ -446,8 +481,9 @@ func encodePreservationDefault(val *RegistryValue) string {
 		// write has no type marker left, and MSI stores an empty REG_SZ instead of
 		// an empty REG_BINARY. A bare "#x" stores REG_BINARY with zero bytes.
 		return "#x" + val.Value
-	case "string", "expandable":
-		// SZ/ExpandSz: use literal value (empty string → omit Value attribute)
+	case "string":
+		// SZ: literal value (empty string → omit the Value attribute).
+		// REG_EXPAND_SZ never reaches here — shouldPreserveValue excludes it.
 		return val.Value
 	default:
 		return val.Value

@@ -615,6 +615,93 @@ func TestPreserveBinaryValues(t *testing.T) {
 	}
 }
 
+// TestExpandableIsNotPreserved guards half of issue #10. A preserved REG_EXPAND_SZ
+// was doubly broken: the default carried no type marker, AND the Type='raw' search
+// used to read the live value expands it and strips the type, so preserving
+// "%TEMP%" wrote back a literal machine-specific path as REG_SZ. Excluded from
+// preservation entirely, it is written normally as a proper REG_EXPAND_SZ.
+func TestExpandableIsNotPreserved(t *testing.T) {
+	// hex(2) is REG_EXPAND_SZ; this is "%PATH%" in UTF-16LE with its terminator.
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Expand"=hex(2):25,00,50,00,41,00,54,00,48,00,25,00,00,00
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "expand.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "expand.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	preserveXML := proc.GeneratePreservationXML(components, allIDs)
+
+	// No preservation property at all for an expandable value.
+	if strings.Contains(preserveXML, "PS_RV_") {
+		t.Errorf("Expandable value must not be preserved, got:\n%s", preserveXML)
+	}
+
+	// It is written normally instead: correct type, value left unexpanded.
+	xml := proc.GenerateXMLWithPreservedIDs(components, false, allIDs)
+	if !strings.Contains(xml, "Value='%PATH%' Type='expandable'") {
+		t.Errorf("Expandable value should be written as an unexpanded REG_EXPAND_SZ, got:\n%s", xml)
+	}
+	if strings.Contains(xml, "[PS_RV_") {
+		t.Errorf("Expandable value must not reference a preservation property, got:\n%s", xml)
+	}
+}
+
+// TestQwordTruncatesAndIsNotPreserved guards the other half of issue #10. MSI has no
+// REG_QWORD form at all, so a QWORD is deliberately truncated to its low 32 bits
+// rather than emitted at full width as an out-of-range "#N" — and it is excluded from
+// preservation, because the raw search returns a live QWORD's raw bytes reinterpreted
+// as UTF-16 text, which would be written back as mojibake REG_SZ.
+func TestQwordTruncatesAndIsNotPreserved(t *testing.T) {
+	// hex(b) is REG_QWORD, little-endian: 0x0123456789ABCDEF.
+	// Low 32 bits are 0x89ABCDEF = 2309737967.
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Big"=hex(b):ef,cd,ab,89,67,45,23,01
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "qword.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "qword.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	preserveXML := proc.GeneratePreservationXML(components, allIDs)
+
+	// A QWORD gets no preservation property at all.
+	if strings.Contains(preserveXML, "PS_RV_") {
+		t.Errorf("QWORD value must not be preserved, got:\n%s", preserveXML)
+	}
+
+	// Truncation happens in convertValue, so it applies wherever the value is written.
+	// Assert the truncated value POSITIVELY: merely checking the 64-bit decimal is
+	// absent would also pass if the value vanished or became zero.
+	plainXML := proc.GenerateXML(components, false)
+	if !strings.Contains(plainXML, "Value='2309737967' Type='integer'") {
+		t.Errorf("Non-preserved path should write the truncated integer, got:\n%s", plainXML)
+	}
+	if strings.Contains(plainXML, "81985529216486895") {
+		t.Errorf("Non-preserved path must not carry the full 64-bit value, got:\n%s", plainXML)
+	}
+}
+
 // TestPreserveEscapesDefaultValue guards issue #9: the preserved default was the one
 // attribute in this file interpolated without escaping, so a legal .reg default
 // containing an apostrophe or an ampersand produced malformed WXS and failed the

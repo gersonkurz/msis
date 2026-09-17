@@ -241,7 +241,8 @@ These get expanded when the installer runs, so `InstallPath` correctly reflects 
 
 ### Registry Value Types
 
-msis supports all standard registry types:
+msis reads all standard registry types. All of them install as-is except QWORD, which
+Windows Installer cannot represent — see the note below the table:
 
 | Type | Example |
 |------|---------|
@@ -251,6 +252,50 @@ msis supports all standard registry types:
 | Binary | `"Data"=hex:01,02,03,04` |
 | Multi-string | `"List"=hex(7):4f,00,6e,00,65,00,00,00,54,00,77,00,6f,00,00,00,00,00` |
 | Expandable string | `"Path"=hex(2):25,00,50,00,41,00,54,00,48,00,25,00,00,00` |
+
+#### QWORD values are truncated to 32 bits
+
+Two separate things are going on here — one imposed on msis, one chosen by it.
+
+**The limitation (Windows Installer's).** MSI's Registry table can express REG_SZ,
+REG_EXPAND_SZ, REG_BINARY, REG_MULTI_SZ and REG_DWORD — and nothing wider. There is no
+QWORD encoding to emit. No installer built on Windows Installer can write a REG_QWORD
+through the standard registry tables.
+
+**The policy (msis's).** Faced with that, msis writes a `QWORD` from your `.reg` file
+as a **REG_DWORD holding the low 32 bits**, dropping the upper 32 silently.
+`0x0123456789ABCDEF` installs as `0x89ABCDEF`, typed REG_DWORD. msis could instead
+refuse to build such a package; truncation is deliberately chosen over that, so
+existing packages carrying a QWORD keep working. It is a trade, and the cost is that
+a value you wrote is not the value that lands.
+
+Previously neither happened cleanly: the full 64-bit number was emitted into a field
+MSI defines no meaning for.
+
+**QWORDs are also never preserved.** `preserve="yes"` reads the existing value with a
+`Type='raw'` registry search, and that search returns a REG_QWORD's raw bytes
+reinterpreted as text — seeding `0xFEDCBA9876543210` yields the string `㈐癔몘ﻜ`, which
+is precisely those eight bytes read as UTF-16. Writing that back would replace the
+user's number with mojibake. So a QWORD is always written fresh from your `.reg` file
+as the truncated REG_DWORD above, overwriting whatever was there.
+
+If your application genuinely needs a 64-bit registry value, do not rely on the
+installer to place it — write it from the application on first run, or from a custom
+action.
+
+#### Expandable strings are not preserved
+
+`preserve="yes"` (see below) does **not** apply to expandable strings. They are always
+written from your `.reg` file, even if the user changed them.
+
+The reason is that preservation reads the existing value with a `Type='raw'` registry
+search, and that search *expands* a REG_EXPAND_SZ before handing it back — a live
+`%TEMP%` arrives as `C:\Users\alice\AppData\Local\Temp`, with its type marker gone.
+Writing that back would both downgrade the value to a plain REG_SZ and freeze one
+machine's paths into the registry. Skipping preservation keeps the value correct:
+a proper, unexpanded REG_EXPAND_SZ.
+
+Multi-strings are skipped for preservation too, for a similar encoding reason.
 
 ### Deleting Registry Keys
 
