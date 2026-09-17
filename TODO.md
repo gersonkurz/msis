@@ -3,6 +3,33 @@
 Follow-up tasks from the review loop. Checks that need a real machine (an elevated
 install, not just a green build) live in [`todo-testme.md`](todo-testme.md) instead.
 
+## Non-preserved literal REG_SZ content can silently change type
+
+Reviewer finding from the #11 review, recorded verbatim (2026-09-17):
+
+> **[task] Non-preserved literal REG_SZ content can silently change type through
+> MSI formatting.** At
+> [registry.go:722](C:/NGBT/MSIS/msis-3.x/internal/registry/registry.go:722),
+> string values enter the formatted Registry-table field directly. The executed
+> probe shows `.reg` string `"a[~]b"` installing as `REG_MULTI_SZ ['a','b']`,
+> violating literal value/type preservation. Define and document the
+> literal-versus-formatted authoring contract and add regression coverage before
+> changing emission, since existing callers may intentionally use MSI references.
+> This predates issue #11 and is deferrable because leading-hash encoding neither
+> introduces nor fixes bracket interpretation.
+
+Same probe, same run, `a[Foo]b` installs as `ab` without preservation and as
+`a[Foo]b` with it — because a preserved value reaches the Registry table through
+`[PS_RV_n]` and is substituted in without a second formatting pass.
+
+Not yet classified as a defect: whether a **mid-string** MSI property reference
+ought to expand. `shouldPreserveValue` skips values that *start* with `[`, so the
+whole-value form is clearly intended to be formatted; `docs/tutorial.md` documents
+`$$VAR$$` for variables in `.reg` files and never mentions `[PROPERTY]`. The
+reviewer declined to call it confirmed pending a product decision, and noted that
+MSI does document bracket escaping (`[\[]`), so authors are not without recourse —
+correcting an overclaim of mine that they were.
+
 ## Preserved expandable-string defaults lose their registry type
 
 Reviewer finding from the #6 review, recorded verbatim (2026-09-17):

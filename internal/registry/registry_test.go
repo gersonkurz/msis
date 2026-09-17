@@ -702,6 +702,57 @@ func TestQwordTruncatesAndIsNotPreserved(t *testing.T) {
 	}
 }
 
+// TestPreserveEscapesLeadingHash guards issue #11: a preserved REG_SZ beginning with
+// '#' was emitted unescaped, and MSI reads a leading '#' in the Registry table as a
+// type marker — the install failed with Error 1406 and rolled back. WiX stores
+// "##FF0000" for the same value when it owns the write, so the two paths must agree.
+func TestPreserveEscapesLeadingHash(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Colour"="#FF0000"
+"Middle"="a#b"
+"Plain"="plain-sz"
+"JustHash"="#"
+"AlreadyDoubled"="##"
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "hash.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "hash.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	xml := proc.GeneratePreservationXML(components, allIDs)
+
+	if !strings.Contains(xml, "Value='##FF0000'") {
+		t.Errorf("Leading '#' should be doubled, got:\n%s", xml)
+	}
+	// Only the FIRST character is special — a '#' inside the string stays single,
+	// and an ordinary value must not sprout a '#'.
+	if !strings.Contains(xml, "Value='a#b'") {
+		t.Errorf("A '#' that is not leading must be left alone, got:\n%s", xml)
+	}
+	if !strings.Contains(xml, "Value='plain-sz'") {
+		t.Errorf("An ordinary string must be untouched, got:\n%s", xml)
+	}
+	// Boundaries. Exactly one '#' is prepended, never a blanket replacement, and an
+	// authored "##" is NOT mistaken for something already encoded — it is a literal
+	// two-character string and must survive the round trip as one.
+	if !strings.Contains(xml, "Value='##'") {
+		t.Errorf(`A bare "#" should become "##", got:`+"\n%s", xml)
+	}
+	if !strings.Contains(xml, "Value='###'") {
+		t.Errorf(`An authored "##" should become "###", got:`+"\n%s", xml)
+	}
+}
+
 // TestPreserveEscapesDefaultValue guards issue #9: the preserved default was the one
 // attribute in this file interpolated without escaping, so a legal .reg default
 // containing an apostrophe or an ampersand produced malformed WXS and failed the

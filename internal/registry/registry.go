@@ -482,8 +482,21 @@ func encodePreservationDefault(val *RegistryValue) string {
 		// an empty REG_BINARY. A bare "#x" stores REG_BINARY with zero bytes.
 		return "#x" + val.Value
 	case "string":
-		// SZ: literal value (empty string → omit the Value attribute).
+		// SZ: literal value (empty string → omit the Value attribute), except that
+		// a leading '#' is MSI's Registry-table type marker and a literal one must
+		// be doubled. Unescaped, "#FF0000" fails the install with Error 1406 and
+		// rolls back (issue #11).
+		//
+		// "##" is MSI's own convention, not a guess, confirmed from both ends:
+		// WiX stores "##FF0000" for the same value on the non-preserved path, and a
+		// Type='raw' search over a live REG_SZ of "#00FF00" hands back "##00FF00".
+		// Doubling here makes the preserved and non-preserved paths agree.
+		//
+		// Only the first character is special; '#' elsewhere is literal.
 		// REG_EXPAND_SZ never reaches here — shouldPreserveValue excludes it.
+		if strings.HasPrefix(val.Value, "#") {
+			return "#" + val.Value
+		}
 		return val.Value
 	default:
 		return val.Value
