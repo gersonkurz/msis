@@ -2,6 +2,8 @@
 package variables
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/aymerick/raymond"
@@ -58,37 +60,154 @@ func (d Dictionary) Has(name string) bool {
 
 // Resolve applies Handlebars template resolution to a string.
 // Variables are referenced using {{VAR_NAME}} syntax.
+//
+// Values are substituted VERBATIM. This dictionary holds file paths, product names
+// and registry values — not HTML — and callers resolve things like a <files source=>
+// path with it. Passing the map to raymond directly applies its default HTML
+// escaping, which turned a manufacturer of "R&D" into "R&amp;D" in every consumer.
+// Escaping belongs to the .wxs render (internal/template), which does it
+// deliberately and documents which placeholders are escaped.
 func (d Dictionary) Resolve(s string) (string, error) {
 	tpl, err := raymond.Parse(s)
 	if err != nil {
 		return "", err
 	}
-	return tpl.Exec(d)
+	return tpl.Exec(d.verbatimContext())
 }
 
-// ResolveAll resolves all variable references within the dictionary itself.
-// This handles cases like: PRODUCT_FULL_NAME = "{{PRODUCT_NAME}} {{PRODUCT_VERSION}}"
-func (d Dictionary) ResolveAll() error {
-	// Build a list of keys that need resolution
-	toResolve := make(map[string]string)
-
-	for key, value := range d {
-		// Check if value contains Handlebars syntax
-		if containsTemplate(value) {
-			toResolve[key] = value
-		}
+// verbatimContext exposes every variable as a SafeString, so raymond substitutes
+// values without HTML-escaping them.
+func (d Dictionary) verbatimContext() map[string]any {
+	ctx := make(map[string]any, len(d))
+	for name, value := range d {
+		ctx[name] = raymond.SafeString(value)
 	}
+	return ctx
+}
 
-	// Resolve each value
-	for key, value := range toResolve {
-		resolved, err := d.Resolve(value)
-		if err != nil {
+// ResolveAll resolves all variable references within the dictionary itself, so a
+// value may refer to a variable whose own value refers to a third:
+//
+//	PRODUCT_VERSION = "1.2.3"
+//	PRODUCT_NAME    = "My Product - {{PRODUCT_VERSION}}"
+//	BUILD_TARGET    = "{{PRODUCT_NAME}}.msi"
+//
+// Resolution is dependency-driven, not a single pass over the map. Go randomises
+// map order, so a single pass gave BUILD_TARGET the still-unresolved text of
+// PRODUCT_NAME whenever it happened to be visited first, and the build produced a
+// file literally named "My Product - {{PRODUCT_VERSION}}.msi" — about one run in
+// five (issue #7).
+func (d Dictionary) ResolveAll() error {
+	r := &resolver{
+		dict:     d,
+		resolved: make(map[string]bool, len(d)),
+		onPath:   make(map[string]bool),
+	}
+	// Sorted so that a dictionary with more than one cycle always reports the same
+	// one: this is a determinism fix, and that has to include the failures.
+	keys := make([]string, 0, len(d))
+	for key := range d {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		if err := r.resolve(key, nil); err != nil {
 			return err
 		}
-		d[key] = resolved
 	}
-
 	return nil
+}
+
+// resolver carries the state of one ResolveAll.
+type resolver struct {
+	dict     Dictionary
+	resolved map[string]bool // finished, and must not be rendered again
+	onPath   map[string]bool // currently being resolved: a revisit is a cycle
+}
+
+// resolve brings one variable to its final value, resolving whatever it depends on
+// first.
+//
+// Dependencies are discovered from what raymond ACTUALLY EVALUATES rather than by
+// reading the template text. Scanning is unreliable in both directions: a regex
+// misses hyphenated names and whitespace-control forms like {{~X~}}, while a
+// parse-tree walk reports references inside untaken {{#if}} branches and so invents
+// cycles that never arise at run time. Rendering with a sentinel in place of each
+// unresolved variable reports exactly the ones that were reached.
+func (r *resolver) resolve(key string, chain []string) error {
+	if r.resolved[key] {
+		return nil
+	}
+	value, ok := r.dict[key]
+	if !ok {
+		return nil
+	}
+	if !containsTemplate(value) {
+		r.resolved[key] = true
+		return nil
+	}
+	if r.onPath[key] {
+		return fmt.Errorf("variable reference cycle: %s", strings.Join(append(chain, key), " -> "))
+	}
+	r.onPath[key] = true
+	defer delete(r.onPath, key)
+
+	// Every round either finishes the value or resolves at least one dependency,
+	// so the number of rounds cannot exceed the number of variables.
+	for round := 0; round <= len(r.dict); round++ {
+		tpl, err := raymond.Parse(r.dict[key])
+		if err != nil {
+			return fmt.Errorf("variable %s: %w", key, err)
+		}
+
+		var pending []string
+		ctx := make(map[string]any, len(r.dict))
+		for name, v := range r.dict {
+			if !r.resolved[name] && containsTemplate(v) {
+				name := name
+				ctx[name] = func() any {
+					pending = append(pending, name)
+					return raymond.SafeString("")
+				}
+				continue
+			}
+			ctx[name] = raymond.SafeString(v)
+		}
+
+		out, err := tpl.Exec(ctx)
+
+		if len(pending) > 0 {
+			// Discard BOTH the output and the error. A sentinel stands in for a
+			// value we do not have yet, and raymond treats a function in the
+			// context as a block helper, so any {{#X}}...{{/X}} section rendered
+			// against one is wrong. The only thing wanted from this render is which
+			// variables it reached.
+			//
+			// Take only the FIRST one, then render again. Everything raymond
+			// evaluated after it is speculative: a sentinel renders as empty, so an
+			// unresolved {{#if FLAG}} takes the ELSE branch regardless of what FLAG
+			// will turn out to be, and the references harvested from that branch may
+			// be ones the real value never reaches. Resolving them anyway invents
+			// dependencies — and, when such a branch refers back, an outright false
+			// cycle. Resolving one at a time costs an extra render per dependency
+			// and keeps discovery honest.
+			if err := r.resolve(pending[0], append(chain, key)); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("variable %s: %w", key, err)
+		}
+		// Mark resolved rather than re-testing for "{{", so that a value which
+		// legitimately renders TO a mustache — from the \{{literal}} escape — is
+		// not mistaken for an unresolved reference and rendered a second time.
+		r.dict[key] = out
+		r.resolved[key] = true
+		return nil
+	}
+	return fmt.Errorf("variable %s: gave up resolving after %d rounds", key, len(r.dict)+1)
 }
 
 // containsTemplate checks if a string contains Handlebars template syntax.

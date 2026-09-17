@@ -349,3 +349,189 @@ func containsHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// TestResolveAllNestedIsDeterministic guards issue #7. Go randomises map order, and
+// a single resolution pass gave BUILD_TARGET the still-unresolved text of
+// PRODUCT_NAME whenever it was visited first — about one run in five, producing a
+// file literally named "My Product - {{PRODUCT_VERSION}}.msi". Repeated because a
+// single run passed most of the time even when broken.
+func TestResolveAllNestedIsDeterministic(t *testing.T) {
+	const want = "My Product - 1.2.3.msi"
+	for i := 0; i < 500; i++ {
+		d := Dictionary{
+			"PRODUCT_VERSION": "1.2.3",
+			"PRODUCT_NAME":    "My Product - {{PRODUCT_VERSION}}",
+			"BUILD_TARGET":    "{{PRODUCT_NAME}}.msi",
+		}
+		if err := d.ResolveAll(); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		if d["BUILD_TARGET"] != want {
+			t.Fatalf("run %d: BUILD_TARGET = %q, want %q", i, d["BUILD_TARGET"], want)
+		}
+	}
+}
+
+// TestResolveAllDeepChain: depth beyond the two levels issue #7 reported.
+func TestResolveAllDeepChain(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		d := Dictionary{
+			"A": "{{B}}/a",
+			"B": "{{C}}/b",
+			"C": "{{D}}/c",
+			"D": "root",
+		}
+		if err := d.ResolveAll(); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		if d["A"] != "root/c/b/a" {
+			t.Fatalf("run %d: A = %q, want %q", i, d["A"], "root/c/b/a")
+		}
+	}
+}
+
+// TestResolveAllDoesNotEscape: the dictionary holds product names and file paths,
+// not HTML. Escaping here turned "R&D" into "R&amp;D" in the output file name, and
+// any fix that re-renders would have escalated it to "R&amp;amp;D".
+func TestResolveAllDoesNotEscape(t *testing.T) {
+	d := Dictionary{
+		"MANUFACTURER": "R&D",
+		"PRODUCT_NAME": "{{MANUFACTURER}} Tools",
+		"BUILD_TARGET": "{{PRODUCT_NAME}}.msi",
+	}
+	if err := d.ResolveAll(); err != nil {
+		t.Fatal(err)
+	}
+	if d["BUILD_TARGET"] != "R&D Tools.msi" {
+		t.Errorf("BUILD_TARGET = %q, want %q", d["BUILD_TARGET"], "R&D Tools.msi")
+	}
+}
+
+// TestResolveDoesNotEscape: same for the single-string entry point, which callers
+// use on <files source=> paths and env values.
+func TestResolveDoesNotEscape(t *testing.T) {
+	d := Dictionary{"COMPANY": "R&D"}
+	got, err := d.Resolve("{{COMPANY}} <Support>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "R&D <Support>" {
+		t.Errorf("Resolve = %q, want %q", got, "R&D <Support>")
+	}
+}
+
+// TestResolveAllReportsCycleByName: a cycle must name the variables involved, not
+// merely fail or hang.
+func TestResolveAllReportsCycleByName(t *testing.T) {
+	d := Dictionary{
+		"A": "{{B}}",
+		"B": "{{A}}",
+	}
+	err := d.ResolveAll()
+	if err == nil {
+		t.Fatal("expected a cycle error")
+	}
+	if !strings.Contains(err.Error(), "A") || !strings.Contains(err.Error(), "B") {
+		t.Errorf("cycle error should name both variables, got: %v", err)
+	}
+}
+
+// TestResolveAllSelfReferenceDoesNotGrow: "{{A}}{{A}}" doubles on every render, so
+// a naive repeat-until-stable loop would allocate until it died. It must be
+// reported as a cycle instead.
+func TestResolveAllSelfReferenceDoesNotGrow(t *testing.T) {
+	d := Dictionary{"A": "{{A}}{{A}}"}
+	err := d.ResolveAll()
+	if err == nil {
+		t.Fatal("expected a cycle error for a self-reference")
+	}
+	if !strings.Contains(err.Error(), "A") {
+		t.Errorf("error should name A, got: %v", err)
+	}
+	if len(d["A"]) > len("{{A}}{{A}}") {
+		t.Errorf("value grew to %d bytes: %q", len(d["A"]), d["A"])
+	}
+}
+
+// TestResolveAllUntakenBranchIsNotACycle: references inside a branch the engine
+// never evaluates must not count as dependencies. A parse-tree scan would see B
+// referencing A here and report a cycle that cannot happen at run time.
+func TestResolveAllUntakenBranchIsNotACycle(t *testing.T) {
+	d := Dictionary{
+		"FLAG": "",
+		"A":    "{{#if FLAG}}{{B}}{{else}}plain-a{{/if}}",
+		"B":    "{{A}}-b",
+	}
+	if err := d.ResolveAll(); err != nil {
+		t.Fatalf("untaken branch should not be a cycle: %v", err)
+	}
+	if d["A"] != "plain-a" {
+		t.Errorf("A = %q, want %q", d["A"], "plain-a")
+	}
+	if d["B"] != "plain-a-b" {
+		t.Errorf("B = %q, want %q", d["B"], "plain-a-b")
+	}
+}
+
+// TestResolveAllLiteralMustacheIsNotReResolved: \{{X}} is Handlebars' escape for a
+// literal mustache, so the resolved value legitimately CONTAINS "{{". Testing for
+// "{{" to decide what still needs resolving would render it a second time and lose
+// it; completion is tracked explicitly instead.
+func TestResolveAllLiteralMustacheIsNotReResolved(t *testing.T) {
+	d := Dictionary{
+		"LITERAL": `\{{NOT_A_VAR}}`,
+		"USER":    "{{LITERAL}} done",
+	}
+	if err := d.ResolveAll(); err != nil {
+		t.Fatal(err)
+	}
+	if d["LITERAL"] != "{{NOT_A_VAR}}" {
+		t.Errorf("LITERAL = %q, want %q", d["LITERAL"], "{{NOT_A_VAR}}")
+	}
+	if d["USER"] != "{{NOT_A_VAR}} done" {
+		t.Errorf("USER = %q, want %q", d["USER"], "{{NOT_A_VAR}} done")
+	}
+}
+
+// TestResolveAllUnresolvedConditionIsNotSpeculated guards a defect found in review of
+// issue #7. A sentinel renders as empty, so an unresolved {{#if FLAG}} takes the ELSE
+// branch regardless of what FLAG will turn out to be. Harvesting dependencies from
+// that speculative branch invents them — and here, where the else branch refers back
+// to A, invented an outright false cycle "A -> B -> A". FLAG resolves to "yes", so the
+// else branch is never taken and B is not a dependency of A at all.
+func TestResolveAllUnresolvedConditionIsNotSpeculated(t *testing.T) {
+	d := Dictionary{
+		"A":       "{{#if FLAG}}plain-a{{else}}{{B}}{{/if}}",
+		"B":       "{{A}}-b",
+		"FLAG":    "{{ENABLED}}",
+		"ENABLED": "yes",
+	}
+	if err := d.ResolveAll(); err != nil {
+		t.Fatalf("speculative else branch must not create a dependency: %v", err)
+	}
+	if d["A"] != "plain-a" {
+		t.Errorf("A = %q, want %q", d["A"], "plain-a")
+	}
+	if d["B"] != "plain-a-b" {
+		t.Errorf("B = %q, want %q", d["B"], "plain-a-b")
+	}
+}
+
+// TestResolveAllRealCycleThroughTakenBranch is the mirror image, and guards against
+// over-correcting the above: the same shape, but FLAG resolves FALSY, so the else
+// branch really is taken and A -> B -> A is a genuine cycle that must still be caught.
+func TestResolveAllRealCycleThroughTakenBranch(t *testing.T) {
+	d := Dictionary{
+		"A":       "{{#if FLAG}}plain-a{{else}}{{B}}{{/if}}",
+		"B":       "{{A}}-b",
+		"FLAG":    "{{ENABLED}}",
+		"ENABLED": "",
+	}
+	err := d.ResolveAll()
+	if err == nil {
+		t.Fatal("a cycle through the taken branch must still be reported")
+	}
+	if !strings.Contains(err.Error(), "A") || !strings.Contains(err.Error(), "B") {
+		t.Errorf("cycle error should name both variables, got: %v", err)
+	}
+}
