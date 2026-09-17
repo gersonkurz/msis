@@ -436,26 +436,22 @@ func encodePreservationDefault(val *RegistryValue) string {
 		// DWord/QWord: prefix with # (e.g., "#3")
 		return "#" + val.Value
 	case "binary":
-		// Binary: encode as #xHH per nibble pair (matching MSIS2)
-		// val.Value is uppercase hex string like "010203"
-		return encodeBinaryForPreserve(val.Value)
+		// Binary: a single #x prefix followed by the hex bytes ("#x010203").
+		// val.Value is an uppercase hex string like "010203". This is the MSI
+		// Registry table format, and the same shape a Type='raw' RegistrySearch
+		// returns for an existing REG_BINARY, so default and preserved value agree.
+		//
+		// Zero bytes is "#x" with nothing after it, NOT an omitted Value attribute.
+		// Verified by install probe: omitting it leaves the property undefined, the
+		// write has no type marker left, and MSI stores an empty REG_SZ instead of
+		// an empty REG_BINARY. A bare "#x" stores REG_BINARY with zero bytes.
+		return "#x" + val.Value
 	case "string", "expandable":
 		// SZ/ExpandSz: use literal value (empty string → omit Value attribute)
 		return val.Value
 	default:
 		return val.Value
 	}
-}
-
-// encodeBinaryForPreserve converts a hex string like "4F4B" to "#x4#xF#x4#xB".
-// This matches the MSIS2 RegEncodeBinaryValueForPreserve format.
-func encodeBinaryForPreserve(hexStr string) string {
-	var sb strings.Builder
-	for _, c := range hexStr {
-		sb.WriteString("#x")
-		sb.WriteRune(c)
-	}
-	return sb.String()
 }
 
 func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, setPermissions bool, preservedIDs map[string]int) {

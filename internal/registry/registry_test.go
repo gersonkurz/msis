@@ -604,9 +604,48 @@ func TestPreserveBinaryValues(t *testing.T) {
 	allIDs := proc.BuildAllPreservedIDs(components)
 	xml := proc.GeneratePreservationXML(components, allIDs)
 
-	// Binary should be encoded as #xH#xH per nibble (matching MSIS2 format)
-	if !strings.Contains(xml, "#x4#xF#x4#xB") {
-		t.Errorf("Binary value should have #xH#xH encoding, got:\n%s", xml)
+	// Binary is a single #x prefix followed by the hex bytes — the MSI Registry
+	// table format. The per-nibble "#x4#xF#x4#xB" form msis-2.x emitted makes
+	// Windows Installer fail at WriteRegistryValues with Error 1406 (issue #6).
+	if !strings.Contains(xml, "Value='#x4F4B'") {
+		t.Errorf("Binary default should be '#x4F4B', got:\n%s", xml)
+	}
+	if strings.Contains(xml, "#x4#xF") {
+		t.Errorf("Binary default must not use the per-nibble encoding, got:\n%s", xml)
+	}
+}
+
+func TestPreserveEmptyBinaryValue(t *testing.T) {
+	// A zero-byte REG_BINARY default is "#x" with nothing after it. Omitting the
+	// Value attribute instead leaves the property undefined, which strips the type
+	// marker from the write — verified by install probe: MSI then stores an empty
+	// REG_SZ, while "#x" stores REG_BINARY with zero bytes.
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"EmptyBlob"=hex:
+`
+	tmpDir := t.TempDir()
+	regFile := filepath.Join(tmpDir, "emptybin.reg")
+	if err := os.WriteFile(regFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "emptybin.reg", Preserve: true})
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	allIDs := proc.BuildAllPreservedIDs(components)
+	xml := proc.GeneratePreservationXML(components, allIDs)
+
+	if !strings.Contains(xml, "<Property Id='PS_RV_00000' Value='#x' Secure='yes'>") {
+		t.Errorf("Empty binary should emit Value='#x', got:\n%s", xml)
+	}
+	// The Value attribute must be present: an undefined property writes REG_SZ.
+	if strings.Contains(xml, "<Property Id='PS_RV_00000' Secure='yes'>") {
+		t.Errorf("Empty binary must not omit the Value attribute, got:\n%s", xml)
 	}
 }
 
