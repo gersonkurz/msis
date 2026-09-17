@@ -282,10 +282,74 @@ Paste into #8:
 
 ### Not covered by this change
 
-`PLATFORM=arm64` is still broken, differently: with a populated prerequisite cache the
-ARM64 package *is* emitted, but its detect condition reduces to `VcppRuntimeX64Installed`
-on ARM64 Windows, so a machine carrying the x64 runtime is treated as satisfied and the
-ARM64 runtime is never installed. There is also no ARM64 source fallback for a build
-with an empty cache, and no `VcppRuntimeArm64Installed` variable in the bundle templates
-to point a correct condition at. Found while fixing #8, filed as issue #12. Do not
-expect an ARM64 bundle to install a runtime.
+`PLATFORM=arm64` — fixed separately under issue #12, and it needs its own machine
+check. See T4.
+
+---
+
+## T4 — ARM64 auto-bundle installs the ARM64 VC++ runtime
+
+**Ticket:** [#12](https://github.com/gersonkurz/msis/issues/12)
+
+### Why this is open
+
+Same shape as T3 and the same reason: the bug only reproduces on ARM64 Windows without
+the ARM64 VC++ runtime, and no ARM64 hardware is available here. The fix was shipped on
+generated output plus a structural argument.
+
+What **is** verified: the ARM64 package is emitted (it was silently absent without a
+cached path); its detect condition is `VcppRuntimeArm64Installed`; both bundle templates
+define that variable; a real ARM64 bundle builds against WiX 7.0.0; and an automated
+test now fails if any detect condition names a variable the templates do not define.
+
+That last guard exists because a bundle referencing an **undefined** Burn variable
+**builds without error** — the condition is simply false forever. Discovered by
+accident, when a first build "passed" against the installed templates rather than the
+edited ones. Keep it in mind when reading a green build here: compiling proves the
+authoring, not the detection.
+
+What is **not** verified: that the runtime is actually detected as absent, installed,
+and then skipped on a second run.
+
+### Setup
+
+An ARM64 Windows machine with **no** ARM64 VC++ 2015-2022 runtime. Confirm — this must
+print nothing:
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\arm64' -ErrorAction SilentlyContinue
+```
+
+**Leave the x64 runtime installed if it is there.** That is the exact case the old code
+got wrong: it detected the x64 runtime and declared the machine satisfied.
+
+Build an ARM64 package requiring the runtime:
+
+```xml
+<set name="PLATFORM" value="arm64"/>
+<requires type="vcredist" version="2022"/>
+```
+
+`msis /BUILD probe.msis` produces the auto-bundle `.exe`. Copy it to the ARM64 machine.
+
+### Proof that closes this
+
+Paste into #12:
+
+1. **The chain in the generated `.wxs`** (build with `/RETAINWXS`):
+   `DetectCondition='VcppRuntimeArm64Installed'` and
+   `InstallCondition='NativeMachine = 43620'` on `Prereq_vcredist_2022_arm64`, and a
+   `<util:RegistrySearch Id="VcppRuntimeArm64" .../>` present in the same file. If that
+   search is missing, the build used different templates — see the note above.
+2. **The ARM64 runtime is installed afterwards**: the registry check above now returns a
+   value, and the ARM64 redistributable appears in Apps & Features.
+3. **The MSI installed** — no `VCREDIST_ARM64_2022` launch-condition dialog.
+4. **A second run skips it**: with the runtime now present, the package must be detected
+   as installed and not reinstalled. This is the half the structural argument covers
+   least well, exactly as in T3.
+
+### Also worth one run
+
+An ARM64 machine that already has **only the x64** runtime, and no ARM64 one, must still
+install the ARM64 runtime. That is the original bug stated as a test, and the most
+direct confirmation that the fix works.

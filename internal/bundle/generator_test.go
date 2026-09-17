@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -658,5 +659,163 @@ func TestCustomSourceSingleArchDetect(t *testing.T) {
 
 	if !strings.Contains(xml, "DetectCondition='VcppRuntimeX86Installed'") {
 		t.Errorf("custom-source x86 should detect the x86 runtime, got:\n%s", xml)
+	}
+}
+
+// TestAutoBundleArm64DetectsArm64Runtime guards issue #12. The ARM64 package used
+// the OS-driven detect condition, which on ARM64 Windows reduces to
+// VcppRuntimeX64Installed — so a machine carrying the x64 runtime was reported as
+// satisfied and the ARM64 runtime was never installed, while the MSI's own launch
+// condition went on checking ...\VC\Runtimes\arm64.
+func TestAutoBundleArm64DetectsArm64Runtime(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "arm64"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "vcredist", Version: "2022"}})
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(result.ChainXML, "DetectCondition='VcppRuntimeArm64Installed'") {
+		t.Errorf("arm64 auto-bundle should detect the arm64 runtime, got:\n%s", result.ChainXML)
+	}
+	if strings.Contains(result.ChainXML, "VcppRuntimeX64Installed") {
+		t.Errorf("arm64 auto-bundle must not test the x64 runtime, got:\n%s", result.ChainXML)
+	}
+	// It must also be emitted at all: with no cached path there was previously no
+	// ARM64 source fallback, so the chain held nothing but the MsiPackage.
+	if !strings.Contains(result.ChainXML, "vc_redist.arm64.exe") {
+		t.Errorf("arm64 package should be emitted without a cached path, got:\n%s", result.ChainXML)
+	}
+	if !strings.Contains(result.ChainXML, "InstallCondition='NativeMachine = 43620'") {
+		t.Errorf("arm64 package should stay gated on ARM64 machines, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestAutoBundleArm64OlderVersionStillDetectsArm64: detection and download
+// availability are separate concerns. msis has no configured ARM64 download before
+// 2022, but every 14.x redistributable registers under the same key family, so an
+// ARM64 bundle must still DETECT the ARM64 runtime — otherwise an author supplying
+// their own installer inherits the very bug #12 is about.
+func TestAutoBundleArm64OlderVersionStillDetectsArm64(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "arm64"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "vcredist", Version: "2019"}})
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(result.ChainXML, "DetectCondition='VcppRuntimeArm64Installed'") {
+		t.Errorf("arm64/2019 should still detect the arm64 runtime, got:\n%s", result.ChainXML)
+	}
+	if strings.Contains(result.ChainXML, "VcppRuntimeX64Installed") {
+		t.Errorf("arm64/2019 must not test the x64 runtime, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestCustomSourceArm64Detect: <requires ... source="..."/> returns early, and msis
+// has no download for it by definition. The runtime it installs must still be
+// detected as ARM64.
+func TestCustomSourceArm64Detect(t *testing.T) {
+	gen := &Generator{
+		Variables:           variables.New(),
+		WorkDir:             ".",
+		PrerequisitesFolder: "prereq",
+		AllowedPrereqArchs:  map[string]bool{"arm64": true},
+	}
+
+	xml, err := gen.generatePrerequisitePackage(
+		ir.Prerequisite{Type: "vcredist", Version: "2019", Source: "custom/vc_redist.arm64.exe"}, 0)
+	if err != nil {
+		t.Fatalf("generatePrerequisitePackage failed: %v", err)
+	}
+	if !strings.Contains(xml, "DetectCondition='VcppRuntimeArm64Installed'") {
+		t.Errorf("custom-source arm64 should detect the arm64 runtime, got:\n%s", xml)
+	}
+}
+
+// TestAutoBundleArm64NeutralPrerequisite: netfx is architecture-neutral and has no
+// per-architecture detect condition at all. An ARM64 bundle must chain it normally
+// rather than treating the absent ARM64 form as a failure.
+func TestAutoBundleArm64NeutralPrerequisite(t *testing.T) {
+	vars := variables.New()
+	vars["PLATFORM"] = "arm64"
+	gen := NewAutoBundleGenerator(vars, ".", "MyApp.msi",
+		[]ir.Prerequisite{{Type: "netfx", Version: "4.8.1"}})
+	gen.CachedPaths["netfx/4.8.1/"] = "/cache/ndp481-x86-x64-allos-enu.exe"
+
+	result, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("an architecture-neutral prerequisite must work on arm64: %v", err)
+	}
+	if !strings.Contains(result.ChainXML, "ndp481") {
+		t.Errorf("netfx package should be chained, got:\n%s", result.ChainXML)
+	}
+	if !strings.Contains(result.ChainXML, "NETFRAMEWORK45 &gt;= 533320") {
+		t.Errorf("netfx keeps its own detect condition, got:\n%s", result.ChainXML)
+	}
+}
+
+// TestMultiArchBundleGainsNoArm64Payload: an explicit multi-architecture bundle using
+// the documented manual prerequisite layout ships vc_redist.x64.exe and
+// vc_redist.x86.exe only. The ARM64 source fallback must not make it reference an
+// absent vc_redist.arm64.exe, which would break builds that work today.
+func TestMultiArchBundleGainsNoArm64Payload(t *testing.T) {
+	gen := &Generator{
+		Variables:           variables.New(),
+		WorkDir:             ".",
+		PrerequisitesFolder: "prereq",
+		// nil: an explicit multi-architecture bundle, and no cached paths.
+	}
+
+	xml, err := gen.generatePrerequisitePackage(ir.Prerequisite{Type: "vcredist", Version: "2022"}, 0)
+	if err != nil {
+		t.Fatalf("generatePrerequisitePackage failed: %v", err)
+	}
+	if strings.Contains(xml, "vc_redist.arm64.exe") {
+		t.Errorf("multi-arch bundle must not gain an arm64 payload, got:\n%s", xml)
+	}
+	for _, want := range []string{"vc_redist.x64.exe", "vc_redist.x86.exe"} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("multi-arch bundle should still chain %s, got:\n%s", want, xml)
+		}
+	}
+}
+
+// TestDetectConditionVariablesExistInTemplates couples the generator to the bundle
+// templates, because nothing else does. A DetectCondition naming a Burn variable that
+// no util:RegistrySearch defines builds WITHOUT ERROR — verified by accident while
+// testing #12, when a bundle compiled cleanly against templates that had no
+// VcppRuntimeArm64 search. The condition would then just be false forever.
+func TestDetectConditionVariablesExistInTemplates(t *testing.T) {
+	var wanted []string
+	for _, versions := range Prerequisites {
+		for _, def := range versions {
+			for _, cond := range []string{def.DetectConditionX86, def.DetectConditionX64, def.DetectConditionArm64} {
+				if cond != "" {
+					wanted = append(wanted, cond)
+				}
+			}
+		}
+	}
+	if len(wanted) == 0 {
+		t.Fatal("no per-architecture detect conditions found; test is not checking anything")
+	}
+
+	for _, tmpl := range []string{"../../templates/bundle.wxs", "../../templates/bundle-silent.wxs"} {
+		data, err := os.ReadFile(tmpl)
+		if err != nil {
+			t.Fatalf("reading %s: %v", tmpl, err)
+		}
+		body := string(data)
+		for _, variable := range wanted {
+			if !strings.Contains(body, `Variable="`+variable+`"`) {
+				t.Errorf("%s defines no util:RegistrySearch for %q, so any DetectCondition using it is always false", tmpl, variable)
+			}
+		}
 	}
 }

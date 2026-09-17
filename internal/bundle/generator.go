@@ -84,6 +84,10 @@ func (g *Generator) archDetectCondition(def *PrerequisiteDef) string {
 		if def.DetectConditionX64 != "" {
 			return def.DetectConditionX64
 		}
+	case "arm64":
+		if def.DetectConditionArm64 != "" {
+			return def.DetectConditionArm64
+		}
 	}
 	return def.DetectCondition
 }
@@ -316,6 +320,18 @@ func (g *Generator) generatePrerequisitePackage(prereq ir.Prerequisite, index in
 		source32 := ExpandArch(def.Source, false)
 		sourcePath32 = filepath.Join(g.PrerequisitesFolder, source32)
 	}
+	// ARM64 had no fallback at all, so an ARM64 auto-bundle built without a populated
+	// cache — offline, or with prerequisites dropped into the folder by hand — emitted
+	// no ARM64 package whatsoever (issue #12).
+	//
+	// Restricted to an ARM64-ONLY bundle deliberately. `includeArm64` is also true for
+	// an explicit multi-architecture bundle, and adding a fallback there would make
+	// every existing x86/x64 bundle using the manual prerequisite layout suddenly
+	// reference an absent vc_redist.arm64.exe and fail to build. Such a bundle keeps
+	// today's rule: an ARM64 package only when a cached path supplied one.
+	if sourcePathArm64 == "" && g.singlePrereqArch() == "arm64" {
+		sourcePathArm64 = filepath.Join(g.PrerequisitesFolder, ExpandArchName(def.Source, "arm64"))
+	}
 
 	// For architecture-neutral prerequisites (like netfx), emit single package
 	if prereq.Type != "vcredist" && sourcePath64 == sourcePath32 {
@@ -332,13 +348,17 @@ func (g *Generator) generatePrerequisitePackage(prereq ir.Prerequisite, index in
 	// x86:   NOT VersionNT64
 
 	if includeArm64 && sourcePathArm64 != "" {
-		displayNameArm64 := ExpandArch(def.DisplayName, true)
-		displayNameArm64 = strings.Replace(displayNameArm64, "x64", "ARM64", 1)
+		// The detect condition used to be the OS-driven one, which on ARM64 Windows
+		// reduces to VcppRuntimeX64Installed — so a machine carrying the x64 runtime
+		// was reported as satisfied and the ARM64 runtime was never installed, while
+		// the MSI's own launch condition went on checking ...\Runtimes\arm64 (#12).
+		// InstallCondition stays: an ARM64 MSI installs only on ARM64 Windows anyway.
+		displayNameArm64 := ExpandArchName(def.DisplayName, "ARM64")
 		sb.WriteString(fmt.Sprintf("      <ExePackage Id='%s_arm64' DisplayName='%s' SourceFile='%s' "+
 			"DetectCondition='%s' InstallArguments='%s' Permanent='yes' Vital='yes' "+
 			"InstallCondition='NativeMachine = 43620'/>\n",
 			id, escapeXMLAttr(displayNameArm64), escapeXMLAttr(sourcePathArm64),
-			escapeXMLAttr(def.DetectCondition), escapeXMLAttr(def.InstallArgs)))
+			escapeXMLAttr(g.archDetectCondition(def)), escapeXMLAttr(def.InstallArgs)))
 	}
 
 	soleArch := g.singlePrereqArch()

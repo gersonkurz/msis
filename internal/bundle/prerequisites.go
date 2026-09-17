@@ -29,6 +29,14 @@ type PrerequisiteDef struct {
 	DetectConditionX86 string
 	DetectConditionX64 string
 
+	// DetectConditionArm64 is the ARM64 form. It says how to DETECT the runtime and
+	// nothing about whether msis can download an installer for it — that is a
+	// separate question, answered by prereqcache.LookupDownloadURL, which the cache
+	// step already consults. Keeping the two apart matters for a prerequisite
+	// supplied with <requires ... source="..."/>: msis has no download for it, but
+	// the runtime it installs still has to be detected correctly.
+	DetectConditionArm64 string
+
 	// InstallArgs are default command-line arguments for silent install
 	InstallArgs string
 
@@ -41,40 +49,44 @@ type PrerequisiteDef struct {
 var Prerequisites = map[string]map[string]PrerequisiteDef{
 	"vcredist": {
 		"2022": {
-			DisplayName:        "Microsoft Visual C++ 2015-2022 Redistributable ({arch})",
-			Source:             "vc_redist.{arch}.exe",
-			DetectCondition:    vcRedistDetect2022,
-			DetectConditionX86: vcRedistDetectX86,
-			DetectConditionX64: vcRedistDetectX64,
-			InstallArgs:        "/install /quiet /norestart",
-			PerMachine:         true,
+			DisplayName:          "Microsoft Visual C++ 2015-2022 Redistributable ({arch})",
+			Source:               "vc_redist.{arch}.exe",
+			DetectCondition:      vcRedistDetect2022,
+			DetectConditionX86:   vcRedistDetectX86,
+			DetectConditionX64:   vcRedistDetectX64,
+			DetectConditionArm64: vcRedistDetectArm64,
+			InstallArgs:          "/install /quiet /norestart",
+			PerMachine:           true,
 		},
 		"2019": {
-			DisplayName:        "Microsoft Visual C++ 2015-2019 Redistributable ({arch})",
-			Source:             "vc_redist.{arch}.exe",
-			DetectCondition:    vcRedistDetect2019,
-			DetectConditionX86: vcRedistDetectX86,
-			DetectConditionX64: vcRedistDetectX64,
-			InstallArgs:        "/install /quiet /norestart",
-			PerMachine:         true,
+			DisplayName:          "Microsoft Visual C++ 2015-2019 Redistributable ({arch})",
+			Source:               "vc_redist.{arch}.exe",
+			DetectCondition:      vcRedistDetect2019,
+			DetectConditionX86:   vcRedistDetectX86,
+			DetectConditionX64:   vcRedistDetectX64,
+			DetectConditionArm64: vcRedistDetectArm64,
+			InstallArgs:          "/install /quiet /norestart",
+			PerMachine:           true,
 		},
 		"2017": {
-			DisplayName:        "Microsoft Visual C++ 2017 Redistributable ({arch})",
-			Source:             "vc_redist.{arch}.exe",
-			DetectCondition:    vcRedistDetect2017,
-			DetectConditionX86: vcRedistDetectX86,
-			DetectConditionX64: vcRedistDetectX64,
-			InstallArgs:        "/install /quiet /norestart",
-			PerMachine:         true,
+			DisplayName:          "Microsoft Visual C++ 2017 Redistributable ({arch})",
+			Source:               "vc_redist.{arch}.exe",
+			DetectCondition:      vcRedistDetect2017,
+			DetectConditionX86:   vcRedistDetectX86,
+			DetectConditionX64:   vcRedistDetectX64,
+			DetectConditionArm64: vcRedistDetectArm64,
+			InstallArgs:          "/install /quiet /norestart",
+			PerMachine:           true,
 		},
 		"2015": {
-			DisplayName:        "Microsoft Visual C++ 2015 Redistributable ({arch})",
-			Source:             "vc_redist.{arch}.exe",
-			DetectCondition:    vcRedistDetect2015,
-			DetectConditionX86: vcRedistDetectX86,
-			DetectConditionX64: vcRedistDetectX64,
-			InstallArgs:        "/install /quiet /norestart",
-			PerMachine:         true,
+			DisplayName:          "Microsoft Visual C++ 2015 Redistributable ({arch})",
+			Source:               "vc_redist.{arch}.exe",
+			DetectCondition:      vcRedistDetect2015,
+			DetectConditionX86:   vcRedistDetectX86,
+			DetectConditionX64:   vcRedistDetectX64,
+			DetectConditionArm64: vcRedistDetectArm64,
+			InstallArgs:          "/install /quiet /norestart",
+			PerMachine:           true,
 		},
 	},
 	"netfx": {
@@ -144,6 +156,17 @@ const vcRedistDetect2022 = `(VersionNT64 AND VcppRuntimeX64Installed) OR (NOT Ve
 const vcRedistDetectX86 = `VcppRuntimeX86Installed`
 const vcRedistDetectX64 = `VcppRuntimeX64Installed`
 
+// ARM64. Like the two above, this is the same for every 14.x version, because they
+// share one registry key family. VcppRuntimeArm64Installed reads
+// ...\VC\Runtimes\arm64 with Bitness="always64" — the same key internal/requirements
+// gives the MSI's own ARM64 launch condition, so bundle and MSI agree on what
+// "installed" means.
+//
+// Whether msis can DOWNLOAD an ARM64 installer for a given version is unrelated and
+// lives in internal/prereqcache; detection must be right either way, including when
+// the author supplies their own installer via <requires ... source="..."/>.
+const vcRedistDetectArm64 = `VcppRuntimeArm64Installed`
+
 // 2019 (14.20-14.29)
 const vcRedistDetect2019 = vcRedistDetect2022 // Same detection, different installer
 
@@ -186,12 +209,20 @@ func ValidatePrerequisite(prereqType, version string) error {
 	return fmt.Errorf("unknown prerequisite type '%s'; available types: %s", prereqType, strings.Join(types, ", "))
 }
 
-// ExpandArch replaces {arch} placeholder with x64 or x86.
+// ExpandArch replaces the {arch} placeholder with x64 or x86.
+// It cannot name ARM64; use ExpandArchName for that.
 func ExpandArch(s string, is64bit bool) string {
 	if is64bit {
 		return replaceArch(s, "x64")
 	}
 	return replaceArch(s, "x86")
+}
+
+// ExpandArchName replaces the {arch} placeholder with the given architecture.
+// The caller chooses the spelling, which differs between the two uses: the
+// download is "vc_redist.arm64.exe" while the display name reads "(ARM64)".
+func ExpandArchName(s, arch string) string {
+	return replaceArch(s, arch)
 }
 
 func replaceArch(s, arch string) string {

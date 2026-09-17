@@ -42,6 +42,9 @@
     <util:RegistrySearch Id="VcppRuntimeX86" Variable="VcppRuntimeX86Installed"
         Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86" Value="Installed"
         Result="exists" Bitness="always32"/>
+    <util:RegistrySearch Id="VcppRuntimeArm64" Variable="VcppRuntimeArm64Installed"
+        Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\arm64" Value="Installed"
+        Result="exists" Bitness="always64"/>
 
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}"{{#if LOGO_BOOTSTRAP}} LogoFile="{{LOGO_BOOTSTRAP}}"{{/if}} Theme="hyperlinkLicense" SuppressOptionsUI="yes"/>
