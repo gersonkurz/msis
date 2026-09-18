@@ -2071,24 +2071,47 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 	var sb strings.Builder
 
 	for _, item := range c.RemoveOnUninstallItems {
+		// One item can ask for both a registry key and a folder, and each is emitted as its
+		// own component. Both used to be named C_<item id>, so such an item produced a
+		// duplicate Component id and wix build rejected the package with WIX0091 (issue #23).
+		//
+		// The role suffix is added ONLY when both components are really emitted, so every
+		// package that builds today keeps its component ids exactly as they are. These
+		// components carry Guid='*', whose generated GUID WiX derives from the component's
+		// keypath (and directory), not from the id alone - both are preserved here, since the
+		// keypath registry values below are still named from the unchanged item id.
+		//
+		// "Really emitted" is narrower than "both attributes are set": a registry root msis
+		// does not recognize is skipped silently, and such an item emits the folder component
+		// alone and builds fine today.
+		registryRoot, registryKey := "", ""
 		if item.Registry != "" {
-			// Parse registry path: HKLM\Software\MyApp -> root=HKLM, key=Software\MyApp
-			root, key := parseRegistryPath(item.Registry)
-			if root != "" && key != "" {
-				// RemoveRegistryKey needs to be in a Component
-				compID := fmt.Sprintf("C_%s", item.ID)
-				sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
-				sb.WriteString(fmt.Sprintf("            <RemoveRegistryKey Id='%s' Root='%s' Key='%s' Action='removeOnUninstall'/>\n",
-					item.ID, root, key))
-				// Need a keypath - use a registry value
-				sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveOnUninstall_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
-					c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
-				sb.WriteString("        </Component>\n")
+			registryRoot, registryKey = parseRegistryPath(item.Registry)
+		}
+		emitsRegistry := registryRoot != "" && registryKey != ""
+		emitsFolder := item.Folder != ""
 
-				// Track component for feature
-				if item.FeatureID != "" {
-					c.FeatureComponents[item.FeatureID] = append(c.FeatureComponents[item.FeatureID], compID)
-				}
+		registryCompID := fmt.Sprintf("C_%s", item.ID)
+		folderCompID := registryCompID
+		if emitsRegistry && emitsFolder {
+			registryCompID = fmt.Sprintf("C_%s_reg", item.ID)
+			folderCompID = fmt.Sprintf("C_%s_dir", item.ID)
+		}
+
+		if emitsRegistry {
+			// RemoveRegistryKey needs to be in a Component
+			compID := registryCompID
+			sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
+			sb.WriteString(fmt.Sprintf("            <RemoveRegistryKey Id='%s' Root='%s' Key='%s' Action='removeOnUninstall'/>\n",
+				item.ID, registryRoot, registryKey))
+			// Need a keypath - use a registry value
+			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveOnUninstall_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
+				c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
+			sb.WriteString("        </Component>\n")
+
+			// Track component for feature
+			if item.FeatureID != "" {
+				c.FeatureComponents[item.FeatureID] = append(c.FeatureComponents[item.FeatureID], compID)
 			}
 		}
 
@@ -2097,7 +2120,7 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 			// Need to set a property with the folder path, then use RemoveFolderEx
 			// A RegistrySearch-backed property must be PUBLIC (all uppercase).
 			propID := strings.ToUpper(fmt.Sprintf("REMOVE_FOLDER_%s", item.ID))
-			compID := fmt.Sprintf("C_%s", item.ID)
+			compID := folderCompID
 			searchID := fmt.Sprintf("RS_%s", item.ID)
 			regKey := fmt.Sprintf("Software\\%s\\%s", c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"])
 			regName := fmt.Sprintf("RemoveFolderPath_%s", item.ID)

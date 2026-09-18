@@ -168,8 +168,8 @@ type CreateFolder struct {
 func (c CreateFolder) ItemType() string { return "create-folder" }
 
 // RemoveOnUninstall represents items to remove during uninstall.
-// Set one field per item: the generator derives both components' ids from the same item id,
-// so an item carrying Registry AND Folder emits a duplicate Component id (WIX0091).
+// Both fields may be set on one item; the generator emits a component for each and gives them
+// distinct ids (issue #23 - they used to collide, and the build failed with WIX0091).
 // Example: <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>
 // Example: <remove-on-uninstall folder="[APPDATADIR]MyCompany\MyApp"/>
 type RemoveOnUninstall struct {

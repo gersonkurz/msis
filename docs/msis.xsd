@@ -86,10 +86,9 @@
         Removes a folder tree or a registry key on uninstall, including content the
         installer never installed.
 
-        Set exactly ONE of folder or registry per element; to remove both a folder and a
-        key, use two elements. Setting both on one element currently emits two components
-        with the same id and the build fails with WIX0091. An element with neither
-        attribute produces nothing.
+        Both attributes may be set on one element; each is emitted as its own component and
+        applied independently, so it is equivalent to writing two elements. An element with
+        neither attribute produces nothing.
 
         DESTRUCTIVE. folder deletes the directory and everything under it (WiX
         util:RemoveFolderEx), which includes files the application or the user created

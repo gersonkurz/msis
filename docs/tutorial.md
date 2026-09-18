@@ -719,9 +719,12 @@ which is what the next element is for.
 `folder` deletes the directory **and everything under it**. `registry` deletes the key and all
 of its subkeys and values.
 
-Use **one attribute per element**, as above. Setting both on a single element currently makes
-the build fail with `WIX0091: Duplicate Component`, because the two cleanups are emitted as
-components sharing an id.
+You can also set both on one element; each is applied independently, exactly as if you had
+written two elements:
+
+```xml
+<remove-on-uninstall folder="[APPDATADIR]MyCompany\MyApp" registry="HKLM\Software\MyCompany\MyApp"/>
+```
 
 > ⚠️ **This deletes files your installer never installed.** That is the point of it — but it
 > means a `folder` pointed one level too high takes the user's data with it. A
