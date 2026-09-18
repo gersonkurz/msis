@@ -962,7 +962,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 		},
 	}
 
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	// Track component by filename so services can attach to it
 	if _, exists := c.fileComponents[fileKey]; !exists {
@@ -972,12 +972,28 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	// Track component for feature (keyed by unique feature ID)
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
-		// Also track feature ownership of this directory and all ancestors
-		// so permission components get associated with the right features
-		c.markDirectoryFeature(dir, featureID)
 	}
 
 	return nil
+}
+
+// addComponentToDirectory places a component in a directory and records which feature
+// owns that directory.
+//
+// The two belong together. They used to be separate steps, and the second was only
+// taken on the file paths, so a feature holding no <files> left INSTALLDIR owned by no
+// feature — and the permission component generated for it got no ComponentRef, failing
+// the build with "error WIX0267: Found orphaned Component" (issue #18). A package whose
+// feature contained only a <set-env> could not be built at all.
+//
+// An empty featureID means the package declares no features of its own; WiX then
+// invents a default feature and adopts the loose components, so there is nothing to
+// mark. See Generate, which assigns a real id to top-level items whenever features exist.
+func (c *Context) addComponentToDirectory(dir *Directory, comp *Component, featureID string) {
+	dir.Components = append(dir.Components, comp)
+	if featureID != "" {
+		c.markDirectoryFeature(dir, featureID)
+	}
 }
 
 // markDirectoryFeature marks a directory and all its ancestors as owned by a feature.
@@ -1047,7 +1063,7 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 		},
 	}
 
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
@@ -1062,12 +1078,6 @@ func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) erro
 	// Create the full directory path in the tree
 	dir := c.GetOrCreateDirectory(rootKey, subPath, false)
 
-	// Mark directory and ancestors as owned by this feature
-	// (needed so permission components on parent dirs get a feature ref)
-	if featureID != "" {
-		c.markDirectoryFeature(dir, featureID)
-	}
-
 	// Add a component with CreateFolder to ensure WiX creates the directory
 	compID := c.NextComponentID(c.productScopedID("create_folder"))
 
@@ -1077,7 +1087,7 @@ func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) erro
 		CreateFolder: true,
 	}
 
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
@@ -1160,7 +1170,7 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 		Service: serviceDef,
 	}
 
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
@@ -1277,11 +1287,10 @@ func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, re
 		},
 		Service: serviceDef,
 	}
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
-		c.markDirectoryFeature(dir, featureID)
 	}
 
 	return nil
@@ -1462,7 +1471,7 @@ func (c *Context) addPathEnvironment(featureID string) {
 		},
 	}
 
-	dir.Components = append(dir.Components, comp)
+	c.addComponentToDirectory(dir, comp, featureID)
 
 	if featureID != "" {
 		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
