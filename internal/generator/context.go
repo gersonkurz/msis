@@ -877,9 +877,17 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 		return nil
 	}
 
+	// A directory that cannot be enumerated used to be skipped in silence, at every level of
+	// the walk, so one unreadable subdirectory dropped its whole subtree while the rest of the
+	// package looked normal and the build reported success (issue #25). The source is present
+	// here - #24's check already rejected the ones that are not - so a failure now is a
+	// permission problem, an I/O error, or a directory that went away mid-build, and none of
+	// those should produce a package quietly missing files.
+	//
+	// The excluded-folder check above is the deliberate skip; this one never was.
 	entries, err := os.ReadDir(absCurrentPath)
 	if err != nil {
-		return nil // Skip if can't read
+		return fmt.Errorf("reading source directory %s: %w", absCurrentPath, err)
 	}
 
 	// Sort entries for deterministic output

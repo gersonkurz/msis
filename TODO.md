@@ -84,6 +84,9 @@ content the script asked for — and worth the same treatment: fail, or warn lou
 
 ## An unreadable source directory silently omits its payload
 
+**FIXED** in issue #25 (2026-09-18): the error is now returned instead of discarded.
+Kept for the record, as T2 is in `todo-testme.md`.
+
 Reviewer finding from the #24 review, recorded verbatim (2026-09-18):
 
 > **[task] Directory-read failures silently omit payloads.** At
