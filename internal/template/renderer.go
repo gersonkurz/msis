@@ -2,9 +2,12 @@
 package template
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/aymerick/raymond"
@@ -90,6 +93,10 @@ func (r *Renderer) Render() (string, error) {
 	// Build context for Handlebars
 	ctx := r.buildContext()
 
+	if err := checkTemplateCoverage(templatePath, string(templateContent), ctx, r.generatedContent()); err != nil {
+		return "", err
+	}
+
 	// Render template
 	result, err := raymond.Render(string(templateContent), ctx)
 	if err != nil {
@@ -115,6 +122,10 @@ func (r *Renderer) RenderSilent() (string, error) {
 	}
 
 	ctx := r.buildContext()
+
+	if err := checkTemplateCoverage(templatePath, string(templateContent), ctx, r.generatedContent()); err != nil {
+		return "", err
+	}
 
 	result, err := raymond.Render(string(templateContent), ctx)
 	if err != nil {
@@ -143,6 +154,127 @@ func (r *Renderer) getTemplatePath(platform string, silent bool) string {
 
 	// Use overlay resolution
 	return r.resolveTemplatePath(filepath.Join(platformFolder, templateName))
+}
+
+// generatedContent returns the template placeholders that carry XML msis generated from the
+// .msis script, as opposed to plain variables the user set. It is the single source of truth
+// for that set: buildContext fills the render context from it, and checkTemplateCoverage
+// requires the template to have a placeholder for every entry that produced content.
+//
+// The two belong together because a template that omits one of these fails silently.
+// Handlebars renders an unknown placeholder as nothing, so the generated XML is discarded and
+// `wix build` still succeeds - the package simply ships without the files, registry values or
+// cleanup the script asked for. That is issue #19: templates/x86/template-silent.wxs carried
+// no {{{PRESERVATION_PROPERTIES}}}, so a preserve="yes" value compiled into a registry write
+// of [PS_RV_n] with no property behind it, and Windows Installer formats an undefined property
+// to the empty string - overwriting the value the user asked to keep.
+func (r *Renderer) generatedContent() map[string]string {
+	return map[string]string{
+		"FEATURES":                  r.GeneratedData.FeatureXML,
+		"INSTALLDIR_FILES":          r.buildInstallDirFiles(),
+		"APPDATADIR_FILES":          r.buildAppDataDirFiles(),
+		"ROAMINGAPPDATADIR_FILES":   r.GeneratedData.RoamingAppDataDirXML,
+		"LOCALAPPDATADIR_FILES":     r.GeneratedData.LocalAppDataDirXML,
+		"COMMONFILESDIR_FILES":      r.GeneratedData.CommonFilesDirXML,
+		"WINDOWSDIR_FILES":          r.GeneratedData.WindowsDirXML,
+		"SYSTEMDIR_FILES":           r.GeneratedData.SystemDirXML,
+		"DESKTOP_FILES":             r.buildDesktopFiles(),
+		"STARTMENU_FILES":           r.buildStartMenuFiles(),
+		"REGISTRY_ENTRIES":          r.GeneratedData.RegistryXML,
+		"PRESERVATION_PROPERTIES":   r.GeneratedData.PreservationPropertiesXML,
+		"CUSTOM_ACTIONS":            r.buildCustomActions(),
+		"INSTALL_EXECUTE_SEQUENCE":  r.buildInstallExecuteSequence(),
+		"REMOVE_ON_UNINSTALL":       r.GeneratedData.RemoveOnUninstallXML,
+		"LAUNCH_CONDITION_SEARCHES": r.GeneratedData.LaunchConditionSearchXML,
+		"LAUNCH_CONDITIONS":         r.GeneratedData.LaunchConditionsXML,
+	}
+}
+
+// generatedContentHint gives the user something concrete per placeholder. Message text only:
+// every entry of generatedContent is equally mandatory, so a gap here cannot change what the
+// check does - only how well it explains itself.
+var generatedContentHint = map[string]string{
+	"PRESERVATION_PROPERTIES": `existing registry values marked preserve="yes" would be overwritten with an empty string on install`,
+	"REMOVE_ON_UNINSTALL":     "the folders and registry keys named in <remove-on-uninstall> would never be cleaned up",
+	"LAUNCH_CONDITIONS":       "the package would install without checking the <requires> prerequisites",
+	"REGISTRY_ENTRIES":        "the imported .reg values would be missing from the package",
+	"FEATURES":                "the package would contain no features at all",
+}
+
+// xmlComment matches an XML comment in rendered output. Content substituted inside one is
+// present in the text and absent from the package, so coverage is judged after removing them.
+var xmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
+
+// coverageSentinel is the probe value substituted for one placeholder. Deliberately made of
+// characters HTML escaping leaves alone, so it survives the escaped ({{X}}) spelling as well
+// as the raw one.
+func coverageSentinel(key string) string {
+	return "MSIS_COVERAGE_PROBE_" + key + "_END"
+}
+
+// checkTemplateCoverage rejects a template that has nowhere to put generated content this
+// package actually produced. It fires only when there is content to lose, so a template stays
+// free to omit a placeholder for a feature the .msis script does not use.
+//
+// It answers the question by rendering, not by scanning the template text. Handlebars decides
+// what a substitution looks like - {{{X}}}, {{&X}} and {{~{X}~}} are all valid unescaped
+// spellings in raymond - so any list of spellings this package kept would be a guess about
+// somebody else's grammar, wrong in both directions: rejecting templates that work today, and
+// accepting text that never reaches the output. Rendering a probe asks the engine instead.
+//
+// Substituted-but-discarded placements are then subtracted: a Handlebars comment
+// ({{!-- {{{X}}} --}}) never emits the probe at all, and an XML comment (<!-- {{{X}}} -->)
+// emits it into text WiX ignores. Either way the generated content does not reach the package,
+// which is the thing being checked.
+func checkTemplateCoverage(templatePath, templateContent string, ctx map[string]interface{}, generated map[string]string) error {
+	probe := make(map[string]interface{}, len(ctx))
+	for key, value := range ctx {
+		probe[key] = value
+	}
+
+	expected := make(map[string]string)
+	for key, xml := range generated {
+		if strings.TrimSpace(xml) == "" {
+			continue
+		}
+		sentinel := coverageSentinel(key)
+		expected[key] = sentinel
+		probe[key] = sentinel
+	}
+	if len(expected) == 0 {
+		return nil
+	}
+
+	rendered, err := raymond.Render(templateContent, probe)
+	if err != nil {
+		// The real render runs next on the same template and reports this properly; a
+		// template that does not compile is not a coverage problem.
+		return nil
+	}
+	effective := xmlComment.ReplaceAllString(rendered, "")
+
+	var missing []string
+	for key, sentinel := range expected {
+		if !strings.Contains(effective, sentinel) {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing) // deterministic message; map iteration order is not
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "template %s discards generated content", templatePath)
+	for _, key := range missing {
+		fmt.Fprintf(&sb, "\n  nothing emits {{{%s}}}", key)
+		if hint, ok := generatedContentHint[key]; ok {
+			fmt.Fprintf(&sb, " - %s", hint)
+		}
+	}
+	sb.WriteString("\n\nAdd the placeholder to the template - outside any comment or untaken " +
+		"conditional - or build with a template that has it.")
+	return errors.New(sb.String())
 }
 
 func (r *Renderer) buildContext() map[string]interface{} {
@@ -174,23 +306,9 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	r.LogoWarnings = logos.Warnings
 
 	// Add generated content (triple-braced in template for unescaped output)
-	ctx["FEATURES"] = r.GeneratedData.FeatureXML
-	ctx["INSTALLDIR_FILES"] = r.buildInstallDirFiles()
-	ctx["APPDATADIR_FILES"] = r.buildAppDataDirFiles()
-	ctx["ROAMINGAPPDATADIR_FILES"] = r.GeneratedData.RoamingAppDataDirXML
-	ctx["LOCALAPPDATADIR_FILES"] = r.GeneratedData.LocalAppDataDirXML
-	ctx["COMMONFILESDIR_FILES"] = r.GeneratedData.CommonFilesDirXML
-	ctx["WINDOWSDIR_FILES"] = r.GeneratedData.WindowsDirXML
-	ctx["SYSTEMDIR_FILES"] = r.GeneratedData.SystemDirXML
-	ctx["DESKTOP_FILES"] = r.buildDesktopFiles()
-	ctx["STARTMENU_FILES"] = r.buildStartMenuFiles()
-	ctx["REGISTRY_ENTRIES"] = r.GeneratedData.RegistryXML
-	ctx["PRESERVATION_PROPERTIES"] = r.GeneratedData.PreservationPropertiesXML
-	ctx["CUSTOM_ACTIONS"] = r.buildCustomActions()
-	ctx["INSTALL_EXECUTE_SEQUENCE"] = r.buildInstallExecuteSequence()
-	ctx["REMOVE_ON_UNINSTALL"] = r.GeneratedData.RemoveOnUninstallXML
-	ctx["LAUNCH_CONDITION_SEARCHES"] = r.GeneratedData.LaunchConditionSearchXML
-	ctx["LAUNCH_CONDITIONS"] = r.GeneratedData.LaunchConditionsXML
+	for key, xml := range r.generatedContent() {
+		ctx[key] = xml
+	}
 
 	// Add boolean flags for conditional rendering
 	ctx["SETUP_ICON"] = r.Variables["SETUP_ICON"]

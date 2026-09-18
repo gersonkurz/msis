@@ -56,6 +56,42 @@ msis /BUILD /TEMPLATEFOLDER:my-templates setup.msis
 msis /BUILD /CUSTOMTEMPLATES:my-overrides setup.msis
 ```
 
+## What a template must contain
+
+Templates receive two kinds of substitution, and they are not interchangeable:
+
+- **Variables** — `{{PRODUCT_NAME}}`, `{{LICENSE_FILE}}`, `{{SETUP_ICON}}` … values you set in
+  the `.msis` file. A template is free to ignore any of them; a template with no UI has no use
+  for `{{LICENSE_FILE}}`.
+- **Generated content** — `{{{FEATURES}}}`, `{{{INSTALLDIR_FILES}}}`,
+  `{{{PRESERVATION_PROPERTIES}}}`, `{{{REMOVE_ON_UNINSTALL}}}` … the WiX XML msis builds from
+  your script. These are triple-braced, because the XML must not be HTML-escaped.
+
+**Generated content is not optional.** Whether a build produces registry entries, cleanup
+actions or preserved values depends on the `.msis` script, not on the template — so a template
+that omits one of these placeholders simply loses that content. Handlebars renders an unknown
+placeholder as nothing, and `wix build` succeeds on the truncated package.
+
+msis therefore **fails the build** when the selected template has no placeholder for content
+this package actually generated:
+
+```
+Error: template C:\...\template-silent.wxs discards generated content
+  nothing emits {{{PRESERVATION_PROPERTIES}}} - existing registry values marked
+  preserve="yes" would be overwritten with an empty string on install
+```
+
+The check fires only when there is content to lose, so it never complains about a placeholder
+for a feature your script does not use. If you maintain a template under `/CUSTOMTEMPLATES` or
+`/TEMPLATE`, the fix is to copy the missing placeholder from the matching shipped template.
+
+It is judged on what the template actually **emits**, not on the text of the template, so any
+substitution Handlebars supports counts — `{{{X}}}`, `{{&X}}` and `{{~{X}~}}` are equivalent
+here. By the same token, a placeholder that is present but produces nothing does not count: one
+commented out with `<!-- … -->`, one inside a Handlebars comment, and one in a `{{#if}}` branch
+this build does not take are all reported, because in each case the generated content does not
+reach the package.
+
 ## Logo Customization
 
 The installer UI displays logo images at various stages. msis supports customizing these via variables.
