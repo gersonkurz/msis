@@ -23,8 +23,11 @@ import (
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
-// Version and BuildTime are set via ldflags at build time
-var Version = "3.0.3"
+// Version and BuildTime are set via ldflags at build time; every build path in the justfile
+// injects them. The fallback is deliberately not a release number: it used to be, and it went
+// stale (justfile 3.0.4, here 3.0.3), so a plain `go build` reported a version it was not.
+// "dev" cannot drift, and it tells a locally built binary apart from a released one.
+var Version = "dev"
 var BuildTime = ""
 
 type cliArgs struct {

@@ -195,6 +195,34 @@ ext := if os() == "windows" { ".exe" } else { "" }
 # Common msis flags for bootstrap builds
 msis_flags := "--build --templatefolder=../templates /SET:PRODUCT_VERSION=" + version
 
+# This file is the only place a real version number lives - the binary gets it via -ldflags,
+# the MSI via /SET:PRODUCT_VERSION, and cmd/msis/main.go falls back to "dev" rather than to a
+# number that can go stale. Writing the release notes and tagging stay manual on purpose.
+#
+# NEW is exported ($-prefixed) rather than interpolated as {{NEW}}: just splices {{...}} into
+# the recipe as source text, so `just set-version '$(3).0.5'` would be evaluated by the shell -
+# validated as 3.0.5, then stored literally as $(3).0.5 and fed to -ldflags. Read as an
+# environment variable the argument is data, and the same value is validated and written.
+#
+# just --list shows the LAST comment line, so the summary stays at the bottom of this block:
+# Set the version: rewrites `version :=` above and adds a README.md changelog stub
+[windows]
+set-version $NEW:
+    @if ($env:NEW -notmatch '^\d+\.\d+\.\d+$') { Write-Error "version must be X.Y.Z, got '$env:NEW'"; exit 1 }
+    @if ((Get-Content README.md -Raw) -match ('(?m)^\*\*' + [regex]::Escape($env:NEW) + '\*\* ')) { Write-Error "README.md already has a changelog entry for $env:NEW"; exit 1 }
+    @$utf8 = New-Object Text.UTF8Encoding $false; $j = [IO.File]::ReadAllText("justfile", $utf8); $n = [regex]::new('(?m)^version := "[^"]*"$').Replace($j, 'version := "' + $env:NEW + '"'); if ($n -eq $j) { Write-Error "no 'version := \"...\"' line found in justfile"; exit 1 }; [IO.File]::WriteAllText("justfile", $n, $utf8)
+    @$utf8 = New-Object Text.UTF8Encoding $false; $r = [IO.File]::ReadAllText("README.md", $utf8); $v = $env:NEW; $stub = "**$v** $([char]0x2014) $(Get-Date -Format yyyy-MM-dd) (tag [``v$v``](../../releases/tag/v$v))`n- TODO: release notes`n`n"; $re = [regex]::new('(?m)^(\*\*\d+\.\d+\.\d+\*\* )'); if (-not $re.IsMatch($r)) { Write-Error "no changelog entry found in README.md to insert before"; exit 1 }; [IO.File]::WriteAllText("README.md", $re.Replace($r, ($stub.Replace('$', '$$') + '$1'), 1), $utf8)
+    @Write-Host "Version set to $env:NEW. Next: write the README.md notes, just check, just release-all, then git tag v$env:NEW"
+
+[unix]
+set-version $NEW:
+    @printf '%s' "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "version must be X.Y.Z, got '$NEW'" >&2; exit 1; }
+    @grep -q "^\*\*$NEW\*\* " README.md && { echo "README.md already has a changelog entry for $NEW" >&2; exit 1; } || true
+    @grep -q '^version := "' justfile || { echo "no 'version := \"...\"' line found in justfile" >&2; exit 1; }
+    @sed "s/^version := \".*\"$/version := \"$NEW\"/" justfile > justfile.tmp && mv justfile.tmp justfile
+    @awk -v stub="**$NEW** — $(date +%Y-%m-%d) (tag [\`v$NEW\`](../../releases/tag/v$NEW))\n- TODO: release notes\n" '/^\*\*[0-9]+\.[0-9]+\.[0-9]+\*\* / && !done { print stub; done = 1 } { print }' README.md > README.tmp && mv README.tmp README.md
+    @echo "Version set to $NEW. Next: write the README.md notes, just check, just release-all, then git tag v$NEW"
+
 # Build release MSI package (x64 only)
 [unix]
 release: clean-bootstrap build-hooks build-windows-x64

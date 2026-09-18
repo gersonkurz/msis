@@ -159,8 +159,8 @@ msis has had three generations, all sharing the same `.msis` script format:
 
 ### msis-3.x version history
 
-Earlier versions were reconstructed from the Git log and tagged retroactively. `3.0.3` is the
-current release.
+Earlier versions were reconstructed from the Git log and tagged retroactively. The newest entry
+below is the current release; `just set-version X.Y.Z` adds the next one.
 
 **3.0.3** — 2026-06-23 (tag [`v3.0.3`](../../releases/tag/v3.0.3))
 - WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
