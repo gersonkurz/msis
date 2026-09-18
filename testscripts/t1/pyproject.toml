@@ -1,0 +1,11 @@
+[project]
+name = "t1-preserve-probe"
+version = "1.0.0"
+description = "Runtime probe for todo-testme.md T1 / issue #5 - what preserve=\"yes\" actually does at install time"
+requires-python = ">=3.14"
+dependencies = [
+    "loguru>=0.7.3",
+]
+
+[tool.uv]
+package = false

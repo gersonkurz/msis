@@ -9,167 +9,91 @@ per-machine; an unelevated run will fail or, worse, silently redirect.
 
 ---
 
-## T1 — `preserve="yes"` runtime semantics
+## T1 — `preserve="yes"` runtime semantics: DONE 2026-09-18
 
-**Ticket:** [#5](https://github.com/gersonkurz/msis/issues/5) — fixed in commit
-`645dbf0`, but the runtime half of the claim was never observed.
+**Ticket:** [#5](https://github.com/gersonkurz/msis/issues/5), fixed in `645dbf0`. The runtime
+half was executed on 2026-09-18 via `testscripts/t1/`, both required passes (silent `/qn` and
+full UI), and the results are posted on #5. **#5 stays closed.**
 
-### Why this is open
+Five of the six rows matched. The sixth became [#26](https://github.com/gersonkurz/msis/issues/26).
 
-#5 replaced the three-element preservation pattern (`PS_RV_` default + `PS_RS_`
-search + a `SetProperty` custom action per value) with the two-element form: a
-`PS_RV_` property carrying the `.reg` default with the `RegistrySearch` nested
-inside it. That removed the per-value custom action, which is what made a few
-hundred preserved values unbuildable.
+### What was observed — identical in both passes
 
-What was proven: the WXS we emit, and that WiX 7.0.0 compiles it at 1500 values.
-What was **not** proven: what Windows Installer does with it at install time. The
-reviewer (Codex) accepted the change without this, and the product owner
-explicitly deferred it on 2026-09-17 — but approval did not establish the runtime
-outcome, and this file is where that debt lives.
+| Value | Seeded | After install | Type | |
+|---|---|---|---|---|
+| `Absent` | *(absent)* | `default-absent` | `REG_SZ` | as predicted |
+| `AbsentDword` | *(absent)* | `42` | `REG_DWORD` | as predicted |
+| `Existing` | `live-existing` | `live-existing` | `REG_SZ` | as predicted |
+| `ExistingDword` | `99` | `99` | `REG_DWORD` | as predicted |
+| `EmptyExisting` | `""` | `default-empty-existing` | `REG_SZ` | **mismatch → #26** |
+| *(unnamed)* | *(absent)* | `default-unnamed` | `REG_SZ` | as predicted |
 
-Three specific unknowns:
+Key gone after uninstall, both runs. Types round-trip: the `#` prefix survives in both
+directions, so DWORDs stay DWORDs rather than becoming `REG_SZ "42"`.
 
-1. **The empty-string case.** When the target value already exists as an *empty*
-   `REG_SZ` and the `.reg` default is non-empty: `RegistrySearch Type='raw'`
-   returns `""`, and setting an MSI property to the empty string undefines it.
-   Expected: the live empty value is preserved (written back empty), *not*
-   overwritten by the default. The old three-element form wrote the default here,
-   because the `SetProperty` condition was false. This is a deliberate behaviour
-   change and the one most likely to surprise someone.
-2. **The elevated client→server handoff.** AppSearch runs client-side; the
-   `RegistryValue` is written server-side during an elevated per-machine install.
-   `Secure='yes'` is on every `PS_RV_` property for exactly this reason. Untested.
-3. **The unnamed (default) value.** Microsoft's RegLocator documentation qualifies
-   retrieval of a key's default value with "if it is not empty", so preservation of
-   an unnamed value may behave differently from a named one.
+### The three unknowns, answered
 
-### Setup
+1. **Empty existing value — NOT preserved.** The `.reg` default overwrites it. The search runs
+   (`AppSearch: Property: PS_RV_00002, Signature: PS_RV_00002_Registry`) and reads the empty
+   value, but AppSearch makes no assignment from an empty result: there is no `PROPERTY CHANGE`
+   line for `PS_RV_00002`, while `00003` and `00004` each have one. The property therefore still
+   held the `.reg` default when the write happened — and it was that default, not an empty
+   string, that landed, which also rules out the property having been removed. Filed as #26.
+2. **Elevated client → server handoff — works.** In the full-UI log AppSearch runs once, on
+   the client, and the server explicitly declines to repeat it:
 
-Create a folder anywhere outside the repo with these four files.
+   ```
+   MSI (c): Switching to server: PS_RV_00003="live-existing" PS_RV_00004="#99" ...
+   MSI (s): PROPERTY CHANGE: Modifying PS_RV_00003 ... new value: 'live-existing'
+   MSI (s): Skipping AppSearch action: already done on client side
+   ```
 
-`rtprobe.reg`:
+   The server-side `PROPERTY CHANGE` lines are the **transfer** of those properties, not a second
+   search: the two values AppSearch found on the client reach the side that performs the registry
+   write, and the preserved values land correctly. The silent run is the same path without a UI
+   sequence.
 
-```
-Windows Registry Editor Version 5.00
+   **What this does not establish:** that `Secure='yes'` was required for it. The probe ran
+   elevated (`AdminUser = 1`, `MsiTrueAdminUser = 1`), and the same `Switching to server` line
+   also carries `INSTALLDIR`, `INSTALLFOLDER` and `TARGETDIR`, none of which are in
+   `SecureCustomProperties` — so this run says nothing about what would happen without it.
+   Microsoft's [restricted public properties](https://learn.microsoft.com/en-us/windows/win32/msi/restricted-public-properties)
+   documents the restriction for non-administrator installs, which is the case not exercised
+   here. Proving the attribute necessary would need a package built without it, installed by a
+   non-administrator; `Secure='yes'` stays on for the documented reason regardless.
+3. **Unnamed (default) value — works.** `PS_RV_00005` carries a search with no `Name`, and
+   `default-unnamed` was written as `REG_SZ`.
 
-[HKEY_LOCAL_MACHINE\SOFTWARE\MsisPreserveProbe]
-"Absent"="default-absent"
-"Existing"="default-existing"
-"EmptyExisting"="default-empty-existing"
-"AbsentDword"=dword:0000002a
-"ExistingDword"=dword:0000002a
-@="default-unnamed"
-```
+### What this entry got wrong, kept as a warning
 
-(The trailing `@=` line covers unknown 3. Verified to parse and generate correctly —
-it emits `PS_RV_00005` with a `RegistrySearch` carrying no `Name` attribute — and the
-whole package builds against WiX 7.0.0. Only the install step is unproven.)
+Two mistakes, both mine, both the kind worth not repeating:
 
-`rtprobe.msis`:
+- **The `.msis` here omitted `INSTALLDIR`.** The first real run died on it:
+  `Error 25521. Failed to set security descriptor on object C:\Program Files\`, because with no
+  value `INSTALLDIR` resolves to `C:\Program Files\` itself and msis emits its usual
+  `util:PermissionEx` component for it — refused even elevated. The same trap invalidated the
+  first #6 probe, and it was copied in here anyway. Any probe package needs a real `INSTALLDIR`.
+- **The prediction for `EmptyExisting` was aspirational.** This entry expected the new form to
+  preserve empty values while stating in the same paragraph that the old form wrote the default.
+  Nothing ever preserved them: msis-2.x emits the same property-with-nested-search construct, so
+  the behaviour is as old as the feature. A prediction table is a claim about the code and has
+  to be derived from it, not from what the change ought to have done.
 
-```xml
-<setup>
-  <set name="PRODUCT_NAME" value="Msis Preserve Probe"/>
-  <set name="PRODUCT_VERSION" value="1.0.0"/>
-  <set name="MANUFACTURER" value="Probe Co"/>
-  <set name="UPGRADE_CODE" value="{7C1B3A4D-1E2F-4A5B-8C6D-9E2F3A4B5C6E}"/>
-  <feature name="Probe">
-    <files source="readme.txt" target="[INSTALLDIR]"/>
-    <registry file="rtprobe.reg" preserve="yes"/>
-  </feature>
-</setup>
-```
+### Rerunning it
 
-`readme.txt`: any content. It exists only so `INSTALLDIR` resolves — a registry-only
-package fails to link with `WIX0094: The identifier 'Directory:INSTALLDIR' could not
-be found`.
-
-`run-probe.ps1`:
+`testscripts/t1/` is a uv + loguru project that writes its own fixtures, builds msis from the
+working tree, installs, compares and uninstalls:
 
 ```powershell
-# Runtime probe for issue #5 / preserve="yes" semantics. MUST run ELEVATED.
-$ErrorActionPreference = 'Stop'
-$here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$K = 'HKLM:\SOFTWARE\MsisPreserveProbe'
-
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Run this from an ELEVATED PowerShell."
-}
-
-function Dump($label) {
-    Write-Host "`n=== $label ===" -ForegroundColor Cyan
-    if (-not (Test-Path $K)) { Write-Host "(key absent)"; return }
-    $k = Get-Item $K
-    foreach ($n in $k.GetValueNames()) {
-        $v = $k.GetValue($n, $null, 'DoNotExpandEnvironmentNames')
-        $t = $k.GetValueKind($n)
-        Write-Host ("  {0,-16} {1,-12} [{2}]" -f $n, "'$v'", $t)
-    }
-}
-
-# clean slate, then seed the "live" values a user would have edited
-Remove-Item $K -Recurse -Force -ErrorAction SilentlyContinue
-New-Item $K -Force | Out-Null
-New-ItemProperty $K -Name 'Existing'      -Value 'live-existing' -PropertyType String | Out-Null
-New-ItemProperty $K -Name 'EmptyExisting' -Value ''              -PropertyType String | Out-Null
-New-ItemProperty $K -Name 'ExistingDword' -Value 99              -PropertyType DWord  | Out-Null
-# 'Absent' and 'AbsentDword' are deliberately NOT seeded -> defaults must win.
-Dump "BEFORE install (seeded)"
-
-$log = Join-Path $here 'install.log'
-msiexec /i (Join-Path $here 'rtprobe.msi') /qn /l*v $log
-if ($LASTEXITCODE -ne 0) { throw "install failed: $LASTEXITCODE (see $log)" }
-Dump "AFTER install"
-
-Write-Host "`n=== AppSearch property changes in the MSI log ===" -ForegroundColor Cyan
-Select-String -Path $log -Pattern 'PROPERTY CHANGE.*PS_RV_' | ForEach-Object { "  " + $_.Line.Trim() }
-
-msiexec /x (Join-Path $here 'rtprobe.msi') /qn
-Dump "AFTER uninstall"
+uv run t1_preserve_probe.py --build-only   # no elevation
+uv run t1_preserve_probe.py                # ELEVATED, silent
+uv run t1_preserve_probe.py --ui           # ELEVATED, full UI
 ```
 
-### Run
+It is kept as a regression guard: its table now encodes the **observed** behaviour, so a future
+change to any of the six rows fails it. If #26 is fixed, flip the `EmptyExisting` expectation
+back to `""` in the same change.
 
-```powershell
-msis /BUILD rtprobe.msis        # unelevated is fine for the build
-.\run-probe.ps1                 # ELEVATED
-```
-
-Then repeat the whole thing **without** `/qn` (full UI) — AppSearch runs in the UI
-sequence there, and Windows Installer skips its execute-sequence invocation when it
-already ran in the UI sequence. Both paths need to give the same answer.
-
-### Proof that closes this
-
-Paste into #5: the three `Dump` blocks, the `PROPERTY CHANGE.*PS_RV_` lines from the
-MSI log, and whether the run was `/qn` or full UI. The table below is what the change
-predicts; a mismatch on **any** row means #5 needs reopening, not just a doc tweak.
-
-| Value | Seeded before install | Expected after install | Expected type |
-|---|---|---|---|
-| `Absent` | *(not present)* | `default-absent` | `REG_SZ` |
-| `AbsentDword` | *(not present)* | `42` | `REG_DWORD` |
-| `Existing` | `live-existing` | `live-existing` | `REG_SZ` |
-| `ExistingDword` | `99` | `99` | `REG_DWORD` |
-| `EmptyExisting` | `""` | `""` — **not** `default-empty-existing` | `REG_SZ` |
-| *(unnamed)* | *(not present)* | `default-unnamed` | `REG_SZ` |
-
-Also needed:
-
-- **Types, not just values.** `AbsentDword` landing as `REG_SZ` `"42"` instead of
-  `REG_DWORD` `42` is a real defect — the `#`-prefix encoding is what makes MSI
-  write an integer, and it is easy to break.
-- **After uninstall**, the key is gone.
-- For the elevated handoff (unknown 2): the `/qn` run *is* the elevated
-  client→server path. If `Existing` survives it, the handoff works and `Secure='yes'`
-  is doing its job. Say so explicitly in the ticket.
-
-### If a row does not match
-
-Do **not** reinstate the per-value `SetProperty` — that is the #5 bug. The fix would
-be to condition the write differently, or to accept and document the behaviour. Open
-a new issue with the dump output and link it from #5.
 
 ---
 

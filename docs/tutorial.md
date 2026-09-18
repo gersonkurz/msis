@@ -303,6 +303,58 @@ a proper, unexpanded REG_EXPAND_SZ.
 
 Multi-strings are skipped for preservation too, for a similar encoding reason.
 
+### Preserving User-Modified Values
+
+By default every value in your `.reg` file is written on install, overwriting whatever the
+user had. `preserve="yes"` changes that: an existing value is left alone, and the value from
+your `.reg` file is used only where there is nothing there yet.
+
+```xml
+<feature name="MyApp">
+  <files source="dist" target="[INSTALLDIR]"/>
+  <registry file="settings.reg" preserve="yes"/>
+</feature>
+```
+
+So a setting the user changed survives the next upgrade, while a setting you added in this
+release gets its default.
+
+It works by reading the existing value during installation into a property that starts out
+holding your `.reg` default. Nothing is written back verbatim from the old package: the value
+that lands is either the live one or your default.
+
+#### An existing but EMPTY value is not preserved
+
+If the value exists and is an **empty string**, your `.reg` default is written instead — the
+one case where `preserve="yes"` does not keep what the user had.
+
+```
+before install:   "Proxy" = ""                  (the user deliberately blanked it)
+.reg file says:   "Proxy" = "proxy.corp.local"
+after install:    "Proxy" = "proxy.corp.local"  (the blank is gone)
+```
+
+The cause is in Windows Installer rather than in msis. The search does run, and it does read
+the empty value — but AppSearch makes no assignment from an empty result, so the property is
+left holding the `.reg` default it was initialised with, and that default is what gets written.
+In the MSI log the search appears with no `PROPERTY CHANGE` line after it, while the values that
+were preserved each have one. "Found, but empty" and "not found" are therefore indistinguishable
+by the time the result is a property value. msis-2.x behaves identically — this is as old as
+the feature.
+
+If a blank needs to mean something in your application, do not let the installer own that
+value: leave it out of the `.reg` file and have the application write its own default on first
+run, so an empty value stays empty.
+
+#### The other exceptions
+
+Three value types are never preserved, each for a reason covered above: [QWORDs](#qword-values-are-truncated-to-32-bits),
+[expandable strings](#expandable-strings-are-not-preserved), and multi-strings. They are always
+written from your `.reg` file.
+
+A value whose `.reg` content starts with `[` is also written as-is, because it is an MSI
+Formatted expression such as `[INSTALLDIR]` that has to be resolved at install time.
+
 ### Deleting Registry Keys
 
 To remove a registry key during uninstall (not just leave it orphaned):

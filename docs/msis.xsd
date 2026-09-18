@@ -28,7 +28,24 @@
   <xs:complexType name="RegistryType">
     <xs:attribute name="file" type="xs:string" use="required"/>
     <xs:attribute name="sddl" type="xs:string" use="optional"/>
-    <xs:attribute name="preserve" type="msisBoolean" use="optional"/>
+    <xs:attribute name="preserve" type="msisBoolean" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          "yes" keeps a value the machine already has, writing the value from the .reg file
+          only where none exists. Use it for settings a user may have changed.
+
+          Not applied to QWORDs, expandable strings or multi-strings, which are always written
+          from the .reg file, nor to a value whose content starts with "[" (an MSI Formatted
+          expression resolved at install time).
+
+          An existing but EMPTY value is also NOT preserved: the .reg default overwrites it.
+          The search runs and reads the empty value, but AppSearch makes no assignment from an
+          empty result, so the property keeps the .reg default it was initialised with. "Found,
+          but empty" is therefore indistinguishable from "not found". See docs/tutorial.md and
+          issue #26.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
     <xs:attribute name="permanent" type="msisBoolean" use="optional"/>
     <xs:attribute name="condition" type="xs:string" use="optional"/>
   </xs:complexType>
