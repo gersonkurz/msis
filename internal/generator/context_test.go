@@ -2572,3 +2572,72 @@ func TestProductScopedComponentGUIDs(t *testing.T) {
 		t.Errorf("Without UPGRADE_CODE, productScopedID should not change the input: got %s vs %s", id5, id6)
 	}
 }
+
+// TestWarnsOnUnresolvableItemValue guards issue #14. These call sites used to be
+// `if resolved, err := Resolve(v); err == nil`, discarding the error and keeping the
+// original text — so "{{TIER, production}}", a form msis does not support, reached the
+// built MSI verbatim as an environment variable's value with nothing said.
+//
+// Note this is NOT reachable through the variable dictionary: a malformed reference in
+// a <set> value fails ResolveAll and is already fatal. The gap is specific to item
+// values, which is why a dictionary-level check written for #13 was removed again.
+func TestWarnsOnUnresolvableItemValue(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{
+			Name:  "Main",
+			Items: []ir.Item{ir.SetEnv{Name: "PROBE_TIER", Value: "{{TIER, production}}"}},
+		}},
+	}
+	vars := variables.New()
+	ctx := NewContext(setup, vars, t.TempDir())
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	joined := strings.Join(output.Warnings, "\n")
+	if !strings.Contains(joined, "PROBE_TIER") {
+		t.Errorf("warning should name the element, got: %s", joined)
+	}
+	if !strings.Contains(joined, "{{TIER, production}}") {
+		t.Errorf("warning should quote the offending text, got: %s", joined)
+	}
+	// One diagnostic per line: the template engine's parse errors are multi-line, and
+	// printed raw the continuations lose the "Warning:" prefix and its colouring.
+	for _, w := range output.Warnings {
+		if strings.ContainsAny(w, "\n\r") {
+			t.Errorf("warning must be a single line, got: %q", w)
+		}
+	}
+
+	// The established behaviour is to keep the original text; only the silence changed.
+	// Assert the VALUE, not just the name: checking for "PROBE_TIER" alone would pass
+	// even if the value had been emptied, which is the outcome this claims does not happen.
+	if !strings.Contains(output.DirectoryXML+output.FeatureXML, `Value='{{TIER, production}}'`) {
+		t.Error("the unresolved text should still be emitted verbatim, not dropped or emptied")
+	}
+}
+
+// TestCleanPackageProducesNoWarnings is the one that keeps the feature useful. Warnings
+// people see on every build are warnings they stop reading, so an ordinary package must
+// be silent.
+func TestCleanPackageProducesNoWarnings(t *testing.T) {
+	setup := &ir.Setup{
+		Features: []ir.Feature{{
+			Name: "Main",
+			Items: []ir.Item{
+				ir.SetEnv{Name: "PROBE_PATH", Value: "[INSTALLDIR]bin"},
+			},
+		}},
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "Clean"
+	ctx := NewContext(setup, vars, t.TempDir())
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if len(output.Warnings) != 0 {
+		t.Errorf("an ordinary package must build silently, got: %v", output.Warnings)
+	}
+}

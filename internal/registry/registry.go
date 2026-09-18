@@ -62,6 +62,24 @@ type Processor struct {
 	componentCounter int
 	componentIDs     map[string]bool
 	nextPreserveID   int
+
+	// warnings collects build-time diagnostics about values msis had to alter or
+	// that MSI will reinterpret. Drained by the generator and printed by main.go;
+	// see Warnings().
+	warnings []string
+}
+
+// Warnings returns build-time diagnostics gathered while processing registry files,
+// in the order they were found. Deliberately warnings rather than errors: each names
+// either a deliberate, documented narrowing or an ambiguity only the author can
+// settle, so failing the build would break packages that work today. The point is
+// that the author is told, rather than the tool silently deciding for them.
+func (p *Processor) Warnings() []string {
+	return p.warnings
+}
+
+func (p *Processor) warn(format string, args ...any) {
+	p.warnings = append(p.warnings, fmt.Sprintf(format, args...))
 }
 
 // NewProcessor creates a new registry processor.
@@ -115,7 +133,79 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 	// Convert regis3 tree to our RegistryKey structure
 	comp.Keys = p.convertKeyEntry(root)
 
+	for _, key := range comp.Keys {
+		p.warnFormattedValues(key, reg.Preserve)
+	}
+
 	return []*Component{comp}, nil
+}
+
+// warnFormattedValues reports string values that Windows Installer will reinterpret.
+//
+// The Registry table's Value column is an MSI Formatted field, so a value written
+// literally is not written literally: "[Foo]" is substituted (to nothing, if Foo is
+// undefined) and "[~]" is the REG_MULTI_SZ separator, which changes the value's TYPE.
+// Both were measured while fixing #11 — `a[Foo]b` installed as `ab`, and `a[~]b` as a
+// REG_MULTI_SZ of ['a','b'].
+//
+// Only values written DIRECTLY into that column are affected. A preserved value
+// reaches it as "[PS_RV_nnnnn]" and the property's content is substituted in without a
+// second formatting pass, so its brackets survive.
+//
+// Preservation is decided per VALUE, not per component: `preserve="yes"` on the
+// <registry> element is not enough, because shouldPreserveValue additionally excludes
+// expandable strings, QWORDs and values already starting with "[". Those are written
+// literally even in a preserved component, so they are still at risk — and for exactly
+// the same reason, recommending preserve="yes" to their author would be useless advice.
+//
+// A value starting with "[" is otherwise left alone: that is the documented,
+// intentional property reference, and warning on it would fire on a large share of real
+// packages and teach people to ignore the whole class. But "[~]" is checked FIRST,
+// because it is a type marker rather than a property reference and is significant at
+// the start of a value too — "[~]a" would otherwise slip through the exemption while
+// silently installing as a multi-string.
+func (p *Processor) warnFormattedValues(key *RegistryKey, componentPreserved bool) {
+	for _, val := range key.Values {
+		if val.RemoveFlag || val.Type == "multiString" {
+			continue
+		}
+		preservable := shouldPreserveValue(val)
+		if componentPreserved && preservable {
+			continue // written through a property; brackets survive
+		}
+		if !strings.ContainsAny(val.Value, "[]") {
+			continue
+		}
+
+		multiSep := strings.Contains(val.Value, "[~]")
+		if !multiSep && strings.HasPrefix(val.Value, "[") {
+			continue
+		}
+
+		detail := "Windows Installer will substitute [...] references in it"
+		if multiSep {
+			detail = "Windows Installer reads [~] as the REG_MULTI_SZ separator, so this will install as a multi-string"
+		}
+		remedy := "Escape a literal bracket as [\\[]."
+		if !componentPreserved && preservable {
+			remedy += ` Setting preserve="yes" on the <registry> element also protects it, ` +
+				`because the value is then written through a property.`
+		}
+		p.warn("registry value %q in %s is %q: %s. %s",
+			displayValueName(val.Name), key.Key, val.Value, detail, remedy)
+	}
+	for _, sub := range key.SubKeys {
+		p.warnFormattedValues(sub, componentPreserved)
+	}
+}
+
+// displayValueName names a registry value for a diagnostic, including the unnamed
+// default value, which would otherwise print as an empty string.
+func displayValueName(name string) string {
+	if name == "" {
+		return "(default)"
+	}
+	return name
 }
 
 // convertKeyEntry converts a regis3 KeyEntry tree to RegistryKey structures.
@@ -256,9 +346,22 @@ func (p *Processor) convertValue(entry *regis3.ValueEntry) *RegistryValue {
 		// not define a meaning for. Truncating is lossy and documented as such
 		// (docs/tutorial.md, registry value types); it is chosen over rejecting the
 		// value so existing packages keep building.
+		full := entry.GetQword(0)
 		val.Type = "integer"
-		val.Value = fmt.Sprintf("%d", uint32(entry.GetQword(0)))
+		val.Value = fmt.Sprintf("%d", uint32(full))
 		val.FromQword = true
+		if uint64(uint32(full)) != full {
+			// Warn only when numeric bits are lost. A QWORD inside 32-bit range still
+			// changes TYPE — it installs as a REG_DWORD, because MSI has no 64-bit
+			// form at all — but its VALUE is unchanged, and the type narrowing is
+			// unavoidable for every QWORD and documented in docs/tutorial.md. Warning
+			// on every QWORD would therefore fire on packages where nothing is
+			// actionable. Deliberate policy, not an oversight.
+			p.warn("registry value %q is a REG_QWORD of %d, which Windows Installer cannot store: "+
+				"it will install as a REG_DWORD of %d (the low 32 bits). "+
+				"Write 64-bit values from the application or a custom action instead.",
+				displayValueName(entry.Name()), full, uint32(full))
+		}
 	case regis3.RegMultiSz:
 		val.Type = "multiString"
 		val.MultiValue = entry.GetMultiString()

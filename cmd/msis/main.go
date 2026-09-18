@@ -237,6 +237,11 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		return fmt.Errorf("generating WXS: %w", err)
 	}
 
+	// Report values msis had to alter, or that Windows Installer will reinterpret.
+	for _, warning := range output.Warnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+warning))
+	}
+
 	// Count components generated
 	componentCount := 0
 	for _, compIDs := range ctx.FeatureComponents {

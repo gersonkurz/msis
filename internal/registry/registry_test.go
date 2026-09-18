@@ -1142,3 +1142,117 @@ func TestPreserveManyValuesEmitsNoCustomActions(t *testing.T) {
 		t.Errorf("Got %d PS_RV_ properties, want %d", n, count)
 	}
 }
+
+// TestWarnQwordTruncation guards issue #14. A REG_QWORD is narrowed to 32 bits because
+// MSI cannot store one (#10); that is deliberate and documented, but it used to happen
+// with nothing said at build time.
+func TestWarnQwordTruncation(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Big"=hex(b):ef,cd,ab,89,67,45,23,01
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "q.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	if _, err := proc.Process(ir.Registry{File: "q.reg"}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := proc.Warnings()
+	if len(w) != 1 {
+		t.Fatalf("expected one warning, got %d: %v", len(w), w)
+	}
+	for _, want := range []string{"Big", "REG_QWORD", "2309737967"} {
+		if !strings.Contains(w[0], want) {
+			t.Errorf("warning should mention %q, got: %s", want, w[0])
+		}
+	}
+}
+
+// TestWarnQwordThatFitsIsSilent: a QWORD inside 32-bit range keeps its numeric value,
+// though its TYPE still narrows to REG_DWORD — that narrowing is unavoidable for every
+// QWORD, since MSI has no 64-bit form, and is documented in docs/tutorial.md. Warning
+// on it would therefore be unactionable, and a warning nobody can act on trains people
+// to ignore the ones that matter. Deliberate policy: warn only when numeric bits are lost.
+func TestWarnQwordThatFitsIsSilent(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Small"=hex(b):2a,00,00,00,00,00,00,00
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "q2.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	if _, err := proc.Process(ir.Registry{File: "q2.reg"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := proc.Warnings(); len(w) != 0 {
+		t.Errorf("a QWORD that fits in 32 bits should not warn, got: %v", w)
+	}
+}
+
+// TestWarnFormattedRegistryValues guards the other half of #14. The Registry table's
+// Value column is an MSI Formatted field, so "a[Foo]b" installs as "ab" and "a[~]b"
+// installs as a REG_MULTI_SZ — both measured while fixing #11.
+func TestWarnFormattedRegistryValues(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Brackets"="a[Foo]b"
+"MultiSep"="a[~]b"
+"Intentional"="[INSTALLDIR]app.exe"
+"Plain"="nothing special"
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "f.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	if _, err := proc.Process(ir.Registry{File: "f.reg"}); err != nil {
+		t.Fatal(err)
+	}
+
+	joined := strings.Join(proc.Warnings(), "\n")
+	if !strings.Contains(joined, "Brackets") {
+		t.Errorf("a mid-string reference should warn, got: %s", joined)
+	}
+	if !strings.Contains(joined, "MultiSep") || !strings.Contains(joined, "REG_MULTI_SZ") {
+		t.Errorf("[~] should warn and name the type change, got: %s", joined)
+	}
+	// A value that STARTS with "[" is the documented, intentional property reference.
+	// Warning on it would fire on every package using [INSTALLDIR] and train people to
+	// ignore the warning entirely.
+	if strings.Contains(joined, "Intentional") {
+		t.Errorf("a leading [PROPERTY] reference must not warn, got: %s", joined)
+	}
+	if strings.Contains(joined, "Plain") {
+		t.Errorf("an ordinary value must not warn, got: %s", joined)
+	}
+}
+
+// TestWarnFormattedSkipsPreserved: a preserved value reaches the Registry table as
+// "[PS_RV_nnnnn]" and its content is substituted without a second formatting pass, so
+// its brackets survive and there is nothing to warn about. Measured in #11.
+func TestWarnFormattedSkipsPreserved(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Brackets"="a[Foo]b"
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "p.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	if _, err := proc.Process(ir.Registry{File: "p.reg", Preserve: true}); err != nil {
+		t.Fatal(err)
+	}
+	if w := proc.Warnings(); len(w) != 0 {
+		t.Errorf("a preserved value keeps its brackets, so must not warn, got: %v", w)
+	}
+}

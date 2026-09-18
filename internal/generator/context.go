@@ -22,6 +22,10 @@ type Context struct {
 	Variables variables.Dictionary
 	WorkDir   string // Directory containing the .msis file
 
+	// warnings collects build-time diagnostics, surfaced on GeneratedOutput and
+	// printed by main.go.
+	warnings []string
+
 	// ID counters for deterministic generation
 	nextDirectoryID int
 	nextFileID      int
@@ -553,6 +557,10 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		LaunchConditionSearchXML:  launchSearchXML,
 		LaunchConditionsXML:       launchCondXML,
 		PreservationPropertiesXML: c.registryProcessor.GeneratePreservationXML(c.RegistryComponents, preservedIDs),
+
+		// The registry processor's diagnostics are gathered while parsing .reg files,
+		// so they are collected here rather than reported from inside that package.
+		Warnings: append(c.warnings, c.registryProcessor.Warnings()...),
 	}
 
 	return output, nil
@@ -597,6 +605,42 @@ type GeneratedOutput struct {
 	LaunchConditionSearchXML  string // Registry searches for launch conditions
 	LaunchConditionsXML       string // Launch condition elements
 	PreservationPropertiesXML string // Property+RegistrySearch elements for preserve="yes"
+
+	// Warnings are build-time diagnostics about values msis had to alter, or that
+	// Windows Installer will reinterpret. Printed by main.go; see Context.warn and
+	// registry.Processor.Warnings.
+	Warnings []string
+}
+
+// resolveOrWarn expands {{VAR}} references in an item value, reporting a failure
+// instead of discarding it.
+//
+// These call sites used to be `if resolved, err := Resolve(v); err == nil`, which drops
+// the error and keeps the original text. A form msis does not support — "{{VAR, DEFAULT}}"
+// is the one seen in the wild — then reaches the built package verbatim, as an
+// environment variable's value or a source path, with nothing said at build time.
+//
+// Not an error: keeping the original text is the established behaviour, and failing the
+// build on it would break packages that already ship. The author is now told.
+func (c *Context) resolveOrWarn(value, what string) string {
+	resolved, err := c.Variables.Resolve(value)
+	if err != nil {
+		c.warn("%s could not be resolved and is used as written: %q (%s)", what, value, oneLine(err.Error()))
+		return value
+	}
+	return resolved
+}
+
+// oneLine collapses whitespace so an embedded multi-line message stays on one line.
+// The template engine's parse errors span three lines; printed as-is, the continuations
+// lose the "Warning:" prefix and its colouring, and the output stops being one
+// diagnostic per line.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func (c *Context) warn(format string, args ...any) {
+	c.warnings = append(c.warnings, fmt.Sprintf(format, args...))
 }
 
 func (c *Context) collectExcludes(items []ir.Item) {
@@ -732,9 +776,7 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 	// Source path as specified in .msis (relative to .msis file directory)
 	// Resolve any {{VAR}} references in the source path
 	source := files.Source
-	if resolved, err := c.Variables.Resolve(source); err == nil {
-		source = resolved
-	}
+	source = c.resolveOrWarn(source, "source path of <files>")
 
 	// Resolve to absolute for existence check
 	absSource := source
@@ -973,10 +1015,7 @@ func (c *Context) processSetEnv(env ir.SetEnv, featureID string) error {
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 
 	// Resolve {{VAR}} references in the value
-	value := env.Value
-	if resolved, err := c.Variables.Resolve(value); err == nil {
-		value = resolved
-	}
+	value := c.resolveOrWarn(env.Value, fmt.Sprintf("value of <set-env name=%q>", env.Name))
 	value = resolveEnvValue(value)
 
 	envID := c.NextEnvID()
