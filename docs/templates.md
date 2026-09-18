@@ -171,7 +171,7 @@ All images must be Windows BMP format. PNG/JPG are not supported by WiX.
   <set name="LOGO_PREFIX" value="MyCompany"/>
 
   <feature name="Main">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
   </feature>
 </setup>
 ```
@@ -228,7 +228,7 @@ The installer dialog sequence depends on which options are enabled:
   <set name="INSTALL_DIR_DIALOG" value="true"/>
 
   <feature name="Main">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
   </feature>
 </setup>
 ```

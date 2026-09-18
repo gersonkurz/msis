@@ -64,13 +64,12 @@ What it actually catches:
 
 - unknown elements and attributes, and missing required fields (the parser rejects both)
 - variable reference cycles and malformed `{{...}}` expressions
+- a `<files source=>` that does not exist, and the unsupported wildcard form `dir\*`
 - the warnings msis emits at generation time: deprecated variables, the destructive
   uninstall settings, and unresolved values in generated content
 
 What it does **not** catch, and a linter would:
 
-- **Source files and folders that do not exist.** Today a missing source is skipped
-  silently — the package builds without it, and nothing says so.
 - **An undefined `{{VAR}}`**, which renders as the empty string rather than failing. Only
   cycles and malformed expressions are errors.
 - Invalid GUIDs in `UPGRADE_CODE`

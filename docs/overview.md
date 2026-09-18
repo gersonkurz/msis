@@ -27,7 +27,7 @@ msis transforms declarative `.msis` XML scripts into Windows Installer packages 
 
 The tool abstracts away WiX complexity:
 - **Auto-generates GUIDs** for components (deterministic, based on file paths)
-- **Builds directory trees** from file glob patterns
+- **Builds directory trees** from a named directory, recursively, or from single files
 - **Maps files to components** following WiX's one-file-per-component rule
 - **Converts .reg files** to WiX registry XML
 - **Produces bundles** that combine multiple architecture MSIs
@@ -379,7 +379,7 @@ type Context struct {
 For each `<files>` element:
 
 1. Parse target path (`[INSTALLDIR]subdir` → root=INSTALLDIR, subpath=subdir)
-2. Scan source files (glob pattern or single file)
+2. Scan source files (a directory, enumerated recursively, or a single file)
 3. Build directory structure mirroring source layout
 4. Generate one `<Component>` per file
 5. Track component IDs for feature association

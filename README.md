@@ -16,7 +16,7 @@ Writing WiX XML by hand is tedious. A simple installer requires hundreds of line
   <set name="UPGRADE_CODE" value="{YOUR-GUID-HERE}"/>
 
   <feature name="MyApp">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
     <shortcut name="MyApp" target="DESKTOP" file="[INSTALLDIR]MyApp.exe"/>
     <registry file="settings.reg"/>
   </feature>

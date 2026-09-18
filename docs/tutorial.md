@@ -104,7 +104,7 @@ Real applications have multiple files. Let's package an app with:
 - `config.json` - Default configuration
 - `docs/` - A folder with documentation
 
-### Using Wildcards
+### Copying a Whole Folder
 
 ```xml
 <setup>
@@ -115,12 +115,18 @@ Real applications have multiple files. Let's package an app with:
 
   <feature name="MyApp">
     <!-- Copy everything from dist/ to the install folder -->
-    <files source="dist\*" target="[INSTALLDIR]"/>
+    <files source="dist" target="[INSTALLDIR]"/>
   </feature>
 </setup>
 ```
 
-The `*` wildcard copies the entire directory tree recursively.
+Name the directory and its contents are installed **recursively**, subfolders included.
+
+> **There is no wildcard syntax.** Earlier revisions of this tutorial showed
+> `source="dist\*"`. That never worked: the path was not found, and the element was skipped
+> without a word, so the package built successfully containing nothing. msis now rejects it
+> with an error pointing at the form above. A `source` that does not exist is an error too,
+> for the same reason — a mistyped path used to ship a package quietly missing the file.
 
 ### Organizing Files into Subfolders
 
@@ -131,10 +137,10 @@ The `*` wildcard copies the entire directory tree recursively.
   <files source="bin\myapp.dll" target="[INSTALLDIR]"/>
 
   <!-- Config goes to a config subfolder -->
-  <files source="config\*" target="[INSTALLDIR]config\"/>
+  <files source="config" target="[INSTALLDIR]config\"/>
 
   <!-- Docs go to a docs subfolder -->
-  <files source="docs\*" target="[INSTALLDIR]docs\"/>
+  <files source="docs" target="[INSTALLDIR]docs\"/>
 </feature>
 ```
 
@@ -162,7 +168,7 @@ Most GUI applications need shortcuts. Here's how to add them:
   <set name="UPGRADE_CODE" value="{YOUR-GUID-HERE}"/>
 
   <feature name="MyApp">
-    <files source="dist\*" target="[INSTALLDIR]"/>
+    <files source="dist" target="[INSTALLDIR]"/>
 
     <!-- Desktop shortcut -->
     <shortcut name="MyApp"
@@ -209,7 +215,7 @@ If you already have a `.reg` file (exported from regedit or created by hand), ms
 
 ```xml
 <feature name="MyApp">
-  <files source="dist\*" target="[INSTALLDIR]"/>
+  <files source="dist" target="[INSTALLDIR]"/>
   <registry file="settings.reg"/>
 </feature>
 ```
@@ -337,7 +343,7 @@ After installation, users can run `mytool` from any command prompt.
 
 ```xml
 <feature name="MyApp">
-  <files source="dist\*" target="[INSTALLDIR]"/>
+  <files source="dist" target="[INSTALLDIR]"/>
   <set-env name="MYAPP_HOME" value="[INSTALLDIR]"/>
   <set-env name="MYAPP_DATA" value="C:\ProgramData\MyApp"/>
 </feature>
@@ -397,7 +403,7 @@ Sometimes you need to run commands during installation:
   <set name="UPGRADE_CODE" value="{YOUR-GUID-HERE}"/>
 
   <feature name="MyApp">
-    <files source="dist\*" target="[INSTALLDIR]"/>
+    <files source="dist" target="[INSTALLDIR]"/>
 
     <!-- Run setup script after files are installed -->
     <execute cmd="[INSTALLDIR]setup.cmd" when="after-install"/>
@@ -446,17 +452,17 @@ Let users choose what to install:
 
   <!-- Core files - always installed -->
   <feature name="Core" enabled="true">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
   </feature>
 
   <!-- Documentation - optional, off by default -->
   <feature name="Documentation" enabled="false">
-    <files source="docs\*" target="[INSTALLDIR]docs\"/>
+    <files source="docs" target="[INSTALLDIR]docs\"/>
   </feature>
 
   <!-- Examples - optional, on by default -->
   <feature name="Examples" enabled="true">
-    <files source="examples\*" target="[INSTALLDIR]examples\"/>
+    <files source="examples" target="[INSTALLDIR]examples\"/>
   </feature>
 </setup>
 ```
@@ -476,15 +482,15 @@ Features can contain other features for hierarchical organization:
 ```xml
 <feature name="Application">
   <feature name="Core">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
   </feature>
 
   <feature name="Plugins">
     <feature name="PDF Export">
-      <files source="plugins\pdf\*" target="[INSTALLDIR]plugins\pdf\"/>
+      <files source="plugins\pdf" target="[INSTALLDIR]plugins\pdf\"/>
     </feature>
     <feature name="Excel Export">
-      <files source="plugins\excel\*" target="[INSTALLDIR]plugins\excel\"/>
+      <files source="plugins\excel" target="[INSTALLDIR]plugins\excel\"/>
     </feature>
   </feature>
 </feature>
@@ -524,7 +530,7 @@ The typical approach is to have separate `.msis` files:
   <set name="PLATFORM" value="x64"/>
 
   <feature name="MyApp">
-    <files source="bin\x64\*" target="[INSTALLDIR]"/>
+    <files source="bin\x64" target="[INSTALLDIR]"/>
   </feature>
 </setup>
 ```
@@ -539,7 +545,7 @@ The typical approach is to have separate `.msis` files:
   <set name="PLATFORM" value="x86"/>
 
   <feature name="MyApp">
-    <files source="bin\x86\*" target="[INSTALLDIR]"/>
+    <files source="bin\x86" target="[INSTALLDIR]"/>
   </feature>
 </setup>
 ```
@@ -694,7 +700,7 @@ Two elements cover that gap.
 
 ```xml
 <feature name="Main">
-  <files source="bin\*" target="[INSTALLDIR]"/>
+  <files source="bin" target="[INSTALLDIR]"/>
   <create-folder target="[APPDATADIR]MyCompany\MyApp\logs"/>
 </feature>
 ```
@@ -710,7 +716,7 @@ which is what the next element is for.
 
 ```xml
 <feature name="Main">
-  <files source="bin\*" target="[INSTALLDIR]"/>
+  <files source="bin" target="[INSTALLDIR]"/>
   <remove-on-uninstall folder="[APPDATADIR]MyCompany\MyApp"/>
   <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>
 </feature>
@@ -767,7 +773,7 @@ Here's a complete example for a real-world application:
 
   <!-- Main application -->
   <feature name="Application" enabled="true">
-    <files source="bin\*" target="[INSTALLDIR]"/>
+    <files source="bin" target="[INSTALLDIR]"/>
 
     <!-- Shortcuts -->
     <shortcut name="Acme Productivity Suite"
@@ -788,7 +794,7 @@ Here's a complete example for a real-world application:
 
   <!-- Background service -->
   <feature name="Background Sync Service" enabled="true">
-    <files source="service\*" target="[INSTALLDIR]service\"/>
+    <files source="service" target="[INSTALLDIR]service\"/>
 
     <service file-name="[INSTALLDIR]service\AcmeSync.exe"
              service-name="AcmeSyncService"
@@ -799,7 +805,7 @@ Here's a complete example for a real-world application:
 
   <!-- Optional documentation -->
   <feature name="Documentation" enabled="false">
-    <files source="docs\*" target="[INSTALLDIR]docs\"/>
+    <files source="docs" target="[INSTALLDIR]docs\"/>
 
     <shortcut name="Acme Documentation"
               target="STARTMENU"

@@ -81,3 +81,30 @@ Confirmed in the code while addressing the #16 review: the failed-`os.Stat` bran
 `GetOrCreateDirectory` and returns `nil`, with the comment "still create directory
 structure for dry-run/testing". The same class as #19 — generated output quietly missing
 content the script asked for — and worth the same treatment: fail, or warn loudly.
+
+## An unreadable source directory silently omits its payload
+
+Reviewer finding from the #24 review, recorded verbatim (2026-09-18):
+
+> **[task] Directory-read failures silently omit payloads.** At
+> [context.go:874](C:/NGBT/MSIS/msis-3.x/internal/generator/context.go:874), returns
+> success when `os.ReadDir` fails. An existing but unreadable source directory can
+> therefore still produce an incomplete package without a diagnostic. Propagate
+> enumeration errors and add an executed regression check. This predates the diff and
+> is deferrable because #24 addresses missing explicitly named sources; handling
+> directory traversal failures expands that scope.
+
+Confirmed in the code while addressing the #24 review:
+
+```go
+entries, err := os.ReadDir(absCurrentPath)
+if err != nil {
+    return nil // Skip if can't read
+}
+```
+
+Same class as #19 and #24 — generated output quietly missing content the script asked for —
+and the last of that family still open in `processFiles`. #24 closed the case where the named
+source is absent; this is the case where it is present but cannot be enumerated (permissions,
+a directory that disappears mid-build, an I/O error), which `addDirectoryContents` swallows at
+every level of the walk, not just the top.

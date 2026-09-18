@@ -809,13 +809,27 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 		absSource = filepath.Join(c.WorkDir, source)
 	}
 
-	// Check if source exists
+	// A source that is not there used to be skipped silently: the directory was created, the
+	// payload was not, and both msis and wix build reported success. A mistyped path therefore
+	// shipped a package missing the file, and nothing said so (issue #24). msis-2.x reports
+	// "ERROR, '%s' is not a valid directory" and then fails, so failing here is also what the
+	// reference implementation does.
 	info, err := os.Stat(absSource)
 	if err != nil {
-		// Source doesn't exist - still create directory structure for dry-run/testing
-		// Use full subPath since we can't determine if it's a file or directory
-		c.GetOrCreateDirectory(rootKey, subPath, files.DoNotOverwrite)
-		return nil
+		// %s, not %q: these are Windows paths, and %q doubles every backslash, so the user
+		// is shown a path they did not write and cannot copy back into their .msis.
+		if strings.ContainsAny(source, "*?") {
+			return fmt.Errorf(`<files source="%s">: wildcards are not supported - name the `+
+				`directory itself and its contents are installed recursively`, files.Source)
+		}
+		if os.IsNotExist(err) {
+			return fmt.Errorf(`<files source="%s">: no such file or directory (looked in %s)`,
+				files.Source, absSource)
+		}
+		// Anything else - a permission problem, an I/O error, a path too long - is reported as
+		// itself rather than flattened into "not found", which would send the user hunting for
+		// a typo that is not there.
+		return fmt.Errorf(`<files source="%s">: %w`, files.Source, err)
 	}
 
 	if info.IsDir() {

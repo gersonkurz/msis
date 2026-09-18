@@ -1925,6 +1925,24 @@ func TestExecuteDefaultDirectory(t *testing.T) {
 	}
 }
 
+// filesFixture creates a work directory containing each named file and returns it.
+//
+// The tests below are about how TARGET paths route to directory roots; the source only has to
+// exist. They used to pass a target-shaped string as the source and rely on a missing source
+// being skipped silently, which is the defect issue #24 removed - a <files source=> that is
+// not there now fails the build.
+func filesFixture(t *testing.T, names ...string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 func TestAppDataDirFiles(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{
@@ -1933,7 +1951,7 @@ func TestAppDataDirFiles(t *testing.T) {
 				Enabled: true,
 				Items: []ir.Item{
 					ir.Files{
-						Source: "[APPDATADIR]MyApp/config.json",
+						Source: "config.json",
 						Target: "[APPDATADIR]MyApp/config.json",
 					},
 				},
@@ -1942,7 +1960,8 @@ func TestAppDataDirFiles(t *testing.T) {
 	}
 	vars := variables.New()
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "config.json")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {
@@ -1971,11 +1990,11 @@ func TestMixedDirectoryRoots(t *testing.T) {
 				Enabled: true,
 				Items: []ir.Item{
 					ir.Files{
-						Source: "[INSTALLDIR]bin/app.exe",
+						Source: "app.exe",
 						Target: "[INSTALLDIR]bin/app.exe",
 					},
 					ir.Files{
-						Source: "[APPDATADIR]config/settings.json",
+						Source: "settings.json",
 						Target: "[APPDATADIR]config/settings.json",
 					},
 				},
@@ -1984,7 +2003,8 @@ func TestMixedDirectoryRoots(t *testing.T) {
 	}
 	vars := variables.New()
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "app.exe", "settings.json")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {
@@ -2015,20 +2035,21 @@ func TestAllDirectoryRoots(t *testing.T) {
 				Name:    "Main",
 				Enabled: true,
 				Items: []ir.Item{
-					ir.Files{Source: "[INSTALLDIR]app.exe", Target: "[INSTALLDIR]app.exe"},
-					ir.Files{Source: "[APPDATADIR]data.json", Target: "[APPDATADIR]data.json"},
-					ir.Files{Source: "[ROAMINGAPPDATADIR]roaming.json", Target: "[ROAMINGAPPDATADIR]roaming.json"},
-					ir.Files{Source: "[LOCALAPPDATADIR]local.json", Target: "[LOCALAPPDATADIR]local.json"},
-					ir.Files{Source: "[COMMONFILESDIR]shared.dll", Target: "[COMMONFILESDIR]shared.dll"},
-					ir.Files{Source: "[WINDOWSDIR]win.ini", Target: "[WINDOWSDIR]win.ini"},
-					ir.Files{Source: "[SYSTEMDIR]sys.dll", Target: "[SYSTEMDIR]sys.dll"},
+					ir.Files{Source: "app.exe", Target: "[INSTALLDIR]app.exe"},
+					ir.Files{Source: "data.json", Target: "[APPDATADIR]data.json"},
+					ir.Files{Source: "roaming.json", Target: "[ROAMINGAPPDATADIR]roaming.json"},
+					ir.Files{Source: "local.json", Target: "[LOCALAPPDATADIR]local.json"},
+					ir.Files{Source: "shared.dll", Target: "[COMMONFILESDIR]shared.dll"},
+					ir.Files{Source: "win.ini", Target: "[WINDOWSDIR]win.ini"},
+					ir.Files{Source: "sys.dll", Target: "[SYSTEMDIR]sys.dll"},
 				},
 			},
 		},
 	}
 	vars := variables.New()
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "app.exe", "data.json", "roaming.json", "local.json", "shared.dll", "win.ini", "sys.dll")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {
@@ -2069,7 +2090,7 @@ func TestAppDataDirFallbackToInstallDir(t *testing.T) {
 				Enabled: true,
 				Items: []ir.Item{
 					ir.Files{
-						Source: "[APPDATADIR]config.json",
+						Source: "config.json",
 						Target: "[APPDATADIR]config.json",
 					},
 				},
@@ -2080,7 +2101,8 @@ func TestAppDataDirFallbackToInstallDir(t *testing.T) {
 	vars["INSTALLDIR"] = "MySuperCoolApp"
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
 	// Note: APPDATADIR is deliberately NOT set
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "config.json")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {
@@ -2105,7 +2127,7 @@ func TestAppDataDirExplicitOverride(t *testing.T) {
 				Enabled: true,
 				Items: []ir.Item{
 					ir.Files{
-						Source: "[APPDATADIR]config.json",
+						Source: "config.json",
 						Target: "[APPDATADIR]config.json",
 					},
 				},
@@ -2116,7 +2138,8 @@ func TestAppDataDirExplicitOverride(t *testing.T) {
 	vars["INSTALLDIR"] = "MySuperCoolApp"
 	vars["APPDATADIR"] = "MyCustomDataDir"
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "config.json")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {
@@ -2138,7 +2161,7 @@ func TestLocalAppDataDirFallbackToInstallDir(t *testing.T) {
 				Enabled: true,
 				Items: []ir.Item{
 					ir.Files{
-						Source: "[LOCALAPPDATADIR]cache.dat",
+						Source: "cache.dat",
 						Target: "[LOCALAPPDATADIR]cache.dat",
 					},
 				},
@@ -2148,7 +2171,8 @@ func TestLocalAppDataDirFallbackToInstallDir(t *testing.T) {
 	vars := variables.New()
 	vars["INSTALLDIR"] = "MySuperCoolApp"
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
-	ctx := NewContext(setup, vars, ".")
+	workDir := filesFixture(t, "cache.dat")
+	ctx := NewContext(setup, vars, workDir)
 
 	output, err := ctx.Generate()
 	if err != nil {

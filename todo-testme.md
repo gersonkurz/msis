@@ -374,8 +374,8 @@ becomes reachable. Linking proves the references exist; it proves nothing about 
 gets deleted. No install has been run. Deferred with the product owner's explicit
 acceptance on 2026-09-18.
 
-**Run this together with T-#3's plan** — same mechanism, same seeding, one session. The
-#3 concept comment on that ticket has the fuller version; this entry adds what is
+**Run this together with T7** — same mechanism, same seeding, one session covers both
+tickets. T7 carries the full plan for #3; this entry adds what is
 specific to top-level placement.
 
 ### Setup
@@ -506,3 +506,81 @@ after step 3 (an orphan). Either means component identity is being changed in a 
 sequence does not absorb, and the answer would be to keep the first destination on its historic
 GUID — accepting the reordering instability that trade-off brings — rather than to document
 around it.
+
+---
+
+## T7 — `<remove-on-uninstall folder=>` deletes the right tree and nothing else (issue #3)
+
+**Ticket:** [#3](https://github.com/gersonkurz/msis/issues/3) — full-folder removal on
+uninstall. The element already exists; the concept was reviewed and approved, and the ticket
+stays open **only** until these checks run. Closing it is what this entry is for.
+
+**Run this together with [T5](#t5--top-level-remove-on-uninstall-actually-deletes-the-right-things)**
+— same mechanism, same seeding. T5 covers top-level placement, T7 covers feature placement and
+the upgrade/repair cases; one session with both fixtures covers both tickets.
+
+This is a recursive delete of a directory the installer does not own, so the plan checks what
+it removes **and** what it leaves alone.
+
+### Since the concept was written
+
+Two of its scope limits no longer apply, and the plan below reflects that:
+
+- The concept said documented support was limited to feature-level placement, pending #15.
+  **#15 is fixed** — top-level placement works and is T5.
+- It said the minimal and silent templates silently drop the element, so they should be tested
+  or documented as unsupported. **#19 fixed that**: all five shipped templates now carry
+  `{{{REMOVE_ON_UNINSTALL}}}`, and a template that would discard it now fails the build. They
+  are therefore worth one confirming pass rather than an exclusion.
+
+### Mind the path — this is the trap
+
+`[APPDATADIR]` **already includes the application subdirectory**: it falls back to the
+`INSTALLDIR` value (`context.go:351`), so `[APPDATADIR]Vendor\App\logs` resolves to
+`C:\ProgramData\<INSTALLDIR>\Vendor\App\logs`, not `C:\ProgramData\Vendor\App\logs`.
+
+Decide the intended absolute directory first and **assert equality with it**. Checking only
+that the stored value "is absolute" would pass while pointing somewhere else entirely — and
+somewhere else is precisely what a recursive delete must not be aimed at.
+
+### Authoring checks, in two separate steps
+
+1. **Before install** — the cleanup component carries a `ComponentRef` from a feature. (That is
+   #15's failure mode in its silent form.)
+2. **After install** — the value stored under `HKLM\Software\<MANUFACTURER>\<PRODUCT_NAME>`,
+   name `RemoveFolderPath_RemoveOnUninstall_nnnn`, equals the intended absolute directory
+   **exactly**.
+
+### Seeding, from a fresh state for each case
+
+- a runtime-created file directly in the target folder
+- a runtime-created file in a **nested subfolder**
+- a sentinel in the target's **parent**
+- a sentinel in a **sibling** directory
+
+### Cases
+
+| Case | Expected |
+|---|---|
+| **Uninstall** | target and everything beneath it gone, nested file included; both sentinels untouched |
+| **Major upgrade** | `On='uninstall'` removes the parent component, which also happens during `RemoveExistingProducts`. **Record what is observed** — either answer is documentable, but only the observed one. Note the exact from/to versions and the template used; do not generalise to other upgrade arrangements |
+| **Repair** | target contents intact — a repair must never be a data-loss event |
+| **Folder already empty** | record the behaviour |
+| **Folder never existed** | uninstalling a package whose application never ran; record the behaviour |
+
+### Also worth one pass each, now that #19 made them viable
+
+The same feature-level package built with `minimal/template.wxs` and, with `PLATFORM=x86` and
+`silent="yes"`, `x86/template-silent.wxs`. Confirm the cleanup runs there too. If either
+behaves differently from the regular template, that is a finding, not a documentation note.
+
+### Proof required to close #3
+
+All rows of the table above observed and recorded, plus the two authoring checks, plus the
+`.wxs` showing the component referenced by a feature. Document only the placement/template
+combinations actually exercised.
+
+### If anything outside the named target is removed
+
+Stop and reopen #3. Do not adjust the documentation to match — this is the failure mode that
+cost a customer their database once already.
