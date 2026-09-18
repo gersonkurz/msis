@@ -353,3 +353,83 @@ Paste into #12:
 An ARM64 machine that already has **only the x64** runtime, and no ARM64 one, must still
 install the ARM64 runtime. That is the original bug stated as a test, and the most
 direct confirmation that the fix works.
+
+---
+
+## T5 — top-level `<remove-on-uninstall>` actually deletes the right things
+
+**Tickets:** [#15](https://github.com/gersonkurz/msis/issues/15) (the fix that enabled
+this), [#3](https://github.com/gersonkurz/msis/issues/3) (the same mechanism, verified
+once covers both)
+
+### Why this is open
+
+Until #15, a top-level `<remove-on-uninstall>` **failed the build**, so its component
+never installed and never ran. The fix gives those components a feature, which makes
+them installable for the first time — and what they do is delete: a recursive folder
+removal and a registry key removal.
+
+So the build going from red to green is exactly the moment the destructive behaviour
+becomes reachable. Linking proves the references exist; it proves nothing about what
+gets deleted. No install has been run. Deferred with the product owner's explicit
+acceptance on 2026-09-18.
+
+**Run this together with T-#3's plan** — same mechanism, same seeding, one session. The
+#3 concept comment on that ticket has the fuller version; this entry adds what is
+specific to top-level placement.
+
+### Setup
+
+```xml
+<setup>
+  ...
+  <set name="INSTALLDIR" value="CleanupProbe"/>
+  <remove-on-uninstall folder="<the intended absolute logs dir>"/>
+  <remove-on-uninstall registry="HKLM\Software\Vendor\CleanupProbe"/>
+  <feature name="Main">
+    <files source="readme.txt" target="[INSTALLDIR]"/>
+  </feature>
+</setup>
+```
+
+The `<feature>` is essential: without one the package took the WiX-default-feature path
+and this is not the case under test.
+
+**Mind the folder path.** `[APPDATADIR]` already includes the application subdirectory —
+it falls back to the `INSTALLDIR` value — so `[APPDATADIR]Vendor\App\logs` resolves to
+`C:\ProgramData\<INSTALLDIR>\Vendor\App\logs`. Decide the intended absolute directory
+first and assert equality with it; "the stored path is absolute" would pass while
+pointing somewhere else.
+
+### Before installing
+
+1. The generated `.wxs` (build with `/RETAINWXS`) contains a `<Feature
+   Id='MSIS_PACKAGE_ITEMS' ...>` whose `<ComponentRef>` list includes **both** cleanup
+   components.
+2. After install, the path remembered in `HKLM\Software\<MFR>\<PRODUCT>` equals the
+   intended absolute directory exactly.
+
+### Then seed
+
+- a runtime-created file directly in the target folder
+- a runtime-created file in a **nested subfolder** of it
+- a sentinel file in the target's **parent**
+- a sentinel file in a **sibling** directory
+- a registry value under the target key, and a sentinel key beside it
+
+### Cases
+
+| case | expected |
+|---|---|
+| **Install** | the synthetic feature's components are installed — check the MSI's `FeatureComponents` rows and that the remembered path is present in the registry afterwards |
+| **Repair** | seeded runtime data still intact. A repair must never be a data-loss event |
+| **Uninstall** | target folder and everything beneath it gone, nested file included; target registry key gone; **both file sentinels and the sibling registry key untouched** |
+| **Major upgrade** | `On='uninstall'` means the parent component is removed, which also happens during `RemoveExistingProducts`. Record what is observed; either answer is documentable, but only the observed one |
+
+The sentinels matter as much as the deletions. The value of this mechanism over
+`REMOVE_FOLDERS_ON_UNINSTALL` is a narrower blast radius, and that is the claim to check.
+
+### If anything outside the named targets is removed
+
+Stop and reopen #15. Do not adjust the documentation to match — this is the failure mode
+that cost a customer their database once already.

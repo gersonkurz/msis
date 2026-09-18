@@ -515,9 +515,24 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		}
 	}
 
-	// Process top-level items (no feature association)
+	// Process items written directly under <setup> rather than inside a <feature>.
+	//
+	// They are given a real feature id whenever the package declares features of its
+	// own, so every generator associates their components exactly as it does for a
+	// feature's items — each already guards on `featureID != ""`, in eleven places.
+	// Without an id those components were emitted and never referenced, and WiX failed
+	// the build with "error WIX0267: Found orphaned Component" (issue #15).
+	//
+	// The empty id is kept when the package declares NO features, because WiX then
+	// invents a default feature and adopts the loose components itself. That path works
+	// today, so it is left exactly as it is rather than given a feature of our own —
+	// which also avoids changing the feature identity of packages already in the field.
+	topLevelFeatureID := ""
+	if len(c.Setup.Features) > 0 {
+		topLevelFeatureID = packageItemsFeatureID
+	}
 	for _, item := range c.Setup.Items {
-		if err := c.processItem(item, ""); err != nil {
+		if err := c.processItem(item, topLevelFeatureID); err != nil {
 			return nil, err
 		}
 	}
@@ -1581,6 +1596,11 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 	sb.WriteString(fmt.Sprintf("%s</Component>\n", indent))
 }
 
+// packageItemsFeatureID holds components from items written directly under <setup>
+// rather than inside a <feature>. Fixed and distinctive so it cannot collide with a
+// generated user feature id, and so output stays diffable.
+const packageItemsFeatureID = "MSIS_PACKAGE_ITEMS"
+
 func (c *Context) generateAllFeatureXML() string {
 	var sb strings.Builder
 
@@ -1588,7 +1608,44 @@ func (c *Context) generateAllFeatureXML() string {
 		c.generateFeatureXML(&c.Setup.Features[i], &sb, 2, "", i)
 	}
 
+	c.generatePackageItemsFeatureXML(&sb)
+
 	return sb.String()
+}
+
+// generatePackageItemsFeatureXML gives the components from top-level items a feature to
+// belong to (issue #15).
+//
+// docs/msis.xsd permits <files>, <registry>, <set-env> and others directly under
+// <setup>. Their components used to be emitted with no feature reference at all, and
+// WiX failed the build with "error WIX0267: Found orphaned Component" as soon as the
+// package also declared a feature of its own. Measured for files, registry, set-env and
+// remove-on-uninstall alike.
+//
+// Only reached when the package declares features, because only then does the top-level
+// processing assign packageItemsFeatureID — see Generate. A package with no features
+// keeps relying on WiX's own default feature, unchanged.
+//
+// Hidden and non-optional: these items are package-level, so they should not appear in
+// the feature tree as something to deselect, and they must not inherit the level or
+// conditions of whichever feature happened to be declared first.
+//
+// That is a statement about the UI, not a guarantee. Display='hidden' and
+// AllowAbsent='no' stop a user deselecting the feature in the dialog; they do not make
+// installation unconditional, since a command line selecting features explicitly (for
+// example ADDLOCAL naming only some) can still leave this one out.
+func (c *Context) generatePackageItemsFeatureXML(sb *strings.Builder) {
+	compIDs := c.FeatureComponents[packageItemsFeatureID]
+	if len(compIDs) == 0 {
+		return
+	}
+
+	sb.WriteString(fmt.Sprintf("        <Feature Id='%s' Title='%s' Level='1' Display='hidden' AllowAbsent='no'>\n",
+		packageItemsFeatureID, escapeXMLAttr(c.Variables.ProductName())))
+	for _, compID := range compIDs {
+		sb.WriteString(fmt.Sprintf("            <ComponentRef Id='%s'/>\n", compID))
+	}
+	sb.WriteString("        </Feature>\n")
 }
 
 func (c *Context) generateAllRegistryXML(preservedIDs []map[string]int) string {
