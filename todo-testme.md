@@ -433,3 +433,76 @@ The sentinels matter as much as the deletions. The value of this mechanism over
 
 Stop and reopen #15. Do not adjust the documentation to match — this is the failure mode
 that cost a customer their database once already.
+
+---
+
+## T6 — upgrading into and out of a duplicated source file (issue #21)
+
+**Ticket:** [#21](https://github.com/gersonkurz/msis/issues/21) — same source installed to two
+targets. Fixed by giving each destination its own component GUID.
+
+**Why this needs a real machine:** the fix changes an *existing* component's GUID when a later
+release adds a second destination for a source file that previously had one, and changes it
+back if that destination is removed again. A shipped v1 with a single copy absolutely can
+exist, so this transition is reachable in the field even though a duplicating package never
+could be built before.
+
+**Accepted as a deferred check by Gerson on 2026-09-18**, on the structural evidence below,
+after being shown that it could not be executed in the development session (no elevation).
+
+### What is already established, executed
+
+Read out of a built MSI's `InstallExecuteSequence` table:
+
+```
+  1400  InstallValidate
+  1401  RemoveExistingProducts     <- previous product removed here
+  1500  InstallInitialize
+  3500  RemoveFiles
+  4000  InstallFiles               <- new files installed here
+```
+
+That is WiX's `afterInstallValidate` default for `<MajorUpgrade>`, which every msis template
+uses. The old product is therefore fully uninstalled **before** any new file is laid down, so a
+component GUID change between releases cannot produce the classic failure where the outgoing
+product's removal deletes a file the incoming one just installed.
+
+What is *not* established is that this holds on a real machine, which is what T6 is for.
+
+### Steps
+
+Build three packages that differ only as described, all sharing one `UPGRADE_CODE`:
+
+| Version | `.msis` content |
+|---|---|
+| 1.0.0 | `<files source="app.txt" target="[INSTALLDIR]"/>` |
+| 2.0.0 | the same, plus `<files source="app.txt" target="[APPDATADIR]PonyDup\seed"/>` |
+| 3.0.0 | back to the 1.0.0 content |
+
+Then, elevated, with verbose logging (`msiexec /i pkg.msi /l*v step.log /qn`):
+
+1. Install 1.0.0.
+2. Upgrade to 2.0.0.
+3. Upgrade to 3.0.0.
+4. Uninstall 3.0.0.
+
+### Proof required
+
+- **After step 1:** `[INSTALLDIR]\app.txt` exists.
+- **After step 2:** *both* copies exist — `[INSTALLDIR]\app.txt` **and**
+  `[APPDATADIR]\PonyDup\seed\app.txt`. The first must still be present: it is the copy whose
+  GUID changed, and its disappearance is the specific failure this check exists to catch.
+- **After step 3:** `[INSTALLDIR]\app.txt` exists and the `[APPDATADIR]` copy is **gone** —
+  no orphan left behind by the component that no longer exists.
+- **After step 4:** neither copy remains, and neither directory is left holding a stray file.
+- In each log, `RemoveExistingProducts` appears **before** the first `InstallFiles` entry,
+  confirming on a real machine what the sequence table says.
+
+### If any step fails
+
+Reopen #21. The likely shape of a failure is a missing `[INSTALLDIR]\app.txt` after step 2 (the
+re-keyed component treated as removed rather than replaced) or a surviving `[APPDATADIR]` copy
+after step 3 (an orphan). Either means component identity is being changed in a way the upgrade
+sequence does not absorb, and the answer would be to keep the first destination on its historic
+GUID — accepting the reordering instability that trade-off brings — rather than to document
+around it.

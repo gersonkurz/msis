@@ -62,6 +62,11 @@ type Context struct {
 	// Used to attach service definitions to existing file components
 	fileComponents map[string]*Component
 
+	// Every file component, grouped by the source path it was built from. A source used
+	// more than once needs its components' GUIDs qualified by where each one installs to;
+	// see resolveDuplicateSourceGUIDs.
+	fileComponentsBySource map[string][]placedComponent
+
 	// Registry processor and components
 	registryProcessor  *registry.Processor
 	RegistryComponents []*registry.Component
@@ -118,6 +123,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		targetFileSeen:         make(map[string]int),
 		fileSourcePaths:        make(map[string]string),
 		fileComponents:         make(map[string]*Component),
+		fileComponentsBySource: make(map[string][]placedComponent),
 		registryProcessor:      registry.NewProcessor(workDir, vars.UpgradeCode()),
 		RegistryComponents:     make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
@@ -544,6 +550,10 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		c.addPathEnvironment(firstFeatureID)
 	}
 
+	// All file components exist by now, so a source used in more than one place can be
+	// given per-target GUIDs before anything is rendered (issue #21).
+	c.resolveDuplicateSourceGUIDs()
+
 	// Generate launch conditions for requirements
 	launchSearchXML, launchCondXML := c.generateLaunchConditions()
 
@@ -964,6 +974,11 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 
 	c.addComponentToDirectory(dir, comp, featureID)
 
+	// Remember where this source landed; resolveDuplicateSourceGUIDs re-keys the GUIDs of
+	// any source that ends up installed to more than one place.
+	c.fileComponentsBySource[sourcePath] = append(c.fileComponentsBySource[sourcePath],
+		placedComponent{comp: comp, dir: dir})
+
 	// Track component by filename so services can attach to it
 	if _, exists := c.fileComponents[fileKey]; !exists {
 		c.fileComponents[fileKey] = comp
@@ -975,6 +990,102 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	}
 
 	return nil
+}
+
+// placedComponent is a file component together with the directory it installs into, which
+// is what distinguishes two components built from the same source file.
+type placedComponent struct {
+	comp *Component
+	dir  *Directory
+}
+
+// installedAt names the destination that gives this component its identity: the directory
+// plus the installed file name.
+//
+// The file name is part of it because <files target="[INSTALLDIR]other.txt"> renames on
+// install, so one source can legitimately land twice in ONE directory under two names. Keying
+// on the directory alone gave those two components the same GUID and left them failing with
+// WIX0369 - the very defect this fixes, in a shape the first version missed.
+//
+// The whole thing is case-folded because directory lookup is case-insensitive and keeps
+// whichever spelling it saw first: declaring [INSTALLDIR]Data\one before [INSTALLDIR]data	wo
+// makes the shared parent "Data", and declaring them the other way round makes it "data".
+// Hashing the raw name would make identity depend on the order the elements are written in,
+// which is exactly what this design exists to avoid.
+func (p placedComponent) installedAt() string {
+	path := targetPathOf(p.dir)
+	if len(p.comp.Files) > 0 {
+		path += "\\" + p.comp.Files[0].Name
+	}
+	return strings.ToLower(path)
+}
+
+// resolveDuplicateSourceGUIDs gives a distinct GUID to each component built from a source
+// file that the package installs to more than one place.
+//
+// addFile derives a component's GUID from its source path alone, so listing one source
+// against two targets produced two components with the same GUID and `wix build` rejected
+// the package outright (issue #21):
+//
+//	error WIX0369: Component/@Id='CID_..._1' ... has a @Guid value '{...}' that duplicates
+//	another component in this package.
+//
+// Because that is a hard error and msis builds the whole wix command line itself - there is
+// no way to suppress it - no package that builds today contains a repeated source path.
+// Every such package therefore keeps exactly the GUIDs it has: this rewrites nothing unless
+// a source appears more than once, which until now could not ship.
+//
+// Where it does apply, ALL of that source's components are re-keyed, not just the second
+// one. Leaving the first on the old scheme would make the identities depend on the order the
+// <files> elements happen to be written in, so reordering two lines would swap two GUIDs.
+// Keying every one of them on source plus target makes a component's identity a function of
+// what it installs and where, which is what it should have been.
+func (c *Context) resolveDuplicateSourceGUIDs() {
+	for _, source := range sortedKeysOf(c.fileComponentsBySource) {
+		placed := c.fileComponentsBySource[source]
+		if len(placed) < 2 {
+			continue
+		}
+		for _, p := range placed {
+			p.comp.GUID = GenerateGUID(source + "|" + p.installedAt())
+		}
+	}
+}
+
+// targetPathOf names the install location of a directory, as the root key the user wrote
+// plus the subpath below it: "INSTALLDIR", "APPDATADIR\MyApp\data".
+//
+// The walk stops at the directory carrying the root's CustomID rather than continuing to the
+// top of the tree. Above that point the names come from the INSTALLDIR variable - for a
+// nested value like "NGBT\chimera" the tree root is "NGBT" and the CustomID sits on
+// "chimera" - and including them would tie component identity to the install folder's name,
+// so renaming it would move every duplicated component.
+func targetPathOf(dir *Directory) string {
+	var parts []string
+	for d := dir; d != nil; d = d.Parent {
+		if d.CustomID != "" {
+			parts = append(parts, d.CustomID)
+			break
+		}
+		if d.Parent == nil {
+			parts = append(parts, d.ID) // no root key found; the id is at least stable
+			break
+		}
+		parts = append(parts, d.Name)
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	return strings.Join(parts, "\\")
+}
+
+func sortedKeysOf[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // addComponentToDirectory places a component in a directory and records which feature
@@ -1004,19 +1115,6 @@ func (c *Context) markDirectoryFeature(dir *Directory, featureID string) {
 		}
 		d.FeatureIDs[featureID] = true
 	}
-}
-
-func (dir *Directory) getFullPath() string {
-	var parts []string
-	current := dir
-	for current != nil && current.Name != "" {
-		parts = append([]string{current.Name}, parts...)
-		current = current.Parent
-	}
-	if len(parts) == 0 {
-		return "root"
-	}
-	return strings.Join(parts, "\\")
 }
 
 // resolveEnvValue translates msis directory roots in environment variable values
