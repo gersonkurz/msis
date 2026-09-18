@@ -75,50 +75,40 @@ func (r *Renderer) SetCustomTemplate(templatePath string) {
 
 // Render processes the template and returns the complete WXS content.
 func (r *Renderer) Render() (string, error) {
-	// Determine template path
-	var templatePath string
 	if r.CustomTemplate != "" {
-		templatePath = r.CustomTemplate
-	} else {
-		platform := r.Variables.Platform()
-		templatePath = r.getTemplatePath(platform, false)
+		return r.render(r.CustomTemplate)
 	}
-
-	// Read template
-	templateContent, err := os.ReadFile(templatePath)
-	if err != nil {
-		return "", fmt.Errorf("reading template: %w", err)
-	}
-
-	// Build context for Handlebars
-	ctx := r.buildContext()
-
-	if err := checkTemplateCoverage(templatePath, string(templateContent), ctx, r.generatedContent()); err != nil {
-		return "", err
-	}
-
-	// Render template
-	result, err := raymond.Render(string(templateContent), ctx)
-	if err != nil {
-		return "", fmt.Errorf("rendering template: %w", err)
-	}
-
-	return result, nil
+	return r.render(r.getTemplatePath(r.Variables.Platform(), false))
 }
 
-// RenderSilent processes the silent template if available.
+// RenderSilent processes the silent template. It returns "" and no error when the platform
+// ships no silent template - x64 deliberately has none - which is the caller's signal to fall
+// back to the regular one.
+//
+// An explicit /TEMPLATE names one specific file and applies to both modes: the user chose that
+// template, and a silent package is not a reason to quietly substitute a different one. It was
+// (issue #20) - this function read r.CustomTemplate nowhere, so /TEMPLATE was dropped on the
+// floor for any script with silent="yes", with no diagnostic. A missing /TEMPLATE file is an
+// error here rather than a fallback, because nothing about it is optional.
 func (r *Renderer) RenderSilent() (string, error) {
-	platform := r.Variables.Platform()
-	templatePath := r.getTemplatePath(platform, true)
-
-	// Check if silent template exists
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		return "", nil // No silent template
+	if r.CustomTemplate != "" {
+		return r.render(r.CustomTemplate)
 	}
 
+	templatePath := r.getTemplatePath(r.Variables.Platform(), true)
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		return "", nil
+	}
+	return r.render(templatePath)
+}
+
+// render is the body both entry points share. They used to be separate copies differing only
+// in how they picked the path, which is how the /TEMPLATE override came to exist in one of
+// them and not the other.
+func (r *Renderer) render(templatePath string) (string, error) {
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {
-		return "", fmt.Errorf("reading silent template: %w", err)
+		return "", fmt.Errorf("reading template %s: %w", templatePath, err)
 	}
 
 	ctx := r.buildContext()
@@ -129,7 +119,7 @@ func (r *Renderer) RenderSilent() (string, error) {
 
 	result, err := raymond.Render(string(templateContent), ctx)
 	if err != nil {
-		return "", fmt.Errorf("rendering silent template: %w", err)
+		return "", fmt.Errorf("rendering template %s: %w", templatePath, err)
 	}
 
 	return result, nil
