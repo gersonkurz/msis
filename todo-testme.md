@@ -116,98 +116,98 @@ This entry originally said #6 still needed an install probe. It got one, and so 
 
 ---
 
-## T3 — x86 auto-bundle installs the x86 VC++ runtime on 64-bit Windows
+## T3 — x86 auto-bundle on 64-bit Windows: CLOSED 2026-09-18, partly executed
 
-**Ticket:** [#8](https://github.com/gersonkurz/msis/issues/8)
+**Ticket:** [#8](https://github.com/gersonkurz/msis/issues/8), fixed in `3e9c171`.
 
-### Why this is open
+Closed by the product owner on 2026-09-18 on the evidence below, **not** by completing the
+original plan. The one check still missing needs a machine that in practice does not exist; see
+"Why the last check was abandoned".
 
-This is the one fix in this series that **was never run**. The bug only reproduces on
-a 64-bit machine that does **not** have the x86 VC++ runtime, and every development
-machine here has both runtimes already, so the detect condition passes regardless and
-a local run proves nothing. The change was shipped on the generated XML plus a
-structural argument, with the product owner's agreement that staff would verify.
+### What was executed
 
-The structural argument, so you know what you are confirming rather than just clicking
-through: the bundle's `VcppRuntimeX86Installed` comes from a `util:RegistrySearch`
-with `Bitness="always32"`, which on 64-bit Windows reads
-`HKLM\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86`. The 32-bit
-MSI's own launch-condition search reads `HKLM\SOFTWARE\...\VC\Runtimes\x86` under
-WOW64 redirection — **the same physical key**. So bundle and MSI should now agree on
-whether the runtime is present. The point of the test is to confirm they actually do.
+`testscripts/t3/` builds the package and stages a payload for a VM; a run on a 64-bit test VM
+produced this.
 
-### Setup
+| Proof item | Status |
+|---|---|
+| 1. The chain carries `DetectCondition='VcppRuntimeX86Installed'` and **no** `InstallCondition` | **executed**, build side |
+| 2. The x86 runtime is installed by the bundle | **not executed** — needs a machine without it |
+| 3. The MSI installs, no launch-condition failure | **executed**, but with the runtime already present |
+| 4. Log shows the prerequisite detected absent, then planned for install | **not executed** — it was detected present |
+| "Second install / repair": detected present and skipped | **executed** |
 
-A 64-bit Windows machine (VM or fresh image) with **no** VC++ 2015-2022 x86 runtime.
-Confirm before starting — this must print nothing:
-
-```powershell
-Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86' -ErrorAction SilentlyContinue
-```
-
-If it returns a value, uninstall "Microsoft Visual C++ 2015-2022 Redistributable (x86)"
-from Apps & Features first. The x64 runtime may be present — in fact **leave it
-present**, because that is the exact case the old code got wrong: it reported the
-machine as satisfied on the strength of the x64 runtime.
-
-Build an x86 package that requires the runtime:
-
-```xml
-<setup>
-  <set name="PRODUCT_NAME" value="X86 Bundle Probe"/>
-  <set name="PRODUCT_VERSION" value="1.0.0"/>
-  <set name="MANUFACTURER" value="Probe Co"/>
-  <set name="UPGRADE_CODE" value="{BB1B3A4D-1E2F-4A5B-8C6D-9E2F3A4B5C66}"/>
-  <set name="INSTALLDIR" value="X86BundleProbe"/>
-  <set name="PLATFORM" value="x86"/>
-  <requires type="vcredist" version="2022"/>
-  <feature name="Probe">
-    <files source="readme.txt" target="[INSTALLDIR]"/>
-  </feature>
-</setup>
-```
-
-`msis /BUILD probe.msis` produces `probe.exe` (the auto-bundle). Copy it to the clean
-machine.
-
-### Run
+From the VM, with the x86 runtime present:
 
 ```
-probe.exe /log bundle.log
+Detected package: Prereq_vcredist_2022_x86, state: Present, ...
+Planned package:  Prereq_vcredist_2022_x86, state: Present, ..., execute: None, ...
+PASS the MSI installed: C:\Program Files (x86)\X86BundleProbe\readme.txt
+PASS the product is uninstalled
 ```
 
-### Proof that closes this
+That is worth more than it first appears, because it settles the part of #8's structural
+argument that was actually uncertain: the bundle's `util:RegistrySearch` with
+`Bitness="always32"` and the 32-bit MSI's own launch condition under WOW64 redirection **agree
+about the same physical key**. Both saw the runtime; the MSI installed rather than refusing. It
+also covers the repair/skip case, which the original plan listed as the half the structural
+argument was weakest on.
 
-Paste into #8:
+### What is still argued rather than observed
 
-1. **The chain in the generated `.wxs`** (build with `/RETAINWXS`). It must read
-   `DetectCondition='VcppRuntimeX86Installed'` with **no** `InstallCondition` on the
-   `Prereq_vcredist_2022_x86` package. If `InstallCondition='NOT VersionNT64'` is still
-   there, the build did not pick up the fix.
-2. **The x86 runtime is installed afterwards** — the registry check above now returns a
-   value, and "Microsoft Visual C++ 2015-2022 Redistributable (x86)" appears in Apps &
-   Features.
-3. **The MSI installed**, i.e. no `VCREDIST_X86_2022` launch-condition dialog. That is
-   the user-visible symptom and the thing that was impossible before.
-4. **From `bundle.log`**: the lines showing the x86 package being detected as absent
-   and then planned for install. Search for `Prereq_vcredist_2022_x86` and
-   `VcppRuntimeX86Installed`.
+That on 64-bit Windows **without** the x86 runtime, Burn installs it and the MSI then passes.
 
-### Also worth one run each, same machine
+The argument, now narrower than when #8 shipped: the whole content of the fix is which XML is
+emitted. Before, the package carried `InstallCondition='NOT VersionNT64'`, which made it
+inapplicable on 64-bit Windows, so it was never installed. After, `singlePrereqArch` suppresses
+the InstallCondition when the bundle chains exactly one architecture, and applicability is
+governed by the `DetectCondition` alone — which the VM run shows evaluating correctly. What
+remains untested is that Burn installs an applicable, Absent, Vital package, which is its most
+basic behaviour and is what every prerequisite in every msis bundle depends on.
 
-- **Second install / repair.** With the runtime now present, the package must be
-  detected as installed and **skipped**, not installed again. This is the half the
-  structural argument is weakest on: it depends on the detect condition being read the
-  same way once the key exists.
-- **A 32-bit Windows VM**, if one is available — as a *regression* check, not a new
-  case. `NOT VersionNT64` was already true on 32-bit Windows, so the package installed
-  there before and must still install there now; dropping the condition is meant to add
-  64-bit Windows, not to change anything about 32-bit.
+### Why the last check was abandoned
 
-### Not covered by this change
+It needs 64-bit Windows with **no** x86VC++ runtime. In practice that means a pristine image and
+nothing else: the test VM used here reported
 
-`PLATFORM=arm64` — fixed separately under issue #12, and it needs its own machine
-check. See T4.
+```
+x86 entries in Add/Remove: Microsoft Visual C++ 2022 X86 Debug Runtime - 14.51.36247
+```
+
+a Visual Studio component, which cannot be uninstalled from Apps & Features. Anything that
+touches a dev toolchain drags the runtime in, and the probe cannot remove what it did not
+install.
+
+If a genuinely pristine image ever exists, `testscripts/t3/` still does the whole thing:
+`uv run t3_x86_bundle_probe.py` here, then `t3_vm_probe.py --state` there to confirm the machine
+qualifies before installing anything. Deleting
+`HKLM\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86` on a snapshotted VM
+would simulate absence for the detect condition, but it is not a clean substitute: the
+redistributable may then decide it is already installed, no-op, and leave the key missing, which
+would look like a failure of msis rather than of the simulation.
+
+### A defect in the probe, recorded so it is not repeated
+
+The first VM run should never have started. The probe's guard — whose only job is to refuse
+when the runtime is present, because the run then proves nothing — read the **64-bit** registry
+view for an **x86** runtime:
+
+```
+x86   64-bit view                absent
+x86   32-bit view (WOW6432Node)  Installed=1 Version=v14.51.36247.00
+```
+
+The x86 redistributable is a 32-bit installer, so it registers under `WOW6432Node`, which is
+also exactly where the bundle looks (`Bitness="always32"`). Reading the wrong view reported the
+runtime as absent on a machine that had it, and the run went ahead and proved nothing. A second
+bug in the same script filtered Add/Remove entries on `"2015"` and a case-sensitive `"x86"`,
+matching none of the real names (`Microsoft Visual C++ v14 Redistributable (x86)`,
+`... 2022 X86 Minimum Runtime`). Both produced confident FAIL lines that were the script's own.
+
+Both are fixed. The lesson is the one T1 also produced: a probe's preconditions need checking
+as carefully as its assertions, because a broken guard does not fail loudly — it lets a
+worthless run look like a real one.
+
 
 ---
 
