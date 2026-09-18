@@ -49,38 +49,45 @@ Add declarative support for simple installer UI elements: boolean switches, radi
 
 ---
 
-### 2. Command-Line Variable Overrides
+### 2. Validation / Linting
 
-**Status**: Planned
+**Status**: Partially shipped
 **Priority**: Medium
 
-Override variables at build time without editing the .msis file. Essential for CI/CD pipelines.
+`/DRY-RUN` already parses, resolves variables and validates, stopping before `wix build`:
 
 ```bash
-msis /BUILD /D:PRODUCT_VERSION=2.0.0 setup.msis
+msis /DRY-RUN setup.msis      # -> [dry-run] Parse and validate complete
 ```
 
----
+What it actually catches:
 
-### 3. Validation / Linting
+- unknown elements and attributes, and missing required fields (the parser rejects both)
+- variable reference cycles and malformed `{{...}}` expressions
+- the warnings msis emits at generation time: deprecated variables, the destructive
+  uninstall settings, and unresolved values in generated content
 
-**Status**: Planned
-**Priority**: Medium
+What it does **not** catch, and a linter would:
 
-A `/VALIDATE` command to catch errors before WiX does:
-
-- Missing required variables (PRODUCT_NAME, UPGRADE_CODE, etc.)
-- Invalid GUIDs
-- Source files/folders that don't exist
+- **Source files and folders that do not exist.** Today a missing source is skipped
+  silently — the package builds without it, and nothing says so.
+- **An undefined `{{VAR}}`**, which renders as the empty string rather than failing. Only
+  cycles and malformed expressions are errors.
+- Invalid GUIDs in `UPGRADE_CODE`
 - Duplicate shortcut names
+- Recommended-but-unset variables
 
-```bash
-msis /VALIDATE setup.msis
-```
+Note that `/DRY-RUN` stops before the build, so build-time checks do not run under it —
+the missing-hook-DLL check (`USE_INSTALLER_HOOKS` without the arch-native DLL) is one, and
+it fires only under `/BUILD`.
+
+Whether that deserves its own `/VALIDATE` flag or is simply more checks inside `/DRY-RUN`
+is open — a second flag that does almost the same thing is the kind of surface this
+project avoids.
 
 ---
 
-### 4. File Associations
+### 3. File Associations
 
 **Status**: Considering
 **Priority**: Low
@@ -112,15 +119,36 @@ These are explicitly **not** planned for msis:
 ## Completed (3.0)
 
 - Core MSI generation (files, directories, features)
-- Registry import from .reg files
+- Registry import from .reg files, including `preserve="yes"` to keep a value the user
+  already has instead of overwriting it
 - Desktop and Start Menu shortcuts
 - Windows services
 - Environment variables (including ADD_TO_PATH)
 - Custom actions (execute commands)
+- `<create-folder>` and `<remove-on-uninstall>` (folders and registry keys)
 - Multi-architecture bundles (x64, x86, ARM64)
-- Prerequisites (VC++ Runtime, .NET Framework)
-- Template customization and logo branding
-- WiX 6 integration
+- Prerequisites (VC++ Runtime, .NET Framework), including auto-bundling: a package with
+  `<requires>` is wrapped in a Burn bundle that chains them, or with `/STANDALONE` emits
+  launch conditions instead
+- Installer hooks (`USE_INSTALLER_HOOKS`) and the uninstall cleanup actions
+- Template customization, custom-template overlays and logo branding
+- Command-line variable overrides: `msis /BUILD /SET:PRODUCT_VERSION=2.0.0 setup.msis`,
+  applied after the script's own `<set>` elements
+- `/SETUP-WIX`: installs the pinned WiX toolset and its extensions, version-matched
+- WiX 6 **and 7** integration (major version auto-detected; `-acceptEula` added for v7+)
+
+---
+
+## Keeping this file honest
+
+This roadmap is what a user reads before filing a feature request, so a stale entry
+generates work rather than saving it — issue #4 asked for command-line overrides that had
+already shipped, and it was listed here as Planned at the time.
+
+The rule: **a feature moves out of Planned in the same change that implements it.** When
+closing an issue that adds or completes a feature, check whether this file still describes
+it as future work. An entry here is a claim about the code and is checked against the code,
+not against memory.
 
 ---
 

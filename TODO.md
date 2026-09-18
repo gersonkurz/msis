@@ -63,3 +63,21 @@ Reviewer finding from the #6 review, recorded verbatim (2026-09-17):
 
 Observed in generated output: `"Qword"=hex(b):ef,cd,ab,89,67,45,23,01` emits
 `Value='#81985529216486895'`, well beyond DWORD range.
+
+## Missing payload sources can be silently omitted
+
+Reviewer finding from the #16 review, recorded verbatim (2026-09-18):
+
+> **[task] Missing payload sources can be silently omitted.** At
+> [context.go:803](C:/NGBT/MSIS/msis-3.x/internal/generator/context.go:803),
+> `processFiles` treats every source `os.Stat` failure as success, including during
+> real builds. A missing file or directory can consequently produce an incomplete
+> installer without a source diagnostic. Add explicit handling and regression
+> coverage for real-build source failures. This predates the roadmap diff; fixing
+> generator behavior is deferrable because issue #16 concerns documentation
+> accuracy.
+
+Confirmed in the code while addressing the #16 review: the failed-`os.Stat` branch calls
+`GetOrCreateDirectory` and returns `nil`, with the comment "still create directory
+structure for dry-run/testing". The same class as #19 — generated output quietly missing
+content the script asked for — and worth the same treatment: fail, or warn loudly.
