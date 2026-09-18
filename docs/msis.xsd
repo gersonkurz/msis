@@ -62,6 +62,61 @@
     <xs:attribute name="folder" type="xs:string" use="required"/>
   </xs:complexType>
 
+  <xs:complexType name="CreateFolderType">
+    <xs:annotation>
+      <xs:documentation>
+        Creates an empty directory at install time, e.g. a log or data folder the
+        application writes to later. The directory is removed on uninstall only if it is
+        still empty; use remove-on-uninstall to delete one with content.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="target" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>
+          Directory to create, as a root key plus a subpath: [APPDATADIR]MyCompany\Logs.
+          A path matching no known root is treated as a subpath of INSTALLDIR.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
+  <xs:complexType name="RemoveOnUninstallType">
+    <xs:annotation>
+      <xs:documentation>
+        Removes a folder tree or a registry key on uninstall, including content the
+        installer never installed.
+
+        Set exactly ONE of folder or registry per element; to remove both a folder and a
+        key, use two elements. Setting both on one element currently emits two components
+        with the same id and the build fails with WIX0091. An element with neither
+        attribute produces nothing.
+
+        DESTRUCTIVE. folder deletes the directory and everything under it (WiX
+        util:RemoveFolderEx), which includes files the application or the user created
+        there, such as databases and logs. registry deletes the key and all of its
+        subkeys and values. Point both at a directory or key the package owns.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="folder" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Folder to delete recursively, e.g. [APPDATADIR]MyCompany\MyApp. Resolved at
+          install time and recorded in the registry, so the path is known at uninstall.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="registry" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Registry key to delete recursively, as root plus key:
+          HKLM\Software\MyCompany\MyApp. Recognized roots are HKLM, HKCU, HKCR and HKU, or
+          their long forms (HKEY_LOCAL_MACHINE etc.). A root msis does not recognize is
+          skipped silently: the package builds and the key is never removed.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
   <xs:complexType name="ExecuteType">
     <xs:attribute name="cmd" type="xs:string" use="required"/>
     <xs:attribute name="when" type="xs:string" use="required"/>
@@ -157,6 +212,8 @@
         <xs:element name="service" type="ServiceType"/>
         <xs:element name="exclude" type="ExcludeType"/>
         <xs:element name="execute" type="ExecuteType"/>
+        <xs:element name="create-folder" type="CreateFolderType"/>
+        <xs:element name="remove-on-uninstall" type="RemoveOnUninstallType"/>
       </xs:choice>
     </xs:sequence>
     <xs:attribute name="name" type="xs:string" use="required"/>
@@ -179,6 +236,8 @@
           <xs:element name="service" type="ServiceType"/>
           <xs:element name="exclude" type="ExcludeType"/>
           <xs:element name="execute" type="ExecuteType"/>
+          <xs:element name="create-folder" type="CreateFolderType"/>
+          <xs:element name="remove-on-uninstall" type="RemoveOnUninstallType"/>
           <xs:element name="bundle" type="BundleType"/>
         </xs:choice>
       </xs:sequence>

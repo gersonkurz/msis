@@ -682,7 +682,68 @@ For more details on prerequisites, custom packages, and bundle variables, see [B
 
 ---
 
-## Tutorial 12: Putting It All Together
+## Tutorial 12: Data Folders and Uninstall Cleanup
+
+Most applications write files after installation — logs, a database, a cache. The installer
+does not ship those files, so Windows Installer does not know about them: it will not create
+the folder for you, and it will not remove it when the product is uninstalled.
+
+Two elements cover that gap.
+
+### Creating an empty folder
+
+```xml
+<feature name="Main">
+  <files source="bin\*" target="[INSTALLDIR]"/>
+  <create-folder target="[APPDATADIR]MyCompany\MyApp\logs"/>
+</feature>
+```
+
+`<create-folder>` makes the directory at install time so your application can write to it
+immediately. `target` is a root key plus a subpath, exactly like `<files target=...>`; a path
+matching no known root is treated as a subpath of `INSTALLDIR`.
+
+On uninstall the folder is removed only if it is **empty**. That is usually not the case —
+which is what the next element is for.
+
+### Removing a folder or registry key on uninstall
+
+```xml
+<feature name="Main">
+  <files source="bin\*" target="[INSTALLDIR]"/>
+  <remove-on-uninstall folder="[APPDATADIR]MyCompany\MyApp"/>
+  <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>
+</feature>
+```
+
+`folder` deletes the directory **and everything under it**. `registry` deletes the key and all
+of its subkeys and values.
+
+Use **one attribute per element**, as above. Setting both on a single element currently makes
+the build fail with `WIX0091: Duplicate Component`, because the two cleanups are emitted as
+components sharing an id.
+
+> ⚠️ **This deletes files your installer never installed.** That is the point of it — but it
+> means a `folder` pointed one level too high takes the user's data with it. A
+> `[APPDATADIR]MyCompany` that other products of yours also use, or an `[INSTALLDIR]` the
+> customer chose as an existing directory, will be removed wholesale, including any database
+> or configuration living there. Point it at a directory your package owns, and nothing above
+> it.
+
+Recognized registry roots are `HKLM`, `HKCU`, `HKCR` and `HKU`, or their long forms
+(`HKEY_LOCAL_MACHINE` and so on). **A root msis does not recognize is skipped silently** — the
+package builds and the key is simply never removed — so check the spelling of that first
+segment. The folder path is resolved during installation and recorded, so uninstall removes the
+directory the product actually used even if `INSTALLDIR` was customized.
+
+This is not the same as the installer-hook cleanup (`REMOVE_FOLDERS_ON_UNINSTALL`), which is a
+blanket removal of the whole `INSTALLDIR`/`APPDATADIR` trees performed by the native hook DLL.
+`<remove-on-uninstall>` is the targeted version: it names exactly what goes, it needs no hook
+DLL, and it is what you want unless you have a specific reason to reach for the other.
+
+---
+
+## Tutorial 13: Putting It All Together
 
 Here's a complete example for a real-world application:
 

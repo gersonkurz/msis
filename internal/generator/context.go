@@ -83,7 +83,7 @@ type Context struct {
 type RemoveOnUninstallItem struct {
 	ID        string
 	Registry  string // e.g., "HKLM\Software\MyCompany\MyApp"
-	Folder    string // e.g., "[COMMONAPPDATA]MyCompany\MyApp"
+	Folder    string // e.g., "[APPDATADIR]MyCompany\MyApp"
 	FeatureID string // feature this component belongs to
 }
 

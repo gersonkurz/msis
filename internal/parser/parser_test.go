@@ -981,3 +981,68 @@ func TestParseNg1BmoExample(t *testing.T) {
 		}
 	}
 }
+
+// TestParseRemoveOnUninstall covers the element documented in docs/tutorial.md and
+// docs/msis.xsd as part of issue #22. The third case - folder and registry on one element -
+// parses, but the generator then emits two components sharing an id and wix build fails with
+// WIX0091, so the docs tell users one attribute per element. This asserts the parser layer
+// only; it is not a claim that the combination works end to end.
+func TestParseRemoveOnUninstall(t *testing.T) {
+	doc := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <feature name="Main">
+        <remove-on-uninstall folder="[APPDATADIR]MyCompany\MyApp"/>
+        <remove-on-uninstall registry="HKLM\Software\MyCompany\MyApp"/>
+        <remove-on-uninstall folder="[APPDATADIR]Both" registry="HKLM\Software\Both"/>
+    </feature>
+</setup>`
+
+	setup, err := ParseBytes([]byte(doc))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	items := setup.Features[0].Items
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+
+	want := []ir.RemoveOnUninstall{
+		{Folder: `[APPDATADIR]MyCompany\MyApp`},
+		{Registry: `HKLM\Software\MyCompany\MyApp`},
+		{Folder: `[APPDATADIR]Both`, Registry: `HKLM\Software\Both`},
+	}
+	for i, expected := range want {
+		got, ok := items[i].(ir.RemoveOnUninstall)
+		if !ok {
+			t.Fatalf("item %d: expected RemoveOnUninstall, got %T", i, items[i])
+		}
+		if got != expected {
+			t.Errorf("item %d: got %+v, want %+v", i, got, expected)
+		}
+	}
+}
+
+// TestParseRemoveOnUninstallAtTopLevel guards the placement docs/msis.xsd now declares:
+// the element is accepted directly under <setup>, not only inside a <feature>.
+func TestParseRemoveOnUninstallAtTopLevel(t *testing.T) {
+	doc := `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <create-folder target="[APPDATADIR]MyCompany\logs"/>
+    <remove-on-uninstall folder="[APPDATADIR]MyCompany"/>
+</setup>`
+
+	setup, err := ParseBytes([]byte(doc))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(setup.Items) != 2 {
+		t.Fatalf("expected 2 top-level items, got %d", len(setup.Items))
+	}
+	if _, ok := setup.Items[0].(ir.CreateFolder); !ok {
+		t.Errorf("expected CreateFolder, got %T", setup.Items[0])
+	}
+	if _, ok := setup.Items[1].(ir.RemoveOnUninstall); !ok {
+		t.Errorf("expected RemoveOnUninstall, got %T", setup.Items[1])
+	}
+}
