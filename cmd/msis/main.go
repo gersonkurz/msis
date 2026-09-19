@@ -217,7 +217,7 @@ func processFile(filename string, args *cliArgs) error {
 
 	// Branch based on bundle vs MSI
 	if isBundle {
-		return processBundleFile(setup, vars, workDir, templateFolder, customTemplates, args)
+		return processBundleFile(setup, vars, workDir, templateFolder, customTemplates, filename, args)
 	}
 	return processMSIFile(setup, vars, workDir, templateFolder, customTemplates, filename, args)
 }
@@ -329,11 +329,9 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 			return fmt.Errorf("building MSI: %w\n  hint: %s", err, setupHint)
 		}
 
-		// Compute actual MSI output path (same logic as wix.NewBuilder)
-		msiPath := vars.BuildTarget()
-		if msiPath == "" {
-			msiPath = strings.TrimSuffix(wxsFile, filepath.Ext(wxsFile)) + ".msi"
-		}
+		// Report (and hand to the auto-bundle) what the builder actually wrote, rather than
+		// recomputing it here and hoping the two stay in step (issue #27).
+		msiPath := builder.OutputFile
 		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(msiPath))
 
 		// Milestone 6.2 - Auto-bundle if requirements present
@@ -343,6 +341,14 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	}
 
 	return nil
+}
+
+// bundleWxsPath names the intermediate .wxs for the bundle built from baseName (a source path
+// with its extension already stripped). wix.NewBundleBuilder strips the same "-bundle" suffix
+// again to name the .exe beside it, so the two conventions have to stay in step (issue #27);
+// TestBundleWxsRoundTrip pins that.
+func bundleWxsPath(baseName string) string {
+	return baseName + "-bundle.wxs"
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
@@ -390,8 +396,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	}
 
 	// Determine output filename (bundle produces .exe)
-	baseName := strings.TrimSuffix(msiPath, filepath.Ext(msiPath))
-	wxsFile := baseName + "-bundle.wxs"
+	wxsFile := bundleWxsPath(strings.TrimSuffix(msiPath, filepath.Ext(msiPath)))
 
 	// Write WXS file
 	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
@@ -405,7 +410,10 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 	}
 
-	fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
+	// Report what the builder actually wrote. This used to recompute a path from the MSI
+	// name, which disagreed with the builder on both directory and filename, so the
+	// success line named a file that did not exist (issue #27).
+	fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(bundleBuilder.OutputFile))
 
 	return nil
 }
@@ -456,8 +464,20 @@ func hasVCRedistFolder(workDir string) bool {
 	return false
 }
 
+// bundleBaseName gives the extension-less base path for a .msis that IS a <bundle>: BUILD_TARGET
+// when set, otherwise the .msis path itself, so the artifacts land beside the source the way the
+// MSI path's do. The old default was PRODUCT_NAME + "-" + PRODUCT_VERSION - a RELATIVE name,
+// resolved against whatever directory msis happened to be launched from, with its patch version
+// eaten by filepath.Ext (issue #27).
+func bundleBaseName(filename string, vars variables.Dictionary) string {
+	if bt := vars.BuildTarget(); bt != "" {
+		return wix.TrimPackageSuffix(bt)
+	}
+	return strings.TrimSuffix(filename, filepath.Ext(filename))
+}
+
 // processBundleFile generates a WiX Bundle (bootstrapper).
-func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates string, args *cliArgs) error {
+func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, filename string, args *cliArgs) error {
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
 
@@ -504,12 +524,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	}
 
 	// Determine output filename (bundle produces .exe)
-	baseName := vars.BuildTarget()
-	if baseName == "" {
-		baseName = vars.ProductName() + "-" + vars.ProductVersion()
-	}
-	baseName = strings.TrimSuffix(baseName, filepath.Ext(baseName))
-	wxsFile := baseName + "-bundle.wxs"
+	wxsFile := bundleWxsPath(bundleBaseName(filename, vars))
 
 	// Write WXS file
 	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
@@ -528,7 +543,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			return fmt.Errorf("building bundle: %w\n  hint: %s", err, setupHint)
 		}
 
-		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(baseName+".exe"))
+		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(builder.OutputFile))
 	}
 
 	return nil

@@ -230,15 +230,42 @@ usually the ones that matter. See [templates.md](templates.md#installer-ui-optio
 
 ## Output
 
-Bundles produce an `.exe` file (not `.msi`). The output filename defaults to:
-```
-{PRODUCT_NAME}-{PRODUCT_VERSION}.exe
-```
+Bundles produce an `.exe` file (not `.msi`). **The default output goes beside the source**, named
+after it — msis never writes into the directory you happened to launch it from:
+
+| Source | Default output |
+|--------|----------------|
+| `C:\src\setup.msis` containing `<bundle>` | `C:\src\setup.exe` |
+| `C:\src\app.msis` with `<requires>` (auto-bundle) | `C:\src\app.msi` **and** `C:\src\app.exe` |
 
 Override with `BUILD_TARGET`:
 ```xml
 <set name="BUILD_TARGET" value="MyApp-Setup.exe"/>
 ```
+
+Three things to know about `BUILD_TARGET` here:
+
+- A **relative** value is resolved against the **current working directory**, not against the
+  `.msis`. `just release-all` relies on this: `bootstrap/setup-bundle.msis` sets
+  `dist\msis-<version>-setup.exe` and the recipe runs from `bootstrap/`, so the artifacts land in
+  `bootstrap/dist/`.
+- On a package that **auto-bundles**, `BUILD_TARGET` names the MSI and the bundle is named
+  beside it: `App-1.0.0.msi` produces `App-1.0.0.exe`. (Setting a `.exe` value on such a package
+  currently breaks the MSI step — [issue #28](https://github.com/gersonkurz/msis/issues/28).)
+- Only a real `.exe` or `.msi` suffix is replaced. A value with **no** extension keeps every
+  version segment: `MyApp-1.0.0` becomes `MyApp-1.0.0.exe`, not `MyApp-1.0.exe`.
+
+The bundle's intermediate WiX source is written as `<output base>-bundle.wxs` next to the
+output — `setup-bundle.wxs`, `App-1.0.0-bundle.wxs` — and deleted after a successful build
+unless you pass `/RETAINWXS`.
+
+Earlier versions defaulted to `{PRODUCT_NAME}-{PRODUCT_VERSION}.exe` as a *relative* path, which
+landed in the working directory and lost its patch version to a mis-parsed extension
+([issue #27](https://github.com/gersonkurz/msis/issues/27)). A `BUILD_TARGET` still lands where
+it always did — the fix never changed how a relative value is resolved — so setups that set one
+ending in `.exe` or `.msi`, this repo's own release among them, produce the same filenames as
+before. A `BUILD_TARGET` with *no* extension is the one case that changes: it now keeps its full
+version, so `MyApp-1.0.0` yields `MyApp-1.0.0.exe` where it used to yield `MyApp-1.0.exe`.
 
 ## Silent vs UI Bundles
 

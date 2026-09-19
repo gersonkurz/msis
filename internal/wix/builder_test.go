@@ -281,3 +281,60 @@ func TestPlatformLowercase(t *testing.T) {
 		t.Errorf("Platform should be case-insensitively equal to x64")
 	}
 }
+
+// TestTrimPackageSuffix covers the trap that truncated versions (issue #27): filepath.Ext reads
+// the last dot-segment of a version as an extension, so the old
+// TrimSuffix(name, filepath.Ext(name)) + ".exe" turned "MyApp-1.0.0" into "MyApp-1.0.exe". The
+// ".msi" cases are the naming an auto-bundling package with BUILD_TARGET has always had, and
+// must survive: the MSI is "App-1.0.0.msi", the bundle beside it "App-1.0.0.exe".
+func TestTrimPackageSuffix(t *testing.T) {
+	tests := []struct{ in, wantTrim, wantEnsure string }{
+		{"MyApp-1.0.0", "MyApp-1.0.0", "MyApp-1.0.0.exe"},
+		{"X86 Bundle Probe-1.0.0", "X86 Bundle Probe-1.0.0", "X86 Bundle Probe-1.0.0.exe"},
+		{"setup.exe", "setup", "setup.exe"},
+		{"SETUP.EXE", "SETUP", "SETUP.exe"},
+		{"App-1.0.0.msi", "App-1.0.0", "App-1.0.0.exe"},
+		{`dist\App-1.0.0.MSI`, `dist\App-1.0.0`, `dist\App-1.0.0.exe`},
+		{"setup", "setup", "setup.exe"},
+		{"dist/msis-3.0.5-setup.exe", "dist/msis-3.0.5-setup", "dist/msis-3.0.5-setup.exe"},
+		{"", "", ".exe"},
+	}
+	for _, tt := range tests {
+		if got := TrimPackageSuffix(tt.in); got != tt.wantTrim {
+			t.Errorf("TrimPackageSuffix(%q) = %q, want %q", tt.in, got, tt.wantTrim)
+		}
+		if got := ensureExeSuffix(tt.in); got != tt.wantEnsure {
+			t.Errorf("ensureExeSuffix(%q) = %q, want %q", tt.in, got, tt.wantEnsure)
+		}
+	}
+}
+
+// TestNewBundleBuilderOutputFile: without BUILD_TARGET the bundle is named from the .wxs path, so
+// it lands beside the source. It used to be PRODUCT_NAME + "-" + PRODUCT_VERSION - relative, so
+// filepath.Abs in runWixBuild resolved it against the process's working directory (issue #27).
+func TestNewBundleBuilderOutputFile(t *testing.T) {
+	dir := t.TempDir()
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "X86 Bundle Probe"
+	vars["PRODUCT_VERSION"] = "1.0.0"
+
+	b := NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
+	if want := filepath.Join(dir, "probe.exe"); b.OutputFile != want {
+		t.Errorf("default OutputFile = %q, want %q", b.OutputFile, want)
+	}
+
+	// BUILD_TARGET wins, and keeps its full version even without an extension.
+	vars["BUILD_TARGET"] = "out/Probe-1.0.0"
+	b = NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
+	if want := "out/Probe-1.0.0.exe"; b.OutputFile != want {
+		t.Errorf("BUILD_TARGET OutputFile = %q, want %q", b.OutputFile, want)
+	}
+
+	// A package that auto-bundles shares its variables with the MSI, so BUILD_TARGET normally
+	// names a .msi; the bundle beside it must keep being "<same name>.exe", version and all.
+	vars["BUILD_TARGET"] = "out/Probe-1.0.0.msi"
+	b = NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
+	if want := "out/Probe-1.0.0.exe"; b.OutputFile != want {
+		t.Errorf("BUILD_TARGET .msi OutputFile = %q, want %q", b.OutputFile, want)
+	}
+}

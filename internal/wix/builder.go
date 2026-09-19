@@ -315,16 +315,46 @@ type BundleBuilder struct {
 	RetainWxs       bool
 }
 
+// TrimPackageSuffix removes a trailing ".exe" or ".msi" (case-insensitively) and nothing else.
+//
+// Not TrimSuffix(name, filepath.Ext(name)): for "MyApp-1.0.0", filepath.Ext returns ".0" - the
+// last dot-segment of a VERSION, not an extension - so trimming it produced "MyApp-1.0" and the
+// patch version vanished from the filename (issue #27). ".msi" is listed because BUILD_TARGET
+// names the MSI on a package that also auto-bundles, and the bundle beside it has always been
+// "MyApp-1.0.0.msi" -> "MyApp-1.0.0.exe".
+func TrimPackageSuffix(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".exe", ".msi":
+		return name[:len(name)-len(".exe")]
+	}
+	return name
+}
+
+// ensureExeSuffix gives a bundle target its ".exe" extension, replacing a ".msi" or a
+// differently-cased ".exe" and leaving anything else (a version segment above all) alone.
+func ensureExeSuffix(name string) string {
+	return TrimPackageSuffix(name) + ".exe"
+}
+
 // NewBundleBuilder creates a WiX bundle builder from variables and paths. sourceDir is the .msis
 // directory, added to the bind paths so an explicit source-relative LOGO_BOOTSTRAP (or other
 // payload) resolves the same way it does for the MSI build.
 func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates, sourceDir string, retainWxs bool) *BundleBuilder {
-	// Determine output file (bundles produce .exe)
+	// Determine output file (bundles produce .exe).
+	//
+	// The default is derived from the .wxs path, as NewBuilder does for the MSI, so the
+	// bundle lands beside the source. It used to be PRODUCT_NAME + "-" + PRODUCT_VERSION,
+	// a RELATIVE name, which filepath.Abs then resolved against the process's working
+	// directory - so `msis /BUILD some\far\away\setup.msis` wrote a 14 MB executable into
+	// whatever directory the user happened to be in (issue #27).
 	outputFile := vars.BuildTarget()
 	if outputFile == "" {
-		outputFile = vars.ProductName() + "-" + vars.ProductVersion()
+		outputFile = strings.TrimSuffix(wxsFile, filepath.Ext(wxsFile))
+		// The .wxs for an auto-bundle is "<name>-bundle.wxs"; the artifact users expect is
+		// "<name>.exe", not "<name>-bundle.exe".
+		outputFile = strings.TrimSuffix(outputFile, "-bundle")
 	}
-	outputFile = strings.TrimSuffix(outputFile, filepath.Ext(outputFile)) + ".exe"
+	outputFile = ensureExeSuffix(outputFile)
 
 	return &BundleBuilder{
 		WxsFile:         wxsFile,

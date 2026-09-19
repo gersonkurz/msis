@@ -111,3 +111,25 @@ and the last of that family still open in `processFiles`. #24 closed the case wh
 source is absent; this is the case where it is present but cannot be enumerated (permissions,
 a directory that disappears mid-build, an I/O error), which `addDirectoryContents` swallows at
 every level of the walk, not just the top.
+
+---
+
+## Overwrite checks can delete a different file from the actual build output
+
+Reviewer finding from the #27 review, recorded verbatim (2026-09-19):
+
+> **[task] Overwrite checks can delete a different file from the actual output.**
+> [builder.go:75](C:/NGBT/MSIS/msis-3.x/internal/wix/builder.go:75) resolves relative MSI
+> outputs against `SourceDir`; [builder.go:391](C:/NGBT/MSIS/msis-3.x/internal/wix/builder.go:391)
+> resolves relative bundle outputs against the WXS directory. Both build commands instead
+> resolve against the process cwd. For example, bundle target `dist\setup.exe` with WXS
+> `dist\setup-bundle.wxs` checks and potentially deletes `dist\dist\setup.exe`, while building
+> `dist\setup.exe`. Unify deletion and build path resolution while retaining cwd-relative target
+> placement, with an executed sentinel-file regression test. This defect predates #27 and is
+> deferrable as separate overwrite-safety work; record it in `TODO.md`.
+
+Predates #27 and was left untouched by it: #27 changed only the *default* output name, never
+where a relative `BUILD_TARGET` resolves. The pre-delete is the part with teeth —
+`checkOutputWritable` removes the file it resolved, which is not necessarily the file the build
+then writes. Touches the same two functions as [issue #28](https://github.com/gersonkurz/msis/issues/28)
+(`BUILD_TARGET` plus `<requires>`), so worth doing with or immediately after it.
