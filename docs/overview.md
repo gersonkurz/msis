@@ -348,8 +348,13 @@ Some variables have computed defaults:
 | `PLATFORM` | `x64` |
 | `LCID` | `1033` (English) |
 | `CODEPAGE` | `1252` (Western) |
-| `BUILD_TARGET` | `{name}-{version}-{platform}.msi` |
+| `BUILD_TARGET` | *(none)* — artifacts are named after the `.msis` and land beside it |
 | `INSTALLDIR` | `PRODUCT_NAME` |
+
+`BUILD_TARGET` is a **name pattern**, not a literal output filename: msis takes its directory and
+stem and gives each artifact its own extension — `.wxs`, `.msi`, and the `.exe` when the package
+bundles. One value therefore names them all, whichever of the two extensions it carries (or
+none). See [Bundle.md](Bundle.md#output) for the table and the relative-path rule.
 
 ---
 

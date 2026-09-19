@@ -29,11 +29,18 @@ type Builder struct {
 // NewBuilder creates a WiX builder from variables and paths.
 // sourceDir is the directory of the original .msis file, used for resolving source paths.
 func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTemplates, sourceDir string, retainWxs bool) *Builder {
-	// Determine output file
+	// Determine output file. BUILD_TARGET names the release artifacts; the MSI is the ".msi"
+	// one of them, whatever extension the target itself carries (see TargetPath).
+	//
+	// Without a target the name comes from the .wxs, which is already beside the source, and the
+	// stem is taken WHOLE - it is the source's own name, not a target to normalize. Running it
+	// through TargetPath would trim a second suffix, so "probe.exe.msis" would build "probe.msi"
+	// and overwrite what "probe.msis" builds.
 	outputFile := vars.BuildTarget()
 	if outputFile == "" {
-		// Default to input filename with .msi extension
 		outputFile = strings.TrimSuffix(wxsFile, filepath.Ext(wxsFile)) + ".msi"
+	} else {
+		outputFile = TargetPath(outputFile, "msi")
 	}
 
 	return &Builder{
@@ -330,10 +337,16 @@ func TrimPackageSuffix(name string) string {
 	return name
 }
 
-// ensureExeSuffix gives a bundle target its ".exe" extension, replacing a ".msi" or a
-// differently-cased ".exe" and leaving anything else (a version segment above all) alone.
-func ensureExeSuffix(name string) string {
-	return TrimPackageSuffix(name) + ".exe"
+// TargetPath names one build artifact from a build target: the target's directory and stem, plus
+// ".<ext>". BUILD_TARGET is a NAME PATTERN, not a literal filename - msis-2.x derives the .wxs,
+// .msi, .exe and .wixpdb from the single value (BuildContext.SetupFileName), and msis does the
+// same. `wix build` infers its output type from the extension, so handing it a target meant for
+// a different artifact made it try to build a Bundle from a <Package> and fail (issue #28).
+//
+// Unlike msis-2.x, which cut at the last '.', only a real ".exe" or ".msi" is replaced: cutting
+// at the last dot turned "MyApp-1.0.0" into "MyApp-1.0" (issue #27).
+func TargetPath(target, ext string) string {
+	return TrimPackageSuffix(target) + "." + ext
 }
 
 // NewBundleBuilder creates a WiX bundle builder from variables and paths. sourceDir is the .msis
@@ -351,10 +364,12 @@ func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, custom
 	if outputFile == "" {
 		outputFile = strings.TrimSuffix(wxsFile, filepath.Ext(wxsFile))
 		// The .wxs for an auto-bundle is "<name>-bundle.wxs"; the artifact users expect is
-		// "<name>.exe", not "<name>-bundle.exe".
-		outputFile = strings.TrimSuffix(outputFile, "-bundle")
+		// "<name>.exe", not "<name>-bundle.exe". As in NewBuilder, the stem that remains is
+		// the source's own name and is kept whole rather than normalized again.
+		outputFile = strings.TrimSuffix(outputFile, "-bundle") + ".exe"
+	} else {
+		outputFile = TargetPath(outputFile, "exe")
 	}
-	outputFile = ensureExeSuffix(outputFile)
 
 	return &BundleBuilder{
 		WxsFile:         wxsFile,

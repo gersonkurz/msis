@@ -34,6 +34,32 @@ func TestBundleWxsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestWxsPath covers the MSI package's .wxs naming. BUILD_TARGET is a name pattern, so the .wxs
+// shares its directory and stem; it used to be cut at filepath.Ext, which wrote "MyApp-1.0.0" as
+// "MyApp-1.0.wxs" (issue #27) — and with the .msi now derived from the target rather than taken
+// verbatim (issue #28), a truncated stem here would put the .wxs and the .msi in disagreement.
+func TestWxsPath(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "probe.msis")
+
+	vars := variables.New()
+	if want := filepath.Join(dir, "probe.wxs"); wxsPath(filename, vars) != want {
+		t.Errorf("wxsPath without BUILD_TARGET = %q, want %q", wxsPath(filename, vars), want)
+	}
+
+	for target, want := range map[string]string{
+		"probe.exe":          "probe.wxs",
+		"probe.msi":          "probe.wxs",
+		"probe-1.0.0":        "probe-1.0.0.wxs",
+		`dist\app-2.1.0.exe`: `dist\app-2.1.0.wxs`,
+	} {
+		vars["BUILD_TARGET"] = target
+		if got := wxsPath(filename, vars); got != want {
+			t.Errorf("wxsPath with BUILD_TARGET %q = %q, want %q", target, got, want)
+		}
+	}
+}
+
 // TestBundleFileWxsDefaultsBesideSource covers the explicit <bundle> path, which had the same two
 // defects: without BUILD_TARGET it named its artifacts PRODUCT_NAME-PRODUCT_VERSION - a relative
 // path resolved against the working directory - and filepath.Ext then ate the patch version.

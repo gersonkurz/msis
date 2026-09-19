@@ -223,9 +223,28 @@ func processFile(filename string, args *cliArgs) error {
 }
 
 // processMSIFile generates a standard MSI package.
+// wxsPath names the .wxs for an MSI package: derived from BUILD_TARGET when one is set — it is a
+// name pattern, so every artifact shares its directory and stem (see wix.TargetPath) — otherwise
+// from the .msis path. It used to cut BUILD_TARGET at filepath.Ext, which wrote the .wxs for
+// "MyApp-1.0.0" as "MyApp-1.0.wxs" (issue #27).
+func wxsPath(filename string, vars variables.Dictionary) string {
+	if bt := vars.BuildTarget(); bt != "" {
+		return wix.TargetPath(bt, "wxs")
+	}
+	return strings.TrimSuffix(filename, filepath.Ext(filename)) + ".wxs"
+}
+
 func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, filename string, args *cliArgs) error {
 	// Determine if auto-bundling is needed
 	needsAutoBundle := len(setup.Requires) > 0 && !args.standalone
+
+	// A BUILD_TARGET ending in ".exe" asks for a bundle. Without one msis builds an MSI and
+	// names it ".msi"; say so rather than renaming the user's artifact silently (issue #28).
+	if bt := vars.BuildTarget(); bt != "" && !needsAutoBundle && strings.EqualFold(filepath.Ext(bt), ".exe") {
+		fmt.Printf("  %s\n", cli.Warning(fmt.Sprintf(
+			"Warning: BUILD_TARGET is %q but this package builds an MSI, so the output is %s. A bundle needs <requires> (and no /STANDALONE).",
+			bt, wix.TargetPath(bt, "msi"))))
+	}
 
 	if needsAutoBundle {
 		fmt.Printf("  Requirements: %s (will auto-bundle)\n", cli.Number(fmt.Sprintf("%d", len(setup.Requires))))
@@ -303,10 +322,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	}
 
 	// Determine output filename
-	wxsFile := strings.TrimSuffix(filename, filepath.Ext(filename)) + ".wxs"
-	if vars.BuildTarget() != "" {
-		wxsFile = strings.TrimSuffix(vars.BuildTarget(), filepath.Ext(vars.BuildTarget())) + ".wxs"
-	}
+	wxsFile := wxsPath(filename, vars)
 
 	// Write WXS file
 	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {

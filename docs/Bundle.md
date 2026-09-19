@@ -243,17 +243,33 @@ Override with `BUILD_TARGET`:
 <set name="BUILD_TARGET" value="MyApp-Setup.exe"/>
 ```
 
-Three things to know about `BUILD_TARGET` here:
+`BUILD_TARGET` is a **name pattern, not a literal filename**. Its directory and stem are shared
+by every artifact of the build, and each one supplies its own extension — so one value names the
+`.wxs`, the `.msi` and the bundle `.exe` together, exactly as msis-2.x did:
+
+| `BUILD_TARGET` | `.wxs` | `.msi` | bundle `.exe` |
+|----------------|--------|--------|---------------|
+| `dist\App-1.0.0.exe` | `dist\App-1.0.0.wxs` | `dist\App-1.0.0.msi` | `dist\App-1.0.0.exe` |
+| `dist\App-1.0.0.msi` | `dist\App-1.0.0.wxs` | `dist\App-1.0.0.msi` | `dist\App-1.0.0.exe` |
+| `dist\App-1.0.0` | `dist\App-1.0.0.wxs` | `dist\App-1.0.0.msi` | `dist\App-1.0.0.exe` |
+
+Either extension therefore works on a package that auto-bundles, and so does none. Passing the
+value straight to `wix build` used to make it infer the output type from the extension and fail
+([issue #28](https://github.com/gersonkurz/msis/issues/28)).
+
+Two more things to know:
 
 - A **relative** value is resolved against the **current working directory**, not against the
   `.msis`. `just release-all` relies on this: `bootstrap/setup-bundle.msis` sets
   `dist\msis-<version>-setup.exe` and the recipe runs from `bootstrap/`, so the artifacts land in
-  `bootstrap/dist/`.
-- On a package that **auto-bundles**, `BUILD_TARGET` names the MSI and the bundle is named
-  beside it: `App-1.0.0.msi` produces `App-1.0.0.exe`. (Setting a `.exe` value on such a package
-  currently breaks the MSI step — [issue #28](https://github.com/gersonkurz/msis/issues/28).)
+  `bootstrap/dist/`. The directory has to exist; msis does not create it.
 - Only a real `.exe` or `.msi` suffix is replaced. A value with **no** extension keeps every
-  version segment: `MyApp-1.0.0` becomes `MyApp-1.0.0.exe`, not `MyApp-1.0.exe`.
+  version segment: `MyApp-1.0.0` yields `MyApp-1.0.0.msi` and `MyApp-1.0.0.exe`. (msis-2.x cut
+  at the last `.` here, which turned that into `MyApp-1.0`.)
+
+A `.exe` `BUILD_TARGET` on a package that does **not** bundle — no `<requires>`, or
+`/STANDALONE` — names an artifact msis will not produce. It builds the MSI, names it `.msi`,
+and says so in a warning rather than renaming the target silently.
 
 The bundle's intermediate WiX source is written as `<output base>-bundle.wxs` next to the
 output — `setup-bundle.wxs`, `App-1.0.0-bundle.wxs` — and deleted after a successful build

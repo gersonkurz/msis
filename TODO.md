@@ -133,3 +133,23 @@ where a relative `BUILD_TARGET` resolves. The pre-delete is the part with teeth 
 `checkOutputWritable` removes the file it resolved, which is not necessarily the file the build
 then writes. Touches the same two functions as [issue #28](https://github.com/gersonkurz/msis/issues/28)
 (`BUILD_TARGET` plus `<requires>`), so worth doing with or immediately after it.
+
+---
+
+## A BUILD_TARGET directory that does not exist fails with a raw OS error
+
+msis-2.x created it. `BuildContext.CreateReleaseFolder` splits `BUILD_TARGET` into folder and
+filename pattern and calls `Directory.CreateDirectory(ReleaseFolderName)`; msis-3.x does not, so
+the first `os.WriteFile` fails. Observed 2026-09-19 with `BUILD_TARGET=nodir\probe.msi`:
+
+```
+Error processing probe.msis: writing WXS file: open nodir\probe.wxs: The system cannot find the path specified.
+```
+
+Not fixed with #28, which was about the artifact *names* derived from `BUILD_TARGET`, not about
+creating the directory they go in — a different cause, and creating directories is a side effect
+worth deciding on separately. Two ways to go: `os.MkdirAll` on the target's directory (msis-2.x
+parity), or a clear diagnostic naming the missing directory. The current message at least names
+the path, which is why this is a task and not a bug.
+
+`just release-all` never hits it because `clean-bootstrap` creates `bootstrap/dist` first.

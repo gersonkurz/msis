@@ -303,8 +303,8 @@ func TestTrimPackageSuffix(t *testing.T) {
 		if got := TrimPackageSuffix(tt.in); got != tt.wantTrim {
 			t.Errorf("TrimPackageSuffix(%q) = %q, want %q", tt.in, got, tt.wantTrim)
 		}
-		if got := ensureExeSuffix(tt.in); got != tt.wantEnsure {
-			t.Errorf("ensureExeSuffix(%q) = %q, want %q", tt.in, got, tt.wantEnsure)
+		if got := TargetPath(tt.in, "exe"); got != tt.wantEnsure {
+			t.Errorf("TargetPath(%q, exe) = %q, want %q", tt.in, got, tt.wantEnsure)
 		}
 	}
 }
@@ -336,5 +336,86 @@ func TestNewBundleBuilderOutputFile(t *testing.T) {
 	b = NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
 	if want := "out/Probe-1.0.0.exe"; b.OutputFile != want {
 		t.Errorf("BUILD_TARGET .msi OutputFile = %q, want %q", b.OutputFile, want)
+	}
+}
+
+// TestTargetPathRenamesExtension covers issue #28: BUILD_TARGET is a name pattern, so every
+// artifact takes its directory and stem and supplies its own extension. Handing "probe.exe" to
+// the MSI build made `wix build` infer a Bundle output type from the extension and fail with
+// WIX0341; an extensionless target failed with WIX7014 ("output type: .0").
+func TestTargetPathRenamesExtension(t *testing.T) {
+	cases := []struct{ target, ext, want string }{
+		{"probe.exe", "msi", "probe.msi"},
+		{"probe.msi", "exe", "probe.exe"},
+		{"probe.exe", "wxs", "probe.wxs"},
+		{"probe-1.0.0", "msi", "probe-1.0.0.msi"},
+		{"probe-1.0.0", "wxs", "probe-1.0.0.wxs"},
+		{`dist\msis-3.0.5-setup.exe`, "msi", `dist\msis-3.0.5-setup.msi`},
+		{"probe.MSI", "exe", "probe.exe"},
+	}
+	for _, c := range cases {
+		if got := TargetPath(c.target, c.ext); got != c.want {
+			t.Errorf("TargetPath(%q, %q) = %q, want %q", c.target, c.ext, got, c.want)
+		}
+	}
+}
+
+// TestNewBuilderMsiOutputFromBuildTarget: the MSI is always named ".msi", whatever extension
+// BUILD_TARGET carries. Before issue #28 the value was taken verbatim, so a package that
+// auto-bundles - where BUILD_TARGET describes the bundle and the MSI is an intermediate the
+// user never names - asked WiX to write an MSI to a .exe path and the build failed.
+func TestNewBuilderMsiOutputFromBuildTarget(t *testing.T) {
+	cases := []struct{ target, want string }{
+		{"probe.exe", "probe.msi"},
+		{"probe.msi", "probe.msi"},
+		{"probe-1.0.0", "probe-1.0.0.msi"},
+		{`dist\app-2.1.0.exe`, `dist\app-2.1.0.msi`},
+	}
+	for _, c := range cases {
+		vars := variables.New()
+		vars["BUILD_TARGET"] = c.target
+		if got := NewBuilder(vars, "probe.wxs", "", "", "", false).OutputFile; got != c.want {
+			t.Errorf("BUILD_TARGET %q -> OutputFile %q, want %q", c.target, got, c.want)
+		}
+	}
+
+	// No BUILD_TARGET: named from the .wxs, beside the source.
+	dir := t.TempDir()
+	b := NewBuilder(variables.New(), filepath.Join(dir, "probe.wxs"), "", "", "", false)
+	if want := filepath.Join(dir, "probe.msi"); b.OutputFile != want {
+		t.Errorf("default OutputFile = %q, want %q", b.OutputFile, want)
+	}
+}
+
+// TestDefaultOutputKeepsWholeSourceStem: with no BUILD_TARGET the name comes from the .wxs, and
+// that stem is the source's own name - it must not be normalized a second time. A source called
+// "probe.exe.msis" builds "probe.exe.msi"; trimming again would build "probe.msi" and overwrite
+// what the neighbouring "probe.msis" builds. Found in review of issue #28.
+func TestDefaultOutputKeepsWholeSourceStem(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct{ wxs, wantMsi string }{
+		{"probe.wxs", "probe.msi"},
+		{"probe.exe.wxs", "probe.exe.msi"},
+		{"probe.msi.wxs", "probe.msi.msi"},
+		{"App-1.0.0.wxs", "App-1.0.0.msi"},
+	}
+	for _, c := range cases {
+		got := NewBuilder(variables.New(), filepath.Join(dir, c.wxs), "", "", "", false).OutputFile
+		if want := filepath.Join(dir, c.wantMsi); got != want {
+			t.Errorf("NewBuilder(%q).OutputFile = %q, want %q", c.wxs, got, want)
+		}
+	}
+
+	// The bundle default is derived the same way, after dropping the "-bundle" infix.
+	bundles := []struct{ wxs, wantExe string }{
+		{"probe-bundle.wxs", "probe.exe"},
+		{"probe.exe-bundle.wxs", "probe.exe.exe"},
+		{"probe.msi-bundle.wxs", "probe.msi.exe"},
+	}
+	for _, c := range bundles {
+		got := NewBundleBuilder(variables.New(), filepath.Join(dir, c.wxs), "", "", dir, false).OutputFile
+		if want := filepath.Join(dir, c.wantExe); got != want {
+			t.Errorf("NewBundleBuilder(%q).OutputFile = %q, want %q", c.wxs, got, want)
+		}
 	}
 }
