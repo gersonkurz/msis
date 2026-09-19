@@ -280,83 +280,85 @@ direct confirmation that the fix works.
 
 ---
 
-## T5 — top-level `<remove-on-uninstall>` actually deletes the right things
+## T5 — top-level `<remove-on-uninstall>` actually deletes the right things: DONE 2026-09-19
 
-**Tickets:** [#15](https://github.com/gersonkurz/msis/issues/15) (the fix that enabled
-this), [#3](https://github.com/gersonkurz/msis/issues/3) (the same mechanism, verified
-once covers both)
+**Tickets:** [#15](https://github.com/gersonkurz/msis/issues/15) (the fix that made this
+reachable), [#3](https://github.com/gersonkurz/msis/issues/3) (same mechanism — see T7).
 
-### Why this is open
+Executed on a snapshotted VM on 2026-09-19 with `testscripts/t5t7/`. All sixteen checks passed.
 
-Until #15, a top-level `<remove-on-uninstall>` **failed the build**, so its component
-never installed and never ran. The fix gives those components a feature, which makes
-them installable for the first time — and what they do is delete: a recursive folder
-removal and a registry key removal.
+Until #15 a top-level `<remove-on-uninstall>` **failed the build**, so its components never
+installed and never ran. The fix gives them a feature, and that is the moment a recursive
+folder delete and a registry key delete become reachable — which is why this was recorded as
+debt rather than treated as closed by a green build.
 
-So the build going from red to green is exactly the moment the destructive behaviour
-becomes reachable. Linking proves the references exist; it proves nothing about what
-gets deleted. No install has been run. Deferred with the product owner's explicit
-acceptance on 2026-09-18.
+### What was observed
 
-**Run this together with T7** — same mechanism, same seeding, one session covers both
-tickets. T7 carries the full plan for #3; this entry adds what is
-specific to top-level placement.
+Package: cleanup elements written directly under `<setup>`, alongside a `<feature>` that
+installs one file. The `.wxs` check runs on the build machine: both `C_RemoveOnUninstall_0000`
+and `C_RemoveOnUninstall_0001` are referenced by `<Feature Id='MSIS_PACKAGE_ITEMS'>`, the
+synthetic feature #15 introduced. That is #15's failure mode in its silent form, and it is
+clean.
 
-### Setup
+On the VM:
 
-```xml
-<setup>
-  ...
-  <set name="INSTALLDIR" value="CleanupProbe"/>
-  <remove-on-uninstall folder="<the intended absolute logs dir>"/>
-  <remove-on-uninstall registry="HKLM\Software\Vendor\CleanupProbe"/>
-  <feature name="Main">
-    <files source="readme.txt" target="[INSTALLDIR]"/>
-  </feature>
-</setup>
-```
-
-The `<feature>` is essential: without one the package took the WiX-default-feature path
-and this is not the case under test.
-
-**Mind the folder path.** `[APPDATADIR]` already includes the application subdirectory —
-it falls back to the `INSTALLDIR` value — so `[APPDATADIR]Vendor\App\logs` resolves to
-`C:\ProgramData\<INSTALLDIR>\Vendor\App\logs`. Decide the intended absolute directory
-first and assert equality with it; "the stored path is absolute" would pass while
-pointing somewhere else.
-
-### Before installing
-
-1. The generated `.wxs` (build with `/RETAINWXS`) contains a `<Feature
-   Id='MSIS_PACKAGE_ITEMS' ...>` whose `<ComponentRef>` list includes **both** cleanup
-   components.
-2. After install, the path remembered in `HKLM\Software\<MFR>\<PRODUCT>` equals the
-   intended absolute directory exactly.
-
-### Then seed
-
-- a runtime-created file directly in the target folder
-- a runtime-created file in a **nested subfolder** of it
-- a sentinel file in the target's **parent**
-- a sentinel file in a **sibling** directory
-- a registry value under the target key, and a sentinel key beside it
-
-### Cases
-
-| case | expected |
+| Check | Result |
 |---|---|
-| **Install** | the synthetic feature's components are installed — check the MSI's `FeatureComponents` rows and that the remembered path is present in the registry afterwards |
-| **Repair** | seeded runtime data still intact. A repair must never be a data-loss event |
-| **Uninstall** | target folder and everything beneath it gone, nested file included; target registry key gone; **both file sentinels and the sibling registry key untouched** |
-| **Major upgrade** | `On='uninstall'` means the parent component is removed, which also happens during `RemoveExistingProducts`. Record what is observed; either answer is documentable, but only the observed one |
+| install | rc 0, product installed |
+| remembered path **equals** `C:\ProgramData\CleanupProbeTop\Vendor\logs` | PASS |
+| repair (`msiexec /f`) leaves the seeded files in place | PASS |
+| repair leaves the seeded **registry value** unchanged | PASS |
+| uninstall | rc 0 |
+| target folder gone | PASS |
+| file in a **nested subfolder** gone with it | PASS |
+| target registry key gone — genuinely absent, not merely unreadable | PASS |
+| sentinel in the **parent** directory still there | PASS |
+| — and its **contents unchanged** | PASS |
+| sentinel in a **sibling** directory still there | PASS |
+| — and its **contents unchanged** | PASS |
+| **sibling registry key** still there | PASS |
+| — and its **value unchanged** | PASS |
 
-The sentinels matter as much as the deletions. The value of this mechanism over
-`REMOVE_FOLDERS_ON_UNINSTALL` is a narrower blast radius, and that is the claim to check.
+The sentinels are the point. The value of this mechanism over `REMOVE_FOLDERS_ON_UNINSTALL` is
+a narrower blast radius, and that is now observed rather than argued: the delete took the named
+tree and its nested contents, and the parent, the sibling directory and the neighbouring
+registry key came through unchanged — contents and values compared, not merely counted as
+present.
 
-### If anything outside the named targets is removed
+The path check is the trap both tickets are built around. `[APPDATADIR]` already includes the
+product folder — the MSI's Directory table shows `APPDATADIR | CommonAppDataFolder |
+CleanupProbeTop` — so `[APPDATADIR]Vendor\logs` resolves to
+`C:\ProgramData\CleanupProbeTop\Vendor\logs`, not `C:\ProgramData\Vendor\logs`. The probe
+asserts equality with the intended absolute path, because "the stored value is absolute" would
+pass while aiming the delete somewhere else.
 
-Stop and reopen #15. Do not adjust the documentation to match — this is the failure mode
-that cost a customer their database once already.
+### The first run of this probe established less than it appeared to
+
+A run on 2026-09-19 passed every check it had, and review then found four ways the probe could
+report success wrongly: the runner tested an `(ok, facts)` tuple and so could never fail; the
+seeded registry value was never read after the repair, so a repair that deleted it would have
+had that deletion credited to the uninstall; "untouched" meant only "still exists"; and an
+unreadable key counted as a deleted one. The table above is from the strengthened probe, after
+all four were fixed.
+
+Kept here because the lesson generalises: a probe guarding a destructive path needs its own
+failure modes exercised, or a green run means less than it looks. `--selftest` now covers
+twenty verdict failure modes, the runner, and the registry observers driven against a real key
+— that last one because a selftest that only mutates the observations by hand cannot catch a
+bug in the code that makes them.
+
+### Not covered here
+
+The **major upgrade** case: `On='uninstall'` removes the parent component, which also happens
+during `RemoveExistingProducts`. Whether the cleanup fires mid-upgrade is recorded as an open
+question in T7, which carries the remaining cases for both tickets.
+
+### Rerunning it
+
+`testscripts/t5t7/` — `uv run t5t7_cleanup_probe.py` here, copy `vm-payload/` to a snapshotted
+VM, `uv run t5t7_vm_probe.py` elevated there. `--selftest` checks the verdict, the runner and
+the observers without installing anything, and is worth running first.
+
 
 ---
 
@@ -435,76 +437,64 @@ around it.
 
 ## T7 — `<remove-on-uninstall folder=>` deletes the right tree and nothing else (issue #3)
 
-**Ticket:** [#3](https://github.com/gersonkurz/msis/issues/3) — full-folder removal on
-uninstall. The element already exists; the concept was reviewed and approved, and the ticket
-stays open **only** until these checks run. Closing it is what this entry is for.
+**Ticket:** [#3](https://github.com/gersonkurz/msis/issues/3). Core executed and passed
+2026-09-19; **four cases remain** before #3 closes. Shares a fixture with T5, which is done.
 
-**Run this together with [T5](#t5--top-level-remove-on-uninstall-actually-deletes-the-right-things)**
-— same mechanism, same seeding. T5 covers top-level placement, T7 covers feature placement and
-the upgrade/repair cases; one session with both fixtures covers both tickets.
+### Executed on 2026-09-19 — the core
 
-This is a recursive delete of a directory the installer does not own, so the plan checks what
-it removes **and** what it leaves alone.
+Package: the cleanup elements inside a `<feature>`. On the build machine, both
+`C_RemoveOnUninstall_0000` and `C_RemoveOnUninstall_0001` are referenced by
+`<Feature Id='FEATURE_00000'>`. On a snapshotted VM, all sixteen checks passed:
 
-### Since the concept was written
-
-Two of its scope limits no longer apply, and the plan below reflects that:
-
-- The concept said documented support was limited to feature-level placement, pending #15.
-  **#15 is fixed** — top-level placement works and is T5.
-- It said the minimal and silent templates silently drop the element, so they should be tested
-  or documented as unsupported. **#19 fixed that**: all five shipped templates now carry
-  `{{{REMOVE_ON_UNINSTALL}}}`, and a template that would discard it now fails the build. They
-  are therefore worth one confirming pass rather than an exclusion.
-
-### Mind the path — this is the trap
-
-`[APPDATADIR]` **already includes the application subdirectory**: it falls back to the
-`INSTALLDIR` value (`context.go:351`), so `[APPDATADIR]Vendor\App\logs` resolves to
-`C:\ProgramData\<INSTALLDIR>\Vendor\App\logs`, not `C:\ProgramData\Vendor\App\logs`.
-
-Decide the intended absolute directory first and **assert equality with it**. Checking only
-that the stored value "is absolute" would pass while pointing somewhere else entirely — and
-somewhere else is precisely what a recursive delete must not be aimed at.
-
-### Authoring checks, in two separate steps
-
-1. **Before install** — the cleanup component carries a `ComponentRef` from a feature. (That is
-   #15's failure mode in its silent form.)
-2. **After install** — the value stored under `HKLM\Software\<MANUFACTURER>\<PRODUCT_NAME>`,
-   name `RemoveFolderPath_RemoveOnUninstall_nnnn`, equals the intended absolute directory
-   **exactly**.
-
-### Seeding, from a fresh state for each case
-
-- a runtime-created file directly in the target folder
-- a runtime-created file in a **nested subfolder**
-- a sentinel in the target's **parent**
-- a sentinel in a **sibling** directory
-
-### Cases
-
-| Case | Expected |
+| Case | Result |
 |---|---|
-| **Uninstall** | target and everything beneath it gone, nested file included; both sentinels untouched |
-| **Major upgrade** | `On='uninstall'` removes the parent component, which also happens during `RemoveExistingProducts`. **Record what is observed** — either answer is documentable, but only the observed one. Note the exact from/to versions and the template used; do not generalise to other upgrade arrangements |
-| **Repair** | target contents intact — a repair must never be a data-loss event |
+| install; remembered path **equals** `C:\ProgramData\CleanupProbeFeat\Vendor\logs` | PASS |
+| **repair** leaves the seeded files in place | PASS |
+| **repair** leaves the seeded registry value unchanged | PASS |
+| **uninstall**: target folder gone, nested file gone with it | PASS |
+| target registry key gone — genuinely absent, not merely unreadable | PASS |
+| parent sentinel, sibling sentinel and sibling registry key all still there | PASS |
+| — and their **contents and values unchanged** | PASS |
+
+So the recursive delete takes the named tree and nothing around it, a repair is not a data-loss
+event for files or for registry values, and the neighbours came through unchanged rather than
+merely present. Those were the substance of the concern.
+
+The same package shape at top level passed identically — see T5, which also records the four
+defects found in the probe itself before these results were trusted.
+
+### Still to run — what keeps #3 open
+
+| Case | Why it matters |
+|---|---|
+| **Major upgrade** | `On='uninstall'` removes the parent component, and so does `RemoveExistingProducts`. If the cleanup fires mid-upgrade it would delete the user's data during what is meant to be an update. **Record what is observed**; either answer is documentable, but only the observed one. Note the exact from/to versions and the template |
 | **Folder already empty** | record the behaviour |
 | **Folder never existed** | uninstalling a package whose application never ran; record the behaviour |
+| **minimal and silent-x86 templates** | #19 made these viable — all five shipped templates now carry `{{{REMOVE_ON_UNINSTALL}}}` and a template that would discard it fails the build. One confirming pass each. A difference from the regular template is a finding, not a documentation note |
 
-### Also worth one pass each, now that #19 made them viable
+The major upgrade is the one with teeth. The other three are "record what happens".
 
-The same feature-level package built with `minimal/template.wxs` and, with `PLATFORM=x86` and
-`silent="yes"`, `x86/template-silent.wxs`. Confirm the cleanup runs there too. If either
-behaves differently from the regular template, that is a finding, not a documentation note.
+### The path trap, confirmed
+
+`[APPDATADIR]` already includes the product folder: the MSI's Directory table shows
+`APPDATADIR | CommonAppDataFolder | CleanupProbeFeat`, so `[APPDATADIR]Vendor\logs` resolves to
+`C:\ProgramData\CleanupProbeFeat\Vendor\logs`, **not** `C:\ProgramData\Vendor\logs`. Anyone
+writing the latter and expecting the former would be aiming a recursive delete at the wrong
+directory. The probe asserts equality with the intended absolute path rather than checking it
+"looks absolute", and that check passed.
+
+Worth documenting in the tutorial independently of how the remaining cases turn out.
 
 ### Proof required to close #3
 
-All rows of the table above observed and recorded, plus the two authoring checks, plus the
-`.wxs` showing the component referenced by a feature. Document only the placement/template
-combinations actually exercised.
+The four cases above. The core is done: contents and registry values compared, absence
+distinguished from an access error. `testscripts/t5t7/` is the harness — `uv run
+t5t7_cleanup_probe.py` here, copy `vm-payload/` to a snapshotted VM, run `t5t7_vm_probe.py`
+elevated. `--selftest` exercises the verdict, the runner and the registry observers without
+installing anything.
 
 ### If anything outside the named target is removed
 
 Stop and reopen #3. Do not adjust the documentation to match — this is the failure mode that
 cost a customer their database once already.
+
