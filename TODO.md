@@ -177,6 +177,8 @@ the result here.
 
 ## Prerequisite downloads are never integrity-checked, and the cache bypasses verification
 
+**Filed as [#30](https://github.com/gersonkurz/msis/issues/30)** (2026-09-19).
+
 Reviewer finding from the SBOM plan review, recorded verbatim (2026-09-19):
 
 > **[task] Prerequisite downloads lack expected-digest verification, and cached files bypass it
@@ -211,5 +213,5 @@ that needs a decision rather than code:
 3. Say what happens on mismatch: refuse the build, or re-download once and then refuse.
 4. Executed tests for both the mismatch and the cache-reuse path.
 
-Not blocking the SBOM work, but an SBOM that recorded a hash msis never checked would document a
-trust it does not have.
+Not blocking the SBOM work. Observed hashes identify inventoried bytes; publisher authenticity
+requires separate verification.
