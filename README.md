@@ -162,6 +162,80 @@ msis has had three generations, all sharing the same `.msis` script format:
 Earlier versions were reconstructed from the Git log and tagged retroactively. The newest entry
 below is the current release; `just set-version X.Y.Z` adds the next one.
 
+**3.0.5** — 2026-09-19 (tag [`v3.0.5`](../../releases/tag/v3.0.5))
+
+A correctness release: issues #5–#28 are closed, most of them cases where msis did the wrong thing
+**without saying so** (one, #26, closed as a documented limit rather than a fix). 3.0.4 was bumped
+in the justfile but never tagged or published, so everything here has accumulated since 3.0.3.
+
+- **Silent failures are build failures now.** A `<files source=>` that does not exist was skipped
+  and the package shipped without the payload ([#24](../../issues/24)); so was a source directory
+  that could not be read ([#25](../../issues/25)). Templates whose placeholder sets had drifted
+  discarded generated content — in the silent x86 template that destroyed a preserved registry value
+  ([#19](../../issues/19)). `/TEMPLATE` was ignored for silent packages ([#20](../../issues/20)).
+  Any top-level item was orphaned when the script also declared a `<feature>`
+  ([#15](../../issues/15), WIX0267), and a `<feature>` with no `<files>` orphaned the INSTALLDIR
+  permission component ([#18](../../issues/18)). Each one now either builds correctly or fails
+  loudly.
+- **`preserve="yes"` survives real registry data.** A REG_BINARY default used a per-nibble `#x0#x1`
+  encoding and the install failed with Error 1406 ([#6](../../issues/6)); the `.reg` default was not
+  XML-escaped, so an apostrophe or ampersand broke the build ([#9](../../issues/9)); a REG_SZ
+  default beginning with `#` failed with Error 1406 ([#11](../../issues/11)); and a few hundred
+  preserved values emitted one SetProperty custom action each, tripping WIX0179
+  ([#5](../../issues/5)).
+- **Three kinds of value are now excluded from preservation, deliberately.** An install probe showed
+  that the `Type='raw'` RegistrySearch which reads the live value *damages* two of them
+  ([#10](../../issues/10)): a REG_EXPAND_SZ came back already expanded and lost its type, baking one
+  machine's paths into the registry, and a REG_QWORD came back as its 8 raw bytes reinterpreted as
+  UTF-16 text — written back as REG_SZ, with the install exiting 0. Both are therefore written fresh
+  from the `.reg` file instead, alongside the existing multi-string exclusion: **a live edit to an
+  expandable string, a QWORD or a multi-string is overwritten on upgrade**, which is the lesser harm
+  against silent corruption. QWORDs keep the documented 32-bit truncation (Windows Installer's
+  Registry table has no QWORD encoding), and DWORDs, strings and binaries are still preserved. A
+  fourth limit is unchanged: an existing **empty** value is not preserved either — the `.reg`
+  default overwrites it ([#26](../../issues/26)). See the [Tutorial](docs/tutorial.md) for the full
+  rules.
+- **Auto-bundles install the runtime they promise.** A `PLATFORM=x86` auto-bundle gated the VC++
+  runtime on `InstallCondition='NOT VersionNT64'`, skipping it on every 64-bit machine, while
+  detecting the **x64** runtime — so a 64-bit PC carrying only the x64 runtime was reported as
+  satisfied, and on a machine with neither the gate blocked the install anyway. The MSI's own
+  `VCREDIST_X86_*` launch condition then refused the install, making the product uninstallable from
+  the bundle ([#8](../../issues/8)). An auto-bundle wraps one MSI whose architecture is pinned by
+  `PLATFORM`, so the runtime now follows the package rather than the OS; explicit multi-architecture
+  bundles keep the OS-driven conditions. `PLATFORM=arm64` likewise detected the x64 runtime rather
+  than the ARM64 one ([#12](../../issues/12)).
+- **Output naming.** Without `BUILD_TARGET`, an auto-bundle `.exe` landed in the current working
+  directory, lost its patch version to a mis-parsed extension, and was reported at a third path that
+  did not exist ([#27](../../issues/27)). `BUILD_TARGET` is now a **name pattern** rather than a
+  literal output path — its directory and stem are shared by the `.wxs`, the `.msi` and the bundle
+  `.exe`, as in msis-2.x — so setting one no longer asks `wix build` to write an MSI to a `.exe`
+  path and fail ([#28](../../issues/28)).
+- **`<remove-on-uninstall>` actually removes the folder.** `RemoveFolderEx` needs its folder
+  property populated before `CostInitialize`, which is too early for `[INSTALLDIR]` to have
+  resolved; the resolved path is now stored in the registry at install time and read back by a
+  `RegistrySearch` in `AppSearch`. The element can also name a folder **and** a registry key at once
+  without emitting duplicate component ids ([#23](../../issues/23)). Verified on a snapshotted VM:
+  the named tree and its nested contents go, and the parent directory, a sibling directory and a
+  neighbouring registry key come through with their contents and values unchanged.
+- **One source file can install to more than one destination** ([#21](../../issues/21)): component
+  GUIDs now take the target directory into account, so a second target no longer fails with WIX0369.
+  GUIDs for packages that already worked are unchanged.
+- **Variables and paths.** Nested `<set>` references resolved in random map order, which
+  occasionally produced an output file literally named `...{{PRODUCT_VERSION}}.msi`
+  ([#7](../../issues/7)); a `{{VAR}}` preceded by a backslash was not substituted and the backslash
+  was eaten, breaking Windows paths ([#13](../../issues/13)); `$` and friends can be escaped in
+  `.msis` filenames.
+- **Build-time warnings channel** for the generator and the registry writer ([#14](../../issues/14))
+  — hazards those packages detect can now be reported instead of being decided silently.
+- `<service>` accepts a path-qualified file name, anchoring `ServiceInstall` to the target
+  directory; `START_EXE` sets `WixShellExecTarget` through an immediate custom action, so MSI
+  Formatted paths such as `[INSTALLDIR]App.exe` resolve at runtime.
+- **Docs and tooling.** `docs/msis.xsd` and the tutorial document `<create-folder>` and
+  `<remove-on-uninstall>` ([#22](../../issues/22)); `docs/roadmap.md` describes the code that exists
+  ([#16](../../issues/16)); `just set-version X.Y.Z` replaces hand-editing the version
+  ([#17](../../issues/17)). `todo-testme.md` records which behaviour has been verified on a real VM
+  and which is still owed.
+
 **3.0.3** — 2026-06-23 (tag [`v3.0.3`](../../releases/tag/v3.0.3))
 - WiX 7 support alongside WiX 6, auto-detected at build time; the WiX 7 OSMF EULA is accepted automatically.
 - `msis /SETUP-WIX` self-provisions the WiX toolchain and required extensions (replaced the earlier standalone setup scripts).
