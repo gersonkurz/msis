@@ -223,9 +223,54 @@ set-version $NEW:
     @awk -v stub="**$NEW** — $(date +%Y-%m-%d) (tag [\`v$NEW\`](../../releases/tag/v$NEW))\n- TODO: release notes\n" '/^\*\*[0-9]+\.[0-9]+\.[0-9]+\*\* / && !done { print stub; done = 1 } { print }' README.md > README.tmp && mv README.tmp README.md
     @echo "Version set to $NEW. Next: write the README.md notes, just check, just release-all, then git tag v$NEW"
 
+# Go stamps every binary with vcs.revision and vcs.modified, and `go version -m` reads them back
+# out of the shipped .exe. Building with uncommitted changes stamps vcs.modified=true and a
+# "+dirty" module version, so the artifacts on the release page name no identifiable commit -
+# which is exactly what happened to 3.0.5. Commit (or stash) first, then build.
+#
+# -uall is load-bearing: plain `git status --porcelain` honours status.showUntrackedFiles=no, and
+# a developer with that set would get a clean bill of health while untracked sources sit in the
+# tree. The exit status is checked too, so a git that fails (not a repo, broken index) cannot be
+# read as "nothing changed".
+#
+# just --list shows the LAST comment line, so the summary stays at the bottom of this block:
+# Fail unless the working tree is clean (release builds must be identifiable)
+[unix]
+require-clean-tree:
+    @status=$(git status --porcelain -uall) || { echo "git status failed; cannot tell whether the tree is clean" >&2; exit 1; }; test -z "$status" || { echo "working tree has uncommitted changes; commit or stash before a release build" >&2; echo "$status" >&2; exit 1; }
+
+[windows]
+require-clean-tree:
+    @$dirty = git status --porcelain -uall; if ($LASTEXITCODE -ne 0) { Write-Host "git status failed; cannot tell whether the tree is clean"; exit 1 }; if ($dirty) { Write-Host "working tree has uncommitted changes; commit or stash before a release build"; Write-Host $dirty; exit 1 }
+
+# The SBOM is bound to one release run by a packaging manifest, written in two steps by the same
+# Go program so neither shell dialect grows its own hashing logic:
+#
+#   sbom-capture  after the binaries are built, BEFORE packaging - hashes them and records the
+#                 WiX version observed at that moment
+#   sbom-seal     after packaging succeeds - re-checks those hashes and adds the artifacts'
+#
+# release-all runs both (capture as a dependency, seal afterwards), so `just sbom` on its own can
+# only describe a run that recorded one, and fails if any recorded file has changed since.
+# Timestamps are deliberately not consulted: refreshing an mtime must not make a substituted file
+# acceptable.
+#
+# just --list shows the LAST comment line, so the summary stays at the bottom of this block:
+# Record the binaries and build toolchain before packaging (release-all runs this)
+sbom-capture:
+    go run ./tools/sbom -capture -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
+
+# Record the packaged artifacts once the build has succeeded (release-all runs this)
+sbom-seal:
+    go run ./tools/sbom -seal -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
+
+# Write the release SBOM (CycloneDX) next to the artifacts in bootstrap/dist
+sbom:
+    go run ./tools/sbom -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
+
 # Build release MSI package (x64 only)
 [unix]
-release: clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     @echo "Building x64 MSI package..."
@@ -233,7 +278,7 @@ release: clean-bootstrap build-hooks build-windows-x64
     @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 [windows]
-release: clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     @echo "Building x64 MSI package..."
@@ -242,7 +287,7 @@ release: clean-bootstrap build-hooks build-windows-x64
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: clean-bootstrap build-hooks build-all
+release-all: require-clean-tree clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cd {{bootstrap_dir}} && ./msis.exe {{msis_flags}} --template=../templates/minimal/template.wxs setup.msis
@@ -261,7 +306,7 @@ release-all: clean-bootstrap build-hooks build-all
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: clean-bootstrap build-hooks build-all
+release-all: require-clean-tree clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Push-Location {{bootstrap_dir}}; try { .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis } finally { Pop-Location }

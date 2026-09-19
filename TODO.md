@@ -153,3 +153,63 @@ parity), or a clear diagnostic naming the missing directory. The current message
 the path, which is why this is a task and not a bug.
 
 `just release-all` never hits it because `clean-bootstrap` creates `bootstrap/dist` first.
+
+---
+
+## The generated SBOM is not checked against the CycloneDX schema
+
+Reviewer suggestion from the `tools/sbom` review, recorded verbatim (2026-09-19):
+
+> **[suggestion] Replace the "valid document" assertion with schema validation.**
+> [main_test.go:123](C:/NGBT/MSIS/msis-3.x/tools/sbom/main_test.go:123) checks a few keys, but
+> cannot establish CycloneDX conformance. Vendoring the official schema and validating generated
+> JSON would make the hand-written format maintainable without network-dependent tests.
+
+Not done with the change that prompted it. `tools/sbom` writes CycloneDX by hand, so the format
+is ours to get right, and the test only asserts the required top-level keys and the purl shapes.
+Real validation needs the 1.6 JSON schema vendored plus a JSON-schema library in `go.mod`, which
+today has three direct dependencies and none of them for a build tool. Worth doing if the SBOM
+grows beyond the current fifteen components or if a customer's tooling rejects it; until then the
+cheaper check is to run one generated document through an external validator by hand and record
+the result here.
+
+---
+
+## Prerequisite downloads are never integrity-checked, and the cache bypasses verification
+
+Reviewer finding from the SBOM plan review, recorded verbatim (2026-09-19):
+
+> **[task] Prerequisite downloads lack expected-digest verification, and cached files bypass it
+> entirely.** At [cache.go:30](C:/NGBT/MSIS/msis-3.x/internal/prereqcache/cache.go:30), all eight
+> download entries omit `SHA256`. Fresh downloads therefore skip expected-hash verification at
+> [cache.go:185](C:/NGBT/MSIS/msis-3.x/internal/prereqcache/cache.go:185). Existing cache entries
+> return at [cache.go:155](C:/NGBT/MSIS/msis-3.x/internal/prereqcache/cache.go:155), before
+> verification; merely populating hashes would leave those entries unchecked. Corrupted or
+> substituted cached installers can consequently enter customer bundles.
+>
+> File a separate integrity task covering trusted digest acquisition, mutable download URLs,
+> verification on cache reuse, and executed mismatch/cache tests. This defect predates the SBOM
+> proposal and is deferrable from inventory emission. The plan's strongest claim is confirmed
+> specifically as **absence of expected SHA-256 verification by msis**. The actual type is
+> `PrerequisiteURL`, not `URLInfo`. Recording an observed hash is still honest inventory
+> evidence; it does not assert publisher authenticity.
+
+Confirmed in the code: `PrerequisiteURL` carries a `SHA256` field and `verifyHash` exists, but no
+entry in `DownloadURLs` populates it, and `EnsurePrerequisite` returns the cached path before
+reaching the verification branch at all. So msis fetches Microsoft redistributables over the
+network, chains them into customer installers, and has never checked what it got.
+
+The cache half is the part with teeth: `%LOCALAPPDATA%\msis\prerequisites\` is writable by the
+user and by anything running as them, and a substituted installer there would be chained into
+every bundle built afterwards with no diagnostic. Four pieces of work, and the first is the one
+that needs a decision rather than code:
+
+1. Where trusted digests come from. Microsoft's `aka.ms` URLs are mutable by design - the same
+   URL serves a new redistributable when one ships - so a pinned hash and a pinned URL disagree
+   sooner or later. Pinning a version-specific URL alongside its digest is the usual answer.
+2. Verify on cache reuse, not only after download.
+3. Say what happens on mismatch: refuse the build, or re-download once and then refuse.
+4. Executed tests for both the mismatch and the cache-reuse path.
+
+Not blocking the SBOM work, but an SBOM that recorded a hash msis never checked would document a
+trust it does not have.
