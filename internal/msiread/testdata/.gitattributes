@@ -1,0 +1,8 @@
+# These files are compared byte for byte against the payload inside fixture.msi, which was
+# built from them. Line-ending normalisation would rewrite them on checkout, the digests would
+# stop matching, and the tests would fail in a fresh clone while passing here — the exact
+# "works on my machine" trap the committed fixture exists to avoid.
+#
+# -text: store and check out verbatim, whatever core.autocrlf says.
+* -text
+*.msi binary

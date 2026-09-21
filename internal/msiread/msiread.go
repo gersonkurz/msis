@@ -54,6 +54,7 @@ type File struct {
 	Language  string
 	Sequence  int
 	Target    string // symbolic, e.g. [ProgramFiles64Folder]MSIS\templates\x64\msi-simplica.dll
+	SHA256    string // of the payload bytes, extracted from the package's cabinet
 }
 
 // Binary is a row of the Binary table: a stream held in the database rather than in a cabinet.
@@ -71,6 +72,11 @@ type Media struct {
 	DiskID       int
 	Cabinet      string
 	LastSequence int
+
+	// Unavailable says why this cabinet's payload could not be read, and is empty when it
+	// was. An external cabinet that did not travel with the package is the usual cause. It
+	// is recorded rather than ignored: files with no digest have to be explicable.
+	Unavailable string
 }
 
 // Embedded reports whether the cabinet is held inside the package.
@@ -156,6 +162,9 @@ func Read(path string) (pkg *Package, err error) {
 	}
 
 	resolveTargets(p)
+	if err := hashPayload(db, p); err != nil {
+		return nil, fmt.Errorf("reading the payload of %s: %w", path, err)
+	}
 	sortAll(p)
 	return p, nil
 }
@@ -435,4 +444,140 @@ func sortAll(p *Package) {
 	// on a non-unique key leaves their order down to database enumeration.
 	sort.Slice(p.Services, func(i, j int) bool { return p.Services[i].ID < p.Services[j].ID })
 	sort.Slice(p.Shortcuts, func(i, j int) bool { return p.Shortcuts[i].ID < p.Shortcuts[j].ID })
+}
+
+// hashPayload extracts each cabinet and records a SHA-256 for every file it carries.
+//
+// Cabinet entries are named after the File table's key, so a payload is matched to its inventory
+// row exactly rather than by guessing at filenames - which would be ambiguous the moment two
+// components install files of the same name.
+//
+// A file the cabinets do not account for is an error. A package whose inventory lists files it
+// cannot produce bytes for is exactly the "looks complete, is not" output this package exists to
+// avoid; the one excusable case, a cabinet that did not travel with the package, is recorded on
+// the Media row and excused explicitly.
+func hashPayload(db *database, p *Package) error {
+	if len(p.Files) == 0 {
+		return nil
+	}
+
+	payload := map[string][]byte{}
+	for i := range p.Media {
+		m := &p.Media[i]
+		if !m.Embedded() {
+			// An external cabinet is a file expected beside the package. Reading it would
+			// mean touching the filesystem next to an artifact that may have been copied
+			// alone, so it is reported instead of guessed at.
+			m.Unavailable = "cabinet " + m.Cabinet + " is external to the package and was not read"
+			continue
+		}
+		data, err := readStream(db, m.StreamName())
+		if err != nil {
+			return fmt.Errorf("reading cabinet %s: %w", m.StreamName(), err)
+		}
+		files, err := extractCabinet(data)
+		if err != nil {
+			return fmt.Errorf("extracting cabinet %s: %w", m.StreamName(), err)
+		}
+		for name, bytes := range files {
+			payload[name] = bytes
+		}
+	}
+
+	for i := range p.Files {
+		f := &p.Files[i]
+		data, ok := payload[f.ID]
+		if !ok {
+			continue
+		}
+		if len(data) != f.Size {
+			return fmt.Errorf("file %s (%s): the cabinet holds %d bytes, the File table says %d",
+				f.ID, f.Name, len(data), f.Size)
+		}
+		sum := sha256.Sum256(data)
+		f.SHA256 = hex.EncodeToString(sum[:])
+	}
+
+	if missing := unexplainedFiles(p.Files, p.Media, payload); len(missing) > 0 {
+		return fmt.Errorf("%d file(s) are listed in the File table but absent from the "+
+			"package's cabinets: %s", len(missing), strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// unexplainedFiles names the payload files that produced no bytes and have no excuse.
+//
+// The only excuse is that the media carrying THAT file could not be read. It is a separate
+// function because the decision is the part worth testing, and testing it through hashPayload
+// would need a database for every case.
+func unexplainedFiles(files []File, media []Media, payload map[string][]byte) []string {
+	var missing []string
+	for _, f := range files {
+		if _, ok := payload[f.ID]; ok {
+			continue
+		}
+		if m := mediaFor(media, f.Sequence); m != nil && m.Unavailable != "" {
+			continue
+		}
+		missing = append(missing, f.ID+" ("+f.Name+")")
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// mediaFor returns the Media row that carries a file, by the sequence ranges the Media table
+// defines: rows ordered by LastSequence, and a file belongs to the first row whose LastSequence
+// is at least its own Sequence.
+//
+// This attribution is why a missing digest can be excused precisely. Accepting every missing
+// file whenever ANY media row was unavailable let an external disk 2 excuse a file genuinely
+// absent from the embedded disk 1 - the exact "looks explicable, is not" outcome this is
+// supposed to prevent.
+func mediaFor(media []Media, sequence int) *Media {
+	ordered := make([]*Media, 0, len(media))
+	for i := range media {
+		ordered = append(ordered, &media[i])
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].LastSequence < ordered[j].LastSequence })
+	for _, m := range ordered {
+		if sequence <= m.LastSequence {
+			return m
+		}
+	}
+	return nil
+}
+
+// unavailableCabinets reports the first recorded reason a cabinet could not be read.
+func unavailableCabinets(p *Package) string {
+	for _, m := range p.Media {
+		if m.Unavailable != "" {
+			return m.Unavailable
+		}
+	}
+	return ""
+}
+
+// readStream reads one named stream out of the database - an embedded cabinet, here.
+func readStream(db *database, name string) ([]byte, error) {
+	var out []byte
+	found := false
+	err := db.query("SELECT `Name`,`Data` FROM `_Streams`", func(r *row) error {
+		if r.text(1) != name {
+			return nil
+		}
+		found = true
+		data, err := r.stream(2, 1<<20)
+		if err != nil {
+			return err
+		}
+		out = data
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("the package has no stream named %q", name)
+	}
+	return out, nil
 }

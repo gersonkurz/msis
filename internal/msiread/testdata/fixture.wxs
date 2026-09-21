@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="MsiReadFixture" Manufacturer="msis tests" Version="1.0.0"
+           UpgradeCode="{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF01}" Scope="perMachine" Compressed="yes">
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="MsiReadFixture">
+        <Directory Id="SUBDIR" Name="SourceDir" />
+        <Directory Id="MERGEHOST" Name="merged">
+          <Merge Id="FixtureMerge" SourceFile="fixture.msm" DiskId="1" Language="1033" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- A Binary-table stream: held in the database, not in the cabinet. -->
+    <Binary Id="FixtureBinary" SourceFile="payload.txt" />
+
+    <!-- A custom action in the ADMIN sequence. Inspection must never run it. -->
+    <CustomAction Id="AdminSentinel" Directory="INSTALLDIR"
+                  ExeCommand="cmd.exe /c echo executed &gt; &quot;%TEMP%\msiread-fixture-sentinel.txt&quot;"
+                  Execute="deferred" Return="ignore" />
+    <InstallExecuteSequence />
+    <AdminExecuteSequence>
+      <Custom Action="AdminSentinel" After="InstallFiles" />
+    </AdminExecuteSequence>
+
+    <ComponentGroup Id="Payload" Directory="INSTALLDIR">
+      <Component Id="C_Main">
+        <File Id="F_Main" Source="payload.txt" Name="payload.txt" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- A subdirectory legitimately named SourceDir, which must survive target resolution. -->
+    <ComponentGroup Id="Nested" Directory="SUBDIR">
+      <Component Id="C_Nested">
+        <File Id="F_Nested" Source="nested.txt" Name="nested.txt" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- A feature at level zero: not installed by default, but its payload is still in the
+         package and must appear in the inventory. -->
+    <ComponentGroup Id="Hidden" Directory="INSTALLDIR">
+      <Component Id="C_Hidden">
+        <File Id="F_Hidden" Source="hidden.txt" Name="hidden.txt" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Main" Level="1">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentGroupRef Id="Nested" />
+      <MergeRef Id="FixtureMerge" />
+    </Feature>
+    <Feature Id="Unselected" Title="Unselected" Level="0">
+      <ComponentGroupRef Id="Hidden" />
+    </Feature>
+  </Package>
+</Wix>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Module Id="MsiReadFixtureModule" Language="1033" Version="1.0.0.0" Guid="{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF03}">
+    <SummaryInformation Manufacturer="msis tests" />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="MODULEDIR" Name="MergedIn">
+        <Component Id="C_Merged" Guid="{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF02}">
+          <File Id="F_Merged" Source="merged.txt" Name="merged.txt" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+  </Module>
+</Wix>
+

@@ -21,6 +21,18 @@ bootstrap/dist/
 *.wxs
 *.wixpdb
 
+# ...except the inspection fixture and its sources, which are test data rather than build
+# output. fixture.msi is a 32 kB package carrying the four shapes internal/msiread has to handle
+# and no released package contains: a merge module's contribution, a level-zero feature, a
+# subdirectory named SourceDir, and a custom action in the ADMIN sequence that inspection must
+# never run. Committing it is what lets those tests run in a clean checkout with no WiX
+# toolchain, and the .wxs sources are what make it rebuildable.
+#
+# These exceptions must stay BELOW the patterns above: the last matching rule wins.
+# Rebuild: see internal/msiread/testdata/README.md
+!internal/msiread/testdata/*.msi
+!internal/msiread/testdata/*.wxs
+
 # Test binary, built with `go test -c`
 *.test
 
