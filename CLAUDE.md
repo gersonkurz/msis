@@ -197,4 +197,10 @@ Loop parameters:
   clocks, no randomness, no map-order dependence); correctness on paths that can
   destroy customer data — preserved registry values, the uninstall folder/registry
   removal hooks, upgrade sequencing
-- Task list: `TODO.md` at the repo root
+- Task list: GitHub issues on `gersonkurz/msis`. File a `[task]` finding as an issue
+  labelled `review-task`, with the reviewer's own words quoted verbatim, so the
+  finding keeps its state (open/closed) instead of becoming a line of prose someone
+  has to remember to update. `TODO.md` held these until 2026-09-21 and was retired
+  once it had drifted into a mix of open, already-fixed and already-filed entries;
+  git history has it. Checks that need a real machine still live in `todo-testme.md`,
+  which is a runbook of procedures and results, not a task queue.
