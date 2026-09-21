@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/buildrecord"
 	"github.com/gersonkurz/msis/internal/bundle"
 	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/generator"
@@ -88,7 +89,7 @@ func main() {
 			}
 			continue
 		}
-		if args.sbom {
+		if artifactOnlySBOM(args) {
 			err := sbomablePath(filename)
 			if err == nil {
 				err = runSBOM(filename)
@@ -104,6 +105,17 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+// artifactOnlySBOM decides which of the two SBOM operations was asked for.
+//
+// /SBOM on a .msis WITH /BUILD means "build it and describe what you built" (#34); on an
+// artifact, or without /BUILD, it means "describe this file" (#32, #33). They are different
+// operations - the first can say where each payload came from and what toolchain produced it,
+// the second cannot - and neither should pretend to be the other, so the choice is made once
+// and named rather than inlined into the dispatch loop.
+func artifactOnlySBOM(args *cliArgs) bool {
+	return args.sbom && !args.build
 }
 
 // setupHint points users at the self-provisioning command when a build fails in a way
@@ -285,6 +297,24 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		return fmt.Errorf("generating WXS: %w", err)
 	}
 
+	// #34: what THIS path resolved, recorded as it is resolved. The payload is known now, at
+	// generation time; an auto-bundle adds its prerequisites later, after the MSI it wraps
+	// has already been built, which is why there is no one place to read this from.
+	recordPath := buildrecord.PathMSI
+	switch {
+	case len(setup.Requires) > 0 && args.standalone:
+		recordPath = buildrecord.PathStandalone
+	case needsAutoBundle:
+		recordPath = buildrecord.PathAutoBundle
+	}
+	rec := newBuildRecord(recordPath, filename,
+		buildBindPaths(filepath.Dir(wxsPath(filename, vars)), workDir, customTemplates, templateFolder))
+	recordGeneratedFiles(rec, ctx)
+	recordTemplateBinaries(rec, vars)
+	if recordPath == buildrecord.PathStandalone {
+		recordStandaloneRuntimes(rec, setup.Requires, vars.Platform())
+	}
+
 	// Report values msis had to alter, or that Windows Installer will reinterpret.
 	for _, warning := range output.Warnings {
 		fmt.Printf("  %s\n", cli.Warning("Warning: "+warning))
@@ -378,7 +408,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 		// Milestone 6.2 - Auto-bundle if requirements present
 		if needsAutoBundle {
-			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath, args)
+			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath, args, rec)
+		}
+
+		if args.sbom {
+			rec.Sort()
+			return emitBuildSBOM(rec, []string{msiPath})
 		}
 	}
 
@@ -394,7 +429,7 @@ func bundleWxsPath(baseName string) string {
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
-func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs) error {
+func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record) error {
 	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
 
 	// Convert and validate requirements
@@ -429,6 +464,13 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		return fmt.Errorf("generating auto-bundle: %w", err)
 	}
 
+	// #34: the auto-bundle's own contribution, and it can only be made HERE - the
+	// prerequisites are resolved after the MSI has already been built, so nothing earlier in
+	// the run could have recorded them. The cache lookup is read-only: whatever downloading
+	// was going to happen has already happened above.
+	recordPrerequisites(rec, prereqs, gen.CachedPaths)
+	rec.AddChained("MsiPackage", msiPath)
+
 	fmt.Printf("  Auto-bundle: %s prerequisites + MSI\n", cli.Number(fmt.Sprintf("%d", len(prereqs))))
 
 	// Render bundle template
@@ -456,6 +498,14 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// name, which disagreed with the builder on both directory and filename, so the
 	// success line named a file that did not exist (issue #27).
 	fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(bundleBuilder.OutputFile))
+
+	if args.sbom {
+		// The MSI first, then the bundle: #33 only makes a BOM-Link once the child's
+		// document exists and its subject digest matches, so this order is what turns two
+		// documents into a linked pair rather than two unrelated files.
+		rec.Sort()
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile})
+	}
 
 	return nil
 }
@@ -523,6 +573,13 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
 
+	// #34: an explicit <bundle> resolves chained packages, not payload. It has no generator
+	// file tree to walk and no MSI of its own - what it knows is which installers it was
+	// built FROM, which the artifact cannot say because it holds only the packaged bytes.
+	rec := newBuildRecord(buildrecord.PathBundle, filename,
+		buildBindPaths(filepath.Dir(bundleWxsPath(bundleBaseName(filename, vars))),
+			workDir, customTemplates, templateFolder))
+
 	// Enable caching if building (download prerequisites if needed)
 	if args.build && len(setup.Bundle.Prerequisites) > 0 {
 		cache, err := prereqcache.NewCache()
@@ -542,6 +599,11 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			}
 		}
 	}
+
+	// AFTER resolution, not before: CachedPaths is empty until EnsurePrerequisites has run,
+	// and recording first left every downloaded prerequisite with no architecture, no cache
+	// entry and no download URL - the provenance #34 exists to publish.
+	recordBundleSources(rec, setup.Bundle, gen.CachedPaths)
 
 	bundleOutput, err := gen.Generate()
 	if err != nil {
@@ -586,6 +648,11 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		}
 
 		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(builder.OutputFile))
+
+		if args.sbom {
+			rec.Sort()
+			return emitBuildSBOM(rec, []string{builder.OutputFile})
+		}
 	}
 
 	return nil
@@ -807,6 +874,9 @@ func printUsage() {
 	fmt.Printf("  %s               Write a CycloneDX SBOM beside a built .msi or bundle .exe\n", cli.Info("/SBOM"))
 	fmt.Printf("  %s               (for a bundle, run /SBOM over its chained .msi files first,\n", cli.Info("     "))
 	fmt.Printf("  %s                so the bundle's document can link to theirs)\n", cli.Info("     "))
+	fmt.Printf("  %s               With /BUILD on a .msis: build it and describe what was built,\n", cli.Info("     "))
+	fmt.Printf("  %s                enriched with each payload's source, the toolchain, and\n", cli.Info("     "))
+	fmt.Printf("  %s                where each prerequisite came from\n", cli.Info("     "))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()

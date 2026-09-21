@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gersonkurz/msis/internal/buildrecord"
 	"github.com/gersonkurz/msis/internal/msiread"
 )
 
@@ -22,6 +23,11 @@ import (
 type Options struct {
 	MsisVersion string
 	MsisPath    string // the running binary, hashed into metadata.tools
+
+	// Build is what the build knew, when the document is written during one (#34). Nil for
+	// `/SBOM` against an artifact alone, which is the case that still has to work: the
+	// artifact is the document and this only ever adds to it.
+	Build *buildrecord.Record
 
 	Now       func() time.Time
 	NewSerial func() (string, error)
@@ -132,6 +138,11 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 		})
 	}
 
+	// Build-time facts, before sorting so they are ordered with everything else.
+	if err := enrich(doc, opts.Build); err != nil {
+		return nil, err
+	}
+
 	sortDocument(doc)
 
 	// #29 D5 admits no exceptions: the digest is what makes a document verifiable against a
@@ -151,9 +162,10 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 func requireDigests(pkg *msiread.Package, doc *Document) error {
 	var missing []string
 	for _, c := range doc.Components {
-		if !hasSHA256(c.Hashes) {
-			missing = append(missing, c.Name)
+		if hasSHA256(c.Hashes) || admissibleWithoutDigest(c) {
+			continue
 		}
+		missing = append(missing, c.Name)
 	}
 	if len(missing) == 0 {
 		return nil
@@ -172,6 +184,23 @@ func requireDigests(pkg *msiread.Package, doc *Document) error {
 			"\n  an SBOM without a digest for every payload cannot be verified against an "+
 			"installation, so msis does not emit one",
 		baseName(pkg.Path), len(missing), strings.Join(missing, ", "), reason)
+}
+
+// admissibleWithoutDigest reports whether a component may have no SHA-256.
+//
+// #29 D5 is about PAYLOAD - bytes the installer distributes - and the digest is what makes
+// those verifiable against an installation. A component for something the installer merely
+// DETECTS distributes nothing, so there are no bytes to hash and demanding a digest would mean
+// msis could never describe a /STANDALONE build at all (#34).
+//
+// The exemption is keyed on the role, not on the absence of a hash: a payload component cannot
+// acquire this role, so nothing that should carry a digest can slip through by lacking one.
+// The component must still say why it has none, in itself, so a reader is never left inferring.
+func admissibleWithoutDigest(c Component) bool {
+	if propertyValueOf(c.Properties, propRole) != roleRequiredRuntime {
+		return false
+	}
+	return propertyValueOf(c.Properties, propPayloadUnavailable) != ""
 }
 
 func hasSHA256(hashes []Hash) bool {

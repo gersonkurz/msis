@@ -133,12 +133,43 @@ const (
 	propPayloadUnavailable = "msis:payload.unavailable"
 	propDownloadURL        = "msis:payload.downloadUrl"
 	propBOMLink            = "msis:bomLink"
+
+	// Build-time enrichment (#34). Namespaced under msis:build so a reader can tell at a
+	// glance which facts came from the artifact and which from the build that produced it -
+	// the two have different evidentiary weight and a document that mixed them silently
+	// would be claiming more than it can show.
+	propBuildPath       = "msis:build.path"
+	propBuildScript     = "msis:build.script"
+	propBuildTool       = "msis:build.tool"
+	propBuildSource     = "msis:build.source"
+	propBuildSourceRoot = "msis:build.sourceRoot"
+	propBuildUnresolved = "msis:build.unresolved"
+	propBuildCoverage   = "msis:build.coverage"
+	propPrereqType      = "msis:prerequisite.type"
+	propPrereqArch      = "msis:prerequisite.arch"
+	propPrereqCache     = "msis:prerequisite.cache"
+	propLaunchCondition = "msis:launchCondition"
 )
 
 // Role values for propRole.
 const (
 	rolePayload = "payload"       // installed onto the machine
 	roleBinary  = "binary-stream" // executed during installation, never installed
+
+	// From build-time enrichment (#34). There is exactly one, because enrichment attaches
+	// provenance to components the artifact already has rather than inventing its own - a
+	// prerequisite the bundle carries is already a chain package, and saying where it came
+	// from is a property of that component, not a second component beside it.
+	//
+	// roleRequiredRuntime is the exception, and has to be: a runtime the installer merely
+	// DETECTS appears nowhere in the artifact, because nothing was distributed. That is a
+	// different category from a bundled prerequisite, and conflating the two would claim a
+	// distribution that never happened.
+	roleRequiredRuntime = "required-runtime"
+
+	// roleChained is what packageComponent writes for a chain package. It is
+	// string(burnread.RoleChained); TestChainRoleMatchesBurnread pins the two together.
+	roleChained = "chained-installer"
 )
 
 // A bundle's roles are burnread.Role values, emitted as they are rather than restated here, so

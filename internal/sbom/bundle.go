@@ -136,6 +136,10 @@ func FromBundle(b *burnread.Bundle, opts Options) (*Document, error) {
 			Composition{Aggregate: aggregateUnknown, Dependencies: describedBy})
 	}
 
+	if err := enrich(doc, opts.Build); err != nil {
+		return nil, err
+	}
+
 	sortDocument(doc)
 
 	if err := requireBundleDigests(b, doc); err != nil {

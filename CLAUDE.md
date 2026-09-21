@@ -60,6 +60,7 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `msiread` / `burnread` | Read a **built** artifact — an MSI's tables and cabinet payload, a Burn bundle's manifest, chain and containers. Passive: never executes the package. |
 | `cabinet` | Shared in-memory cabinet extraction (Windows FDI), used by both readers. |
 | `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
+| `buildrecord` | What a build knows and the artifact cannot say (#34): each payload's source, the toolchain, whether a prerequisite is carried or merely detected, and where a downloaded one came from. Each of the four build paths **contributes** to a record; `sbom` layers it onto the artifact-derived document and refuses to emit if the two disagree about any file. |
 
 Outside `internal/`: **`tools/sbom-index` is its own Go module** (nested `go.mod`) holding the
 SQLite index over the CycloneDX corpus. That is deliberate — see its README and #29 D11 — and
@@ -199,7 +200,10 @@ Loop parameters:
   CLI and the filesystem. `just test-tools` is not redundant: `go vet`/`go test`
   are module-scoped, so `./...` at the root never reaches the nested module under
   `tools/sbom-index`, which exists precisely so its SQLite dependency stays out of
-  the root module's graph. `just vet` already chains `vet-tools`.)
+  the root module's graph. `just vet` already chains `vet-tools` and `vet-cross`, the
+  latter being `GOOS=linux go vet ./...`: the build fixtures are `//go:build windows`
+  because they drive the real `wix` CLI, so a helper defined among them compiles nowhere
+  else and no Windows run notices.)
 - Yardstick docs: this file (architecture, WiX 6/7 conventions, directory roots,
   the MSI-vs-bundle variable table); the reference implementation under
   `../msis-2.x/` — it defines expected behavior; `docs/msis.xsd` for the `.msis`

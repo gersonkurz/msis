@@ -49,6 +49,17 @@ type Expected struct {
 	// the emitter dropped. The check is two-sided for the same reason - a ref listed here
 	// that DOES carry a SHA-256 fails too, so a stale list cannot hide a regression.
 	UnhashableComponents []string
+
+	// DetectedComponents are the bom-refs for things the installer merely DETECTS and does
+	// not distribute - a /STANDALONE build's prerequisites become launch conditions (#34).
+	// They carry no digest of any kind, and could not: nothing was shipped, so there are no
+	// bytes anywhere to hash. That is a narrower case than UnhashableComponents, where the
+	// artifact at least records a digest for a payload it will fetch later.
+	//
+	// As with the other expectations, the caller derives this from the SCRIPT or the build,
+	// never from the document under test, and the check is two-sided: a ref listed here that
+	// DOES carry a digest fails, because the list and the build would then disagree.
+	DetectedComponents []string
 }
 
 // Check runs every rule and returns each failure. It returns them all rather than stopping at
@@ -91,12 +102,24 @@ func Check(data []byte, want Expected) []error {
 	for _, ref := range want.UnhashableComponents {
 		unhashable[ref] = true
 	}
+	detected := map[string]bool{}
+	for _, ref := range want.DetectedComponents {
+		detected[ref] = true
+	}
 	for _, c := range doc.Components {
 		switch {
 		case hasSHA256(c.Hashes):
-			if unhashable[c.BOMRef] {
-				fail("component %q was declared unhashable but carries a SHA-256; the "+
-					"expectation and the artifact disagree", c.BOMRef)
+			if unhashable[c.BOMRef] || detected[c.BOMRef] {
+				fail("component %q was declared as distributing nothing but carries a "+
+					"SHA-256; the expectation and the build disagree", c.BOMRef)
+			}
+		case detected[c.BOMRef]:
+			// Nothing was distributed, so there are no bytes to hash anywhere - not even
+			// a digest the artifact recorded for a later download. All that can be asked
+			// is that the document say so.
+			if !c.hasProperty(propPayloadUnavailable) {
+				fail("component %q distributes nothing and the document does not say why "+
+					"it has no digest", c.BOMRef)
 			}
 		case !unhashable[c.BOMRef]:
 			fail("component %q has no SHA-256", c.BOMRef)

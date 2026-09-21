@@ -185,7 +185,22 @@ fmt-check:
 # Run go vet
 vet:
     go vet ./...
+    just vet-cross
     just vet-tools
+
+# The build fixtures are //go:build windows because they drive the real wix CLI, so a helper
+# defined among them compiles nowhere else. go vet type-checks test files, which makes this the
+# cheapest check that the platform-independent tests still build off Windows.
+[unix]
+vet-cross:
+    GOOS=linux go vet ./...
+
+# One line, with the native command LAST: just runs each recipe line in its own shell, so the
+# variable would not survive to a second line, and a PowerShell recipe only reports a native
+# command's failure when that command is the last thing it runs.
+[windows]
+vet-cross:
+    $env:GOOS = 'linux'; go vet ./...
 
 # go vet and go test are MODULE-scoped, so ./... at the root does not reach a nested module.
 # tools/sbom-index is its own module on purpose (#29 D11: the SQLite driver must stay out of the

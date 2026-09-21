@@ -322,6 +322,25 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			mustSay: "contradicts itself",
 		},
 		{
+			// The detected-runtime exemption is two-sided for the same reason as the
+			// unhashable one: a ref declared to distribute nothing, that turns out to
+			// carry a digest, means the expectation and the build disagree - and a stale
+			// list would sit there ready to excuse a digest dropped later.
+			name:    "a component declared as distributing nothing that does carry a SHA-256",
+			mutate:  func(d map[string]any) {},
+			want:    Expected{DetectedComponents: []string{"ns/file/a"}},
+			mustSay: "declared as distributing nothing but carries a SHA-256",
+		},
+		{
+			// Admitted as distributing nothing, but silent about why it has no digest.
+			name: "a detected component that does not say why it has no digest",
+			mutate: func(d map[string]any) {
+				delete(d["components"].([]any)[0].(map[string]any), "hashes")
+			},
+			want:    Expected{DetectedComponents: []string{"ns/file/a"}},
+			mustSay: "does not say why it has no digest",
+		},
+		{
 			// The exemption for bytes that are not in the artifact is two-sided. If a ref
 			// declared unhashable turns out to carry a SHA-256, the expectation and the
 			// artifact disagree - and a one-sided check would let a stale exemption sit
@@ -329,7 +348,7 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			name:    "a component declared unhashable that does carry a SHA-256",
 			mutate:  func(d map[string]any) {},
 			want:    Expected{UnhashableComponents: []string{"ns/file/a"}},
-			mustSay: "declared unhashable but carries a SHA-256",
+			mustSay: "declared as distributing nothing but carries a SHA-256",
 		},
 		{
 			// Admitted as unhashable, but with no digest at all: nothing about it can be
