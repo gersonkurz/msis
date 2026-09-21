@@ -8,6 +8,8 @@ package sbom
 // the same input have to differ in exactly two fields - metadata.timestamp and serialNumber -
 // and nothing else.
 
+import "encoding/json"
+
 type Document struct {
 	BOMFormat    string        `json:"bomFormat"`
 	SpecVersion  string        `json:"specVersion"`
@@ -52,6 +54,23 @@ type Component struct {
 	// ExternalReferences carries BOM-Links: a bundle's document points at the document for
 	// each installer it chains rather than repeating that installer's contents.
 	ExternalReferences []ExternalReference `json:"externalReferences,omitempty"`
+
+	// raw is set only for a component imported from a supplied document (#36). That
+	// component is emitted EXACTLY as its author wrote it - including every field msis does
+	// not model, licences above all - because re-serialising it through the struct above
+	// would silently drop whatever this file does not happen to mention. The typed fields
+	// beside it are populated too, so sorting and the digest rules still work.
+	raw rawComponent
+}
+
+// MarshalJSON emits an imported component verbatim and everything else from the struct.
+func (c Component) MarshalJSON() ([]byte, error) {
+	if c.raw != nil {
+		return json.Marshal(map[string]any(c.raw))
+	}
+	// A distinct type so the marshaller does not call this method again.
+	type plain Component
+	return json.Marshal(plain(c))
 }
 
 // ExternalReference points at something outside the document. msis emits exactly one kind, a
@@ -81,12 +100,22 @@ type Property struct {
 type Dependency struct {
 	Ref       string   `json:"ref"`
 	DependsOn []string `json:"dependsOn"`
+
+	// Provides is the other relationship 1.6 defines on a dependency: the components that
+	// implement a specification this one declares. msis never emits one of its own - it has
+	// no way to know - but a supplied document may, and dropping it on the way through would
+	// lose an edge its author put there (#36).
+	Provides []string `json:"provides,omitempty"`
 }
 
 // Composition records how complete a part of the document is. It names the components it
 // applies to explicitly: a completeness declaration does not cascade through containment or
 // transitive dependencies.
 type Composition struct {
+	// BOMRef: a composition may be addressed like anything else. msis emits none of its own,
+	// but a supplied one may have one, and dropping it would break a reference to it (#36).
+	BOMRef string `json:"bom-ref,omitempty"`
+
 	Aggregate  string   `json:"aggregate"`
 	Assemblies []string `json:"assemblies,omitempty"`
 
@@ -149,6 +178,18 @@ const (
 	propPrereqArch      = "msis:prerequisite.arch"
 	propPrereqCache     = "msis:prerequisite.cache"
 	propLaunchCondition = "msis:launchCondition"
+
+	// Composition of supplied documents (#36). propSuppliedFrom marks a component msis did
+	// not observe but received, which is both its provenance and the reason it may carry no
+	// digest - msis never had those bytes. propSuppliedDocument records, per merged document,
+	// what the merge did and did not establish.
+	propSuppliedFrom     = "msis:supplied.from"
+	propSuppliedDocument = "msis:supplied.document"
+
+	// propSuppliedRef says msis gave a component its bom-ref because the supplied document
+	// gave it none. A bom-ref is addressing, not identity, so assigning one invents nothing -
+	// but a reader must not mistake it for something its author wrote.
+	propSuppliedRef = "msis:supplied.ref"
 )
 
 // Role values for propRole.

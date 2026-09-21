@@ -59,7 +59,7 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `cli` | ANSI color helpers (respects `NO_COLOR` and `/NO-COLOR`). |
 | `msiread` / `burnread` | Read a **built** artifact — an MSI's tables and cabinet payload, a Burn bundle's manifest, chain and containers. Passive: never executes the package. |
 | `cabinet` | Shared in-memory cabinet extraction (Windows FDI), used by both readers. |
-| `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
+| `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `merge.go` composes a component SBOM the script supplied for one payload file (#36): imported components are emitted VERBATIM (raw JSON, so licences and anything else msis does not model survive), only their document-local `bom-ref` is namespaced, and the supplier's coverage statements are preserved rather than improved. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
 | `buildrecord` | What a build knows and the artifact cannot say (#34): each payload's source, the toolchain, whether a prerequisite is carried or merely detected, and where a downloaded one came from. Each of the four build paths **contributes** to a record; `sbom` layers it onto the artifact-derived document and refuses to emit if the two disagree about any file. |
 
 Outside `internal/`: **`tools/sbom-index` is its own Go module** (nested `go.mod`) holding the

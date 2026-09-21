@@ -58,6 +58,26 @@ func payload(ref, name, fill string) map[string]any {
 	}
 }
 
+// supplied builds a component imported from a document someone handed msis (#36). It carries no
+// digest on purpose: msis never held those bytes, so there was never a hash for it to publish.
+func supplied(ref, name, from string) map[string]any {
+	return map[string]any{
+		"type": "library", "bom-ref": ref, "name": name,
+		"properties": []any{map[string]any{"name": "msis:supplied.from", "value": from}},
+	}
+}
+
+// withSupplied adds an imported component to a document, with the dependency statement every
+// component needs, so a case can then break exactly one thing.
+func withSupplied(d map[string]any, c map[string]any) map[string]any {
+	d["components"] = append(d["components"].([]any), c)
+	d["dependencies"] = append(d["dependencies"].([]any),
+		map[string]any{"ref": c["bom-ref"], "dependsOn": []any{}})
+	d["compositions"] = append(d["compositions"].([]any),
+		map[string]any{"aggregate": "complete", "dependencies": []any{c["bom-ref"]}})
+	return d
+}
+
 // stream builds a Binary-table component - present in the document, but not installed payload.
 func stream(ref, name, fill string) map[string]any {
 	return map[string]any{
@@ -95,6 +115,50 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 		mustSay string
 	}{
 		{
+			// Two-sided, like every other expectation here: a merged document holding a
+			// component nobody supplied means the merge invented one, and an expectation
+			// read out of the document under test would never notice.
+			name: "a supplied component nobody supplied",
+			mutate: func(d map[string]any) {
+				withSupplied(d, supplied("ns/supplied/x/ghost", "ghost", "x.cdx.json"))
+			},
+			want:    Expected{SuppliedComponentNames: nil},
+			mustSay: "nothing supplied them",
+		},
+		{
+			name: "a supplied component the merge dropped",
+			mutate: func(d map[string]any) {
+				withSupplied(d, supplied("ns/supplied/x/left", "left", "x.cdx.json"))
+			},
+			want:    Expected{SuppliedComponentNames: []string{"left", "right"}},
+			mustSay: `contributes 1 component(s) named "right"`,
+		},
+		{
+			// The marking that excuses a missing digest cannot be attached to something msis
+			// packaged itself - that would launder the one rule #29 admits no exception to.
+			name: "installed payload marked as supplied",
+			mutate: func(d map[string]any) {
+				c := payload("ns/file/laundered", "laundered.dll", "d")
+				delete(c, "hashes")
+				c["properties"] = append(c["properties"].([]any),
+					map[string]any{"name": "msis:supplied.from", "value": "x.cdx.json"})
+				withSupplied(d, c)
+			},
+			want:    Expected{SuppliedComponentNames: []string{"laundered.dll"}},
+			mustSay: "as installed payload",
+		},
+		{
+			// Nesting must not hide a component from any rule.
+			name: "a nested component with no SHA-256",
+			mutate: func(d map[string]any) {
+				comps := d["components"].([]any)
+				child := payload("ns/file/nested", "nested.dll", "e")
+				delete(child, "hashes")
+				comps[0].(map[string]any)["components"] = []any{child}
+			},
+			mustSay: `"ns/file/nested" has no SHA-256`,
+		},
+		{
 			name: "a purl on a component whose identity was not determined",
 			mutate: func(d map[string]any) {
 				comps := d["components"].([]any)
@@ -117,6 +181,54 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			want:   Expected{PayloadNames: []string{"a.dll", "absent.dll"}},
 			// The check that cannot be made from the document alone.
 			mustSay: "missing from the document",
+		},
+		{
+			// Reference integrity is not only about dependencies and compositions. A
+			// reference held INSIDE a component - here the crypto one the schema defines -
+			// pointing at something no longer in the document makes the graph unfollowable
+			// just the same, and nothing outside this rule would notice.
+			name: "a dangling reference inside a component",
+			mutate: func(d map[string]any) {
+				comps := d["components"].([]any)
+				comps[0].(map[string]any)["cryptoProperties"] = map[string]any{
+					"assetType": "certificate",
+					"certificateProperties": map[string]any{
+						"signatureAlgorithmRef": "ns/file/gone",
+					},
+				}
+			},
+			mustSay: `references "ns/file/gone"`,
+		},
+		{
+			// "urn:" is not the test. The schema says only that a local ref SHOULD NOT
+			// start with "urn:cdx:", so urn:uuid: is an ordinary local ref - and exempting
+			// every URN would let a dangling one through the one rule that would see it.
+			name: "a dangling reference that happens to be a URN",
+			mutate: func(d map[string]any) {
+				comps := d["components"].([]any)
+				comps[0].(map[string]any)["cryptoProperties"] = map[string]any{
+					"assetType": "certificate",
+					"certificateProperties": map[string]any{
+						"signatureAlgorithmRef": "urn:uuid:11111111-1111-4111-8111-111111111111",
+					},
+				}
+			},
+			mustSay: `references "urn:uuid:11111111`,
+		},
+		{
+			// A BOM-Link addresses another document on purpose, so it is not expected to
+			// resolve here - flagging it would make every linked document unconformant.
+			name: "a BOM-Link inside a component, which is not a local reference",
+			mutate: func(d map[string]any) {
+				comps := d["components"].([]any)
+				comps[0].(map[string]any)["evidence"] = map[string]any{
+					"identity": []any{map[string]any{
+						"field": "purl", "confidence": 1.0,
+						"tools": []any{"urn:cdx:3e671687-395b-41f5-a30f-a58921a69b79/1#scanner"},
+					}},
+				}
+			},
+			mustSay: "", // nothing: this document is correct
 		},
 		{
 			name: "a dangling dependency reference",
@@ -381,6 +493,13 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			doc := good()
 			c.mutate(doc)
 			problems := check(t, doc, c.want)
+			// A case may assert the opposite: that a document NOT breaking the rule passes.
+			if c.mustSay == "" {
+				if len(problems) != 0 {
+					t.Fatalf("a conforming document was rejected: %v", problems)
+				}
+				return
+			}
 			if len(problems) == 0 {
 				t.Fatalf("the violation was not caught")
 			}
@@ -475,5 +594,33 @@ func TestAProperlyDeclaredUnhashableComponentIsAccepted(t *testing.T) {
 	want := Expected{UnhashableComponents: []string{"ns/file/a"}}
 	if problems := check(t, d, want); len(problems) != 0 {
 		t.Errorf("a correctly declared unhashable component was rejected: %v", problems)
+	}
+}
+
+// The reference fields come from the schema, not from a list somebody maintains. This checks
+// that the derivation actually finds them - a silent empty result would make the merge namespace
+// nothing at all while every test that only nests components still passed.
+func TestReferenceFieldNamesComeFromTheSchema(t *testing.T) {
+	got := ReferenceFieldNames()
+	// One per shape the schema uses: a plain ref, an array of refs, a ref buried in
+	// cryptoProperties, and one in a part of the spec msis has no types for at all.
+	for _, want := range []string{
+		"dependsOn", "provides", "parent", "signatureAlgorithmRef", "subjectPublicKeyRef",
+		"algorithmRef", "claims", "requirements", "assemblies", "ref",
+	} {
+		if !got[want] {
+			t.Errorf("%q is a component reference in the schema but was not derived", want)
+		}
+	}
+	// bom-ref DEFINES a reference rather than using one, and the caller treats the two
+	// differently - including it would make a definition look like a use.
+	if got["bom-ref"] {
+		t.Error("bom-ref must not be listed as a reference-bearing field")
+	}
+	// A field that is plainly not a reference must not be swept in.
+	for _, unwanted := range []string{"name", "version", "purl", "content", "url"} {
+		if got[unwanted] {
+			t.Errorf("%q is not a component reference", unwanted)
+		}
 	}
 }

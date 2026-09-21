@@ -15,6 +15,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -50,6 +51,21 @@ type Expected struct {
 	// that DOES carry a SHA-256 fails too, so a stale list cannot hide a regression.
 	UnhashableComponents []string
 
+	// SuppliedComponentNames are the component NAMES a supplied SBOM contributed (#36),
+	// as a MULTISET, derived from the supplied document rather than from the output.
+	//
+	// Names rather than bom-refs because the emitter namespaces an imported ref - a caller
+	// listing refs would have to re-derive that namespacing, and a re-derivation that drifts
+	// tests nothing. Names come straight out of the supplied document.
+	//
+	// The check is two-sided. A merged component that is NOT expected means the merge invented
+	// one; an expected component that is missing means the merge dropped one. And a supplied
+	// component may carry no digest at all - msis never had those bytes, so there was never a
+	// hash to drop - which is why the marking must be earned rather than assumed: a component
+	// marked as supplied while also being installed payload would launder the digest rule, and
+	// that combination fails.
+	SuppliedComponentNames []string
+
 	// DetectedComponents are the bom-refs for things the installer merely DETECTS and does
 	// not distribute - a /STANDALONE build's prerequisites become launch conditions (#34).
 	// They carry no digest of any kind, and could not: nothing was shipped, so there are no
@@ -79,6 +95,7 @@ func Check(data []byte, want Expected) []error {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return append(problems, fmt.Errorf("the document is not JSON: %w", err))
 	}
+	components := doc.allComponents()
 
 	// --- identity -------------------------------------------------------------------------
 	// #29 D4: never guess. A wrong purl produces false CVE matches and hides real ones, which
@@ -87,7 +104,7 @@ func Check(data []byte, want Expected) []error {
 	for _, ref := range want.IdentifiedComponents {
 		identified[ref] = true
 	}
-	for _, c := range doc.Components {
+	for _, c := range components {
 		if c.PURL != "" && !identified[c.BOMRef] {
 			fail("component %q carries purl %q but its identity was not determined", c.BOMRef, c.PURL)
 		}
@@ -106,7 +123,7 @@ func Check(data []byte, want Expected) []error {
 	for _, ref := range want.DetectedComponents {
 		detected[ref] = true
 	}
-	for _, c := range doc.Components {
+	for _, c := range components {
 		switch {
 		case hasSHA256(c.Hashes):
 			if unhashable[c.BOMRef] || detected[c.BOMRef] {
@@ -121,6 +138,11 @@ func Check(data []byte, want Expected) []error {
 				fail("component %q distributes nothing and the document does not say why "+
 					"it has no digest", c.BOMRef)
 			}
+		case c.suppliedFrom() != "":
+			// Received, not observed. msis never held these bytes, so it had no hash to
+			// publish and none to drop; whatever digest the supplier gave is carried as
+			// given. The exemption cannot launder a payload component - that is checked
+			// below, where the two markings meeting is an error.
 		case !unhashable[c.BOMRef]:
 			fail("component %q has no SHA-256", c.BOMRef)
 		case len(c.Hashes) == 0:
@@ -134,7 +156,7 @@ func Check(data []byte, want Expected) []error {
 	// --- completeness ---------------------------------------------------------------------
 	if len(want.PayloadNames) > 0 {
 		have := map[string]int{}
-		for _, c := range doc.Components {
+		for _, c := range components {
 			if c.role() == rolePayload {
 				have[c.Name]++
 			}
@@ -154,9 +176,43 @@ func Check(data []byte, want Expected) []error {
 		}
 	}
 
+	// --- supplied components (#36) --------------------------------------------------------
+	// Merging a document establishes nothing about it, so the check is not that it is right -
+	// it is that the merge neither invented a component nor dropped one, and that the marking
+	// which excuses a missing digest cannot be attached to something msis itself packaged.
+	{
+		have, expect := map[string]int{}, map[string]int{}
+		for _, c := range components {
+			if c.suppliedFrom() == "" {
+				continue
+			}
+			have[c.Name]++
+			if c.role() == rolePayload {
+				fail("component %q is marked as supplied by %q and as installed payload; "+
+					"the supplied marking would then excuse a digest msis should have",
+					c.BOMRef, c.suppliedFrom())
+			}
+		}
+		for _, name := range want.SuppliedComponentNames {
+			expect[name]++
+		}
+		for name, n := range expect {
+			if got := have[name]; got != n {
+				fail("the supplied document contributes %d component(s) named %q; the "+
+					"merged document has %d", n, name, got)
+			}
+		}
+		for name, n := range have {
+			if _, ok := expect[name]; !ok {
+				fail("the merged document has %d component(s) named %q marked as supplied, "+
+					"but nothing supplied them", n, name)
+			}
+		}
+	}
+
 	// --- references -------------------------------------------------------------------------
 	refs := map[string]bool{doc.Metadata.Component.BOMRef: true}
-	for _, c := range doc.Components {
+	for _, c := range components {
 		if c.BOMRef == "" {
 			fail("component %q has no bom-ref", c.Name)
 			continue
@@ -176,6 +232,18 @@ func Check(data []byte, want Expected) []error {
 			}
 		}
 	}
+	// A reference is not only `dependsOn` and a composition's lists. The schema puts one in
+	// `signatureAlgorithmRef`, in `evidence.identity.tools`, in `pedigree`, in `provides` -
+	// twenty fields in all - and a document that keeps one pointing at something no longer
+	// there is a document whose graph cannot be followed. Checking only the two outer lists
+	// let exactly that through twice in review.
+	//
+	// Values that are BOM-Links address ANOTHER document by design and are not local refs, so
+	// they are not expected to resolve here.
+	for _, problem := range danglingInsideComponents(data, refs) {
+		fail("%s", problem)
+	}
+
 	for _, comp := range doc.Compositions {
 		// Both fields name components and both have to resolve. Checking only assemblies let
 		// a composition declare the dependency completeness of something that is not there.
@@ -268,7 +336,7 @@ func Check(data []byte, want Expected) []error {
 	}
 	// A component with neither a dependency entry nor a declaration is simply unstated, which
 	// is the gap this whole section exists to close.
-	for _, c := range doc.Components {
+	for _, c := range components {
 		if !stated[c.BOMRef] && len(depsDeclared[c.BOMRef]) == 0 {
 			fail("nothing in the document says what %q depends on, or that it is unknown",
 				c.BOMRef)
@@ -305,6 +373,99 @@ func Check(data []byte, want Expected) []error {
 	}
 
 	return problems
+}
+
+// danglingInsideComponents reports every reference held inside a component that resolves to
+// nothing. It walks the raw JSON rather than the types above, because the whole point is the
+// fields this package does not model.
+func danglingInsideComponents(data []byte, refs map[string]bool) []string {
+	var raw map[string]any
+	if json.Unmarshal(data, &raw) != nil {
+		return nil
+	}
+	defined := map[string]bool{}
+	for ref := range refs {
+		defined[ref] = true
+	}
+	// Anything the document defines anywhere counts as defined - metadata.tools included -
+	// so this reports references that resolve to NOTHING rather than merely to something the
+	// types above do not model.
+	collectDefined(raw, defined)
+
+	fields := ReferenceFieldNames()
+	seen := map[string]bool{}
+	var problems []string
+	var walk func(node any, where string)
+	walk = func(node any, where string) {
+		switch n := node.(type) {
+		case map[string]any:
+			at := where
+			if ref, ok := n["bom-ref"].(string); ok && ref != "" {
+				at = ref
+			}
+			for key, v := range n {
+				if key != "bom-ref" && fields[key] {
+					for _, value := range stringsOf(v) {
+						// Defined here FIRST: a ref this document defines resolves whatever
+						// it looks like, including one that is itself a URN. Only a value
+						// that resolves to nothing needs the external-link exemption.
+						if defined[value] || IsBOMLink(value) {
+							continue
+						}
+						problem := fmt.Sprintf("component %q references %q in %s, which is "+
+							"not in this document", at, value, key)
+						if !seen[problem] {
+							seen[problem] = true
+							problems = append(problems, problem)
+						}
+					}
+				}
+				walk(v, at)
+			}
+		case []any:
+			for _, item := range n {
+				walk(item, where)
+			}
+		}
+	}
+	walk(raw["components"], "")
+	if meta, ok := raw["metadata"].(map[string]any); ok {
+		walk(meta["component"], "")
+	}
+	sort.Strings(problems)
+	return problems
+}
+
+func collectDefined(node any, into map[string]bool) {
+	switch n := node.(type) {
+	case map[string]any:
+		if ref, ok := n["bom-ref"].(string); ok && ref != "" {
+			into[ref] = true
+		}
+		for _, v := range n {
+			collectDefined(v, into)
+		}
+	case []any:
+		for _, item := range n {
+			collectDefined(item, into)
+		}
+	}
+}
+
+func stringsOf(v any) []string {
+	switch x := v.(type) {
+	case string:
+		return []string{x}
+	case []any:
+		var out []string
+		for _, item := range x {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // ValidateSchema checks a document against the vendored CycloneDX 1.6 schema. Separated because
@@ -406,6 +567,25 @@ type component struct {
 	PURL       string     `json:"purl"`
 	Hashes     []hash     `json:"hashes"`
 	Properties []property `json:"properties"`
+
+	// CycloneDX lets a component nest components, and a supplied document may well do so.
+	// A nested one carries its own bom-ref and can be the target of a dependency, so every
+	// rule here applies to it exactly as it does to a top-level one.
+	Components []component `json:"components"`
+}
+
+// allComponents flattens the component tree, so no rule can be evaded by nesting.
+func (d document) allComponents() []component {
+	var out []component
+	var walk func([]component)
+	walk = func(list []component) {
+		for _, c := range list {
+			out = append(out, c)
+			walk(c.Components)
+		}
+	}
+	walk(d.Components)
+	return out
 }
 
 type property struct {
@@ -431,6 +611,19 @@ func (c component) role() string {
 // document has to state the gap, not merely leave one.
 const propPayloadUnavailable = "msis:payload.unavailable"
 
+// propSuppliedFrom marks a component that came from a supplied document rather than from the
+// artifact (#36). See Expected.SuppliedComponentNames.
+const propSuppliedFrom = "msis:supplied.from"
+
+func (c component) suppliedFrom() string {
+	for _, p := range c.Properties {
+		if p.Name == propSuppliedFrom {
+			return p.Value
+		}
+	}
+	return ""
+}
+
 func (c component) hasProperty(name string) bool {
 	for _, p := range c.Properties {
 		if p.Name == name {
@@ -455,3 +648,104 @@ func allComplete(aggregates []string) bool {
 	}
 	return len(aggregates) > 0
 }
+
+// IsBOMLink reports whether a value is a BOM-Link: a reference to an element of ANOTHER
+// document, which is therefore not expected to resolve inside this one.
+//
+// The test is the schema's own pattern for bomLinkElementType, read from the vendored copy
+// rather than restated here. "Any urn:" is NOT the test and treating it as one is a hole: the
+// schema says only that a local ref SHOULD NOT start with `urn:cdx:`, so `urn:uuid:...` is a
+// perfectly ordinary local ref, and exempting it would let a dangling one through.
+func IsBOMLink(value string) bool {
+	bomLinkOnce.Do(func() {
+		var schema map[string]any
+		data, err := schemaFS.ReadFile("schema/bom-1.6.schema.json")
+		if err != nil || json.Unmarshal(data, &schema) != nil {
+			return
+		}
+		defs, _ := schema["definitions"].(map[string]any)
+		el, _ := defs["bomLinkElementType"].(map[string]any)
+		pattern, _ := el["pattern"].(string)
+		if pattern == "" {
+			return
+		}
+		bomLinkRe, _ = regexp.Compile(pattern)
+	})
+	return bomLinkRe != nil && bomLinkRe.MatchString(value)
+}
+
+var (
+	bomLinkOnce sync.Once
+	bomLinkRe   *regexp.Regexp
+)
+
+// ReferenceFieldNames gives the property names the CycloneDX schema declares as references to a
+// component, DERIVED FROM THE VENDORED SCHEMA rather than listed here.
+//
+// It exists because a merge has to namespace imported refs (#36), and a ref is not only
+// `bom-ref` and `dependsOn`: 1.6 puts one in `signatureAlgorithmRef`, `subjectPublicKeyRef`,
+// `parent`, `provides`, `claims`, `requirements` and a dozen more. A hand-written list of those
+// would be a copy of the schema that drifts from it, and a missed field silently turns a valid
+// supplied document into one with dangling references.
+//
+// `bom-ref` is excluded: it DEFINES a reference rather than using one, and the caller treats the
+// two differently.
+func ReferenceFieldNames() map[string]bool {
+	refFieldsOnce.Do(func() {
+		refFields = map[string]bool{}
+		var schema any
+		data, err := schemaFS.ReadFile("schema/bom-1.6.schema.json")
+		if err != nil || json.Unmarshal(data, &schema) != nil {
+			return
+		}
+		var walk func(node any, property string)
+		walk = func(node any, property string) {
+			switch n := node.(type) {
+			case map[string]any:
+				if property != "" && property != "bom-ref" {
+					if isRefSchema(n) || isRefSchema(n["items"]) {
+						refFields[property] = true
+					}
+				}
+				for k, v := range n {
+					if k == "properties" {
+						if props, ok := v.(map[string]any); ok {
+							for name, sub := range props {
+								walk(sub, name)
+							}
+							continue
+						}
+					}
+					walk(v, property)
+				}
+			case []any:
+				for _, item := range n {
+					walk(item, property)
+				}
+			}
+		}
+		walk(schema, "")
+	})
+	return refFields
+}
+
+// isRefSchema reports whether a schema node points at one of the reference types. bomLinkElement
+// is included: a field that may hold a link to another document may also hold a local ref, and
+// the caller rewrites only values it recognises as local anyway.
+func isRefSchema(node any) bool {
+	m, ok := node.(map[string]any)
+	if !ok {
+		return false
+	}
+	ref, _ := m["$ref"].(string)
+	switch ref[strings.LastIndex(ref, "/")+1:] {
+	case "refType", "refLinkType", "bomLinkElementType":
+		return ref != ""
+	}
+	return false
+}
+
+var (
+	refFieldsOnce sync.Once
+	refFields     map[string]bool
+)

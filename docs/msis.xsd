@@ -238,12 +238,40 @@
     <xs:attribute name="allowed" type="msisBoolean" use="optional"/>
   </xs:complexType>
 
+  <!-- Top-level sbom element: a component SBOM supplied by the build (#36) -->
+  <xs:complexType name="SBOMType">
+    <xs:annotation>
+      <xs:documentation>
+        Composes a CycloneDX document supplied by the build into the installer's own SBOM.
+        MSIS reads the bytes of a payload file but cannot see inside it; the build system that
+        produced that file can. The supplied document is merged as received: its components keep
+        their own identity, its coverage statements are preserved, and merging one establishes
+        nothing about its completeness or accuracy.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="source" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>Path to the CycloneDX JSON document, relative to the .msis file</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="for" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>
+          Install target of the file the document describes, e.g. [INSTALLDIR]app.exe. It must
+          match exactly one installed file; a target matching several is an error, because the
+          document would otherwise be attached to an arbitrary one of them.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
   <xs:element name="setup">
     <xs:complexType>
       <xs:sequence>
         <xs:choice minOccurs="0" maxOccurs="unbounded">
           <xs:element name="set" type="SetType"/>
           <xs:element name="requires" type="RequiresType"/>
+          <xs:element name="sbom" type="SBOMType"/>
           <xs:element name="feature" type="FeatureType"/>
           <xs:element name="files" type="FilesType"/>
           <xs:element name="registry" type="RegistryType"/>

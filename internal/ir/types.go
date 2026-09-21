@@ -10,6 +10,18 @@ type Setup struct {
 	Features []Feature
 	Items    []Item // Top-level items outside features
 	Bundle   *Bundle
+	SBOMs    []SuppliedSBOM // Component SBOMs to compose into the installer's document (#36)
+}
+
+// SuppliedSBOM is a CycloneDX document the build supplies for one payload file.
+// Example: <sbom source="app.cdx.json" for="[INSTALLDIR]app.exe"/>
+//
+// msis cannot see inside a payload binary; the build system that produced it can. This is the
+// only route to describing what is INSIDE a shipped file, which is where a product's top-level
+// dependencies actually live.
+type SuppliedSBOM struct {
+	Source string // the .cdx.json, relative to the .msis
+	For    string // the install target of the file it describes, e.g. [INSTALLDIR]app.exe
 }
 
 // Requirement represents a runtime dependency declaration.

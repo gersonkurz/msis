@@ -19,6 +19,7 @@ import (
 	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/parser"
 	"github.com/gersonkurz/msis/internal/prereqcache"
+	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/template"
 	"github.com/gersonkurz/msis/internal/variables"
 	"github.com/gersonkurz/msis/internal/wix"
@@ -311,6 +312,14 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		buildBindPaths(filepath.Dir(wxsPath(filename, vars)), workDir, customTemplates, templateFolder))
 	recordGeneratedFiles(rec, ctx)
 	recordTemplateBinaries(rec, vars)
+
+	// #36: component SBOMs the script supplied, matched against the tree just generated. This
+	// happens on every build rather than only under /SBOM - a `for` that names no file is a
+	// mistake in the script, and reporting it at the next release instead of now helps nobody.
+	supplied, err := resolveSuppliedSBOMs(setup.SBOMs, ctx, filename)
+	if err != nil {
+		return err
+	}
 	if recordPath == buildrecord.PathStandalone {
 		recordStandaloneRuntimes(rec, setup.Requires, vars.Platform())
 	}
@@ -408,12 +417,13 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 		// Milestone 6.2 - Auto-bundle if requirements present
 		if needsAutoBundle {
-			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath, args, rec)
+			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath,
+				args, rec, supplied)
 		}
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{msiPath})
+			return emitBuildSBOM(rec, []string{msiPath}, supplied)
 		}
 	}
 
@@ -429,7 +439,7 @@ func bundleWxsPath(baseName string) string {
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
-func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record) error {
+func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record, supplied []sbom.Supplied) error {
 	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
 
 	// Convert and validate requirements
@@ -504,7 +514,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		// document exists and its subject digest matches, so this order is what turns two
 		// documents into a linked pair rather than two unrelated files.
 		rec.Sort()
-		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile})
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied)
 	}
 
 	return nil
@@ -570,6 +580,14 @@ func bundleBaseName(filename string, vars variables.Dictionary) string {
 
 // processBundleFile generates a WiX Bundle (bootstrapper).
 func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, filename string, args *cliArgs) error {
+	// A bundle installs no files of its own - it chains installers - so there is no install
+	// target for <sbom for=> to name. The document belongs in the .msis that builds the MSI
+	// carrying that file, and the bundle's own document links to it (#33).
+	if len(setup.SBOMs) > 0 {
+		return fmt.Errorf("<sbom for=%q> is in a script that builds a bundle, which installs no "+
+			"files of its own; put it in the .msis that packages that file",
+			setup.SBOMs[0].For)
+	}
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
 
@@ -651,7 +669,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{builder.OutputFile})
+			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil)
 		}
 	}
 

@@ -38,6 +38,7 @@ type xmlSetup struct {
 	// Children captured in document order via custom UnmarshalXML
 	Sets     []xmlSet
 	Requires []xmlRequires // Top-level runtime requirements
+	SBOMs    []xmlSBOM     // Supplied component SBOMs (#36)
 	Features []xmlFeature
 	Items    []xmlItem // Preserves document order
 	Bundle   *xmlBundle
@@ -162,6 +163,35 @@ type xmlExePackage struct {
 	Source          string `xml:"source,attr"`
 	DetectCondition string `xml:"detect,attr"`
 	InstallArgs     string `xml:"args,attr"`
+}
+
+// xmlSBOM represents a supplied component SBOM: <sbom source="..." for="..."/>
+type xmlSBOM struct {
+	Source string `xml:"source,attr"`
+	For    string `xml:"for,attr"`
+}
+
+// UnmarshalXML for xmlSBOM - both attributes are required, and an unknown one is an error
+// rather than silence: a typo in `for` would otherwise mean the document is merged onto
+// nothing at all.
+func (s *xmlSBOM) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "source":
+			s.Source = attr.Value
+		case "for":
+			s.For = attr.Value
+		default:
+			return fmt.Errorf("unknown attribute '%s' on <sbom>", attr.Name.Local)
+		}
+	}
+	if s.Source == "" {
+		return fmt.Errorf("<sbom> requires a source attribute")
+	}
+	if s.For == "" {
+		return fmt.Errorf("<sbom> requires a for attribute naming the file it describes")
+	}
+	return d.Skip()
 }
 
 // xmlRequires represents a top-level runtime requirement
@@ -538,6 +568,13 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				s.Requires = append(s.Requires, req)
 
+			case "sbom":
+				var sb xmlSBOM
+				if err := d.DecodeElement(&sb, &t); err != nil {
+					return err
+				}
+				s.SBOMs = append(s.SBOMs, sb)
+
 			case "files":
 				var files xmlFiles
 				if err := d.DecodeElement(&files, &t); err != nil {
@@ -752,6 +789,11 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 			Version: r.Version,
 			Source:  r.Source,
 		})
+	}
+
+	// Convert supplied SBOMs
+	for _, sb := range raw.SBOMs {
+		setup.SBOMs = append(setup.SBOMs, ir.SuppliedSBOM{Source: sb.Source, For: sb.For})
 	}
 
 	// Convert features

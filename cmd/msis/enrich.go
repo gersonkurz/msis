@@ -180,7 +180,7 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 // first so that the bundle's can link to it. #33 verifies a BOM-Link against the child's
 // subject digest before making it, so a bundle written first would simply record that no
 // document was there - correct, but less useful than doing it the other way round.
-func emitBuildSBOM(rec *buildrecord.Record, artifacts []string) error {
+func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied) error {
 	self, _ := os.Executable()
 	for _, artifact := range artifacts {
 		var doc *sbom.Document
@@ -197,8 +197,11 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string) error {
 				doc, err = sbom.FromBundle(b, opts)
 			}
 		default:
+			// Supplied documents describe installed FILES, which only the MSI has. The
+			// wrapper carries the MSI itself and links to its document (#33); repeating the
+			// contents of a file inside that MSI would say the bundle contains them directly.
 			opts := sbom.Options{MsisVersion: Version, MsisPath: self,
-				Build: rec.For(buildrecord.ScopeArtifactMSI)}
+				Build: rec.For(buildrecord.ScopeArtifactMSI), Supplied: supplied}
 			var pkg *msiread.Package
 			if pkg, err = msiread.Read(artifact); err == nil {
 				doc, err = sbom.FromPackage(pkg, opts)

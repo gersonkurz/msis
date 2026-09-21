@@ -1046,3 +1046,52 @@ func TestParseRemoveOnUninstallAtTopLevel(t *testing.T) {
 		t.Errorf("expected RemoveOnUninstall, got %T", setup.Items[1])
 	}
 }
+
+// <sbom source= for=> (#36). Both attributes are required: a document with no target would be
+// merged onto nothing, and a target with no document describes nothing - either way the element
+// would sit in the script doing silently nothing at all.
+func TestParseSuppliedSBOM(t *testing.T) {
+	setup, err := ParseBytes([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <set name="PRODUCT_NAME" value="Test"/>
+    <sbom source="app.cdx.json" for="[INSTALLDIR]app.exe"/>
+    <sbom source="sub\lib.cdx.json" for="[INSTALLDIR]lib\lib.dll"/>
+</setup>`))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(setup.SBOMs) != 2 {
+		t.Fatalf("expected 2 supplied SBOMs, got %d", len(setup.SBOMs))
+	}
+	if setup.SBOMs[0].Source != "app.cdx.json" || setup.SBOMs[0].For != "[INSTALLDIR]app.exe" {
+		t.Errorf("first: %+v", setup.SBOMs[0])
+	}
+	if setup.SBOMs[1].Source != `sub\lib.cdx.json` {
+		t.Errorf("second: %+v", setup.SBOMs[1])
+	}
+}
+
+func TestParseSuppliedSBOMRejectsIncompleteElements(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		element string
+		mustSay string
+	}{
+		{"no source", `<sbom for="[INSTALLDIR]app.exe"/>`, "source"},
+		{"no target", `<sbom source="app.cdx.json"/>`, "for"},
+		{"a misspelt attribute", `<sbom source="a.json" target="[INSTALLDIR]app.exe"/>`, "target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseBytes([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    ` + tc.element + `
+</setup>`))
+			if err == nil {
+				t.Fatalf("%s was accepted", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.mustSay) {
+				t.Errorf("%q does not mention %q", err, tc.mustSay)
+			}
+		})
+	}
+}

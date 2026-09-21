@@ -29,6 +29,10 @@ type Options struct {
 	// artifact is the document and this only ever adds to it.
 	Build *buildrecord.Record
 
+	// Supplied are component SBOMs the script named (#36), each describing one payload file
+	// from the inside. Empty for `/SBOM` against an artifact alone, for the same reason.
+	Supplied []Supplied
+
 	Now       func() time.Time
 	NewSerial func() (string, error)
 }
@@ -142,6 +146,11 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 	if err := enrich(doc, opts.Build); err != nil {
 		return nil, err
 	}
+	// Then what someone else knew about the inside of a payload file (#36). After enrichment
+	// because it joins on the same WiX File id, and before sorting for the same reason.
+	if err := mergeSupplied(doc, opts.Supplied); err != nil {
+		return nil, err
+	}
 
 	sortDocument(doc)
 
@@ -197,6 +206,12 @@ func requireDigests(pkg *msiread.Package, doc *Document) error {
 // acquire this role, so nothing that should carry a digest can slip through by lacking one.
 // The component must still say why it has none, in itself, so a reader is never left inferring.
 func admissibleWithoutDigest(c Component) bool {
+	// A component msis RECEIVED rather than observed (#36). It is not in the artifact - it is
+	// inside one of the files in it - so msis never held its bytes and never had a digest to
+	// publish. Whatever the supplier gave is carried as given, including nothing.
+	if c.raw != nil {
+		return true
+	}
 	if propertyValueOf(c.Properties, propRole) != roleRequiredRuntime {
 		return false
 	}
@@ -477,6 +492,7 @@ func sortDocument(d *Document) {
 	}
 	for i := range d.Dependencies {
 		sort.Strings(d.Dependencies[i].DependsOn)
+		sort.Strings(d.Dependencies[i].Provides)
 	}
 	sort.Slice(d.Dependencies, func(i, j int) bool { return d.Dependencies[i].Ref < d.Dependencies[j].Ref })
 	for i := range d.Compositions {

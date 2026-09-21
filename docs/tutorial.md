@@ -804,7 +804,95 @@ DLL, and it is what you want unless you have a specific reason to reach for the 
 
 ---
 
-## Tutorial 13: Putting It All Together
+## Tutorial 13: Supplying a Component SBOM
+
+With `/SBOM`, msis writes a CycloneDX document beside each installer it builds, describing
+everything it can see: every payload file, its bytes, its SHA-256 and where it installs.
+
+What it cannot see is what is *inside* those files. `app.exe` is a hash and a name; the libraries
+statically linked into it, the modules a Go binary carries, the packages a .NET application
+depends on — none of that is visible from the outside. That is also exactly where a product's
+top-level dependencies live, which is what the Cyber Resilience Act asks a manufacturer to be
+able to produce.
+
+Your build system knows. Most toolchains can emit a CycloneDX document for what they built —
+`cyclonedx-gomod`, `cyclonedx-dotnet`, `syft` and others. `<sbom>` composes that document into
+the installer's own:
+
+```xml
+<setup>
+  <set name="PRODUCT_NAME" value="MyApp"/>
+  <set name="PRODUCT_VERSION" value="1.0.0"/>
+  <set name="MANUFACTURER" value="My Company"/>
+  <set name="UPGRADE_CODE" value="{YOUR-GUID-HERE}"/>
+
+  <sbom source="app.cdx.json" for="[INSTALLDIR]app.exe"/>
+
+  <feature name="Main">
+    <files source="bin" target="[INSTALLDIR]"/>
+  </feature>
+</setup>
+```
+
+```bash
+msis /BUILD /SBOM setup.msis
+```
+
+- **`source`** is the CycloneDX JSON document, relative to the `.msis` file. It is read by msis
+  and never packaged.
+- **`for`** is the install target of the file it describes. It must match **exactly one**
+  installed file. A target matching several is an error rather than a guess — msis can package
+  two different files to one destination, and attaching someone's dependency graph to whichever
+  came first would be a coin toss presented as a fact.
+
+### What msis does with it
+
+The supplied document's components are emitted **verbatim**, with every field their author
+wrote, including ones msis does not model — licences above all. Their identity is untouched: a
+`purl` that came in comes out unchanged, and msis never invents one that was not there.
+
+One thing is rewritten: the `bom-ref`. Two documents are becoming one, and a `bom-ref` is
+document-local addressing rather than identity, so imported refs move into a namespace of their
+own and every relationship that pointed at them is rewritten to match.
+
+One thing is checked. If the supplied document carries a SHA-256 for its own subject, msis
+compares it with the bytes in the package. A mismatch **fails the build** — the document is
+about a different build of that file, and publishing it would attach a dependency graph to
+content it was never about.
+
+### What msis does NOT do
+
+Receiving a document establishes nothing about it. msis does not verify that a supplied document
+is complete, that it is accurate, or that it lists what is really inside the binary — and the
+merged document says so, in a `msis:supplied.document` property, so a reader can tell your
+supplier's claims from msis's own observations. Every imported component also carries
+`msis:supplied.from`, naming the document it came from.
+
+Coverage statements are preserved rather than improved:
+
+| What your document declares about its own contents | What the installer's document says about that file |
+|---|---|
+| `complete` | `complete` |
+| `incomplete` | `unknown` |
+| `unknown` | `unknown` |
+| nothing at all | `unknown` |
+
+Only a document that actually asserts completeness lets the file be marked complete. Anything
+else leaves it `unknown` — the marking it already had. Not `incomplete`: CycloneDX defines that
+as *additional relationships exist*, which is a claim that something is missing, and knowing one
+thing that is inside a file establishes nothing about whether anything else is. A component your document says nothing about comes out marked
+`unknown` rather than silently complete — a reader has to be able to tell "depends on nothing"
+from "nobody looked".
+
+### Where it goes
+
+`<sbom>` belongs in the `.msis` that packages the file. A bundle installs no files of its own —
+it chains installers — so a bundle script has no install target to name; msis says so rather
+than failing later. The bundle's document links to the MSI's, and the MSI's carries the merge.
+
+---
+
+## Tutorial 14: Putting It All Together
 
 Here's a complete example for a real-world application:
 
