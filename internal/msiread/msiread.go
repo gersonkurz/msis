@@ -89,6 +89,11 @@ type Component struct {
 	ID        string
 	Directory string
 	KeyPath   string
+
+	// GUID is the ComponentId column. Windows Installer requires it to be stable for a given
+	// component across releases, which makes it the one identifier that can tell two files
+	// installed to the SAME destination apart without depending on generated keys.
+	GUID string
 }
 
 type Directory struct {
@@ -205,12 +210,14 @@ func readDirectories(db *database, p *Package) error {
 }
 
 func readComponents(db *database, p *Package) error {
-	return optional(db, "Component", "SELECT `Component`,`Directory_`,`KeyPath` FROM `Component`",
+	return optional(db, "Component",
+		"SELECT `Component`,`ComponentId`,`Directory_`,`KeyPath` FROM `Component`",
 		func(r *row) error {
 			p.Components = append(p.Components, Component{
 				ID:        r.text(1),
-				Directory: r.text(2),
-				KeyPath:   r.text(3),
+				GUID:      r.text(2),
+				Directory: r.text(3),
+				KeyPath:   r.text(4),
 			})
 			return nil
 		})

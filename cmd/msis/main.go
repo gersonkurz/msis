@@ -39,6 +39,7 @@ type cliArgs struct {
 	dryRun          bool
 	status          bool
 	inspect         bool              // /INSPECT: read a built .msi and report what is in it
+	sbom            bool              // /SBOM: write a CycloneDX document for a built .msi
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
@@ -83,6 +84,17 @@ func main() {
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error inspecting"), cli.Filename(filename), err)
+				os.Exit(1)
+			}
+			continue
+		}
+		if args.sbom {
+			err := sbomablePath(filename)
+			if err == nil {
+				err = runSBOM(filename)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error writing the SBOM for"), cli.Filename(filename), err)
 				os.Exit(1)
 			}
 			continue
@@ -683,6 +695,7 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.dryRun, "dry-run", false, "")
 	fs.BoolVar(&args.status, "status", false, "")
 	fs.BoolVar(&args.inspect, "inspect", false, "")
+	fs.BoolVar(&args.sbom, "sbom", false, "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
 	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
@@ -791,6 +804,7 @@ func printUsage() {
 	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
 	fmt.Printf("  %s With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))
 	fmt.Printf("  %s            Report what is inside a built .msi\n", cli.Info("/INSPECT"))
+	fmt.Printf("  %s               Write a CycloneDX SBOM beside a built .msi\n", cli.Info("/SBOM"))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
