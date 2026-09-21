@@ -38,6 +38,7 @@ type cliArgs struct {
 	customTemplates string
 	dryRun          bool
 	status          bool
+	inspect         bool              // /INSPECT: read a built .msi and report what is in it
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
@@ -73,6 +74,19 @@ func main() {
 	}
 
 	for _, filename := range args.files {
+		// /INSPECT reads a built artifact, so it does not go through the .msis pipeline at
+		// all - no parsing, no generation, no build.
+		if args.inspect {
+			err := inspectablePath(filename)
+			if err == nil {
+				err = runInspect(filename)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error inspecting"), cli.Filename(filename), err)
+				os.Exit(1)
+			}
+			continue
+		}
 		if err := processFile(filename, args); err != nil {
 			fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error processing"), cli.Filename(filename), err)
 			os.Exit(1)
@@ -668,6 +682,7 @@ func parseArgs() *cliArgs {
 	fs.StringVar(&args.customTemplates, "customtemplates", "", "")
 	fs.BoolVar(&args.dryRun, "dry-run", false, "")
 	fs.BoolVar(&args.status, "status", false, "")
+	fs.BoolVar(&args.inspect, "inspect", false, "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
 	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
@@ -775,6 +790,7 @@ func printUsage() {
 	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
 	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
 	fmt.Printf("  %s With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))
+	fmt.Printf("  %s            Report what is inside a built .msi\n", cli.Info("/INSPECT"))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
