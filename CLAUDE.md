@@ -189,6 +189,11 @@ The C# version at `../msis-2.x/` defines expected behavior. Most relevant files:
 - `docs/msis.xsd` — authoritative `.msis` schema (element/attribute reference)
 - `docs/Bundle.md`, `docs/prerequisites.md`, `docs/tutorial.md`, `docs/templates.md`,
   `docs/overview.md`, `docs/installer-hooks.md` — feature and architecture documentation
+- `docs/decisions.md` — questions settled deliberately (REG_QWORD truncation, what
+  `preserve="yes"` skips and why), each naming the code that implements it;
+  `TestEverySettledDecisionIsStillImplemented` checks those anchors are still present —
+  an anchor-presence check, which catches code that was deleted or moved and not a
+  decision reversed in place
 - `docs/sbom.md` — the SBOM feature as a whole (#44): what `/INSPECT` and `/SBOM` read, why
   they never execute the package, sidecar retention and the archive naming contract, what is
   verified before a BOM-Link is made, the `msis:*` vocabulary, and the CRA/NTIA framing.
@@ -210,14 +215,20 @@ Loop parameters:
   because they drive the real `wix` CLI, so a helper defined among them compiles nowhere
   else and no Windows run notices.)
 - Yardstick docs: this file (architecture, WiX 6/7 conventions, directory roots,
-  the MSI-vs-bundle variable table); the reference implementation under
-  `../msis-2.x/` — it defines expected behavior; `docs/msis.xsd` for the `.msis`
-  surface; `AGENTS.md` for project intent
+  the MSI-vs-bundle variable table); `docs/decisions.md` for the questions that were
+  settled deliberately and are not reopened without new evidence; the reference
+  implementation under `../msis-2.x/` — it defines expected behavior; `docs/msis.xsd`
+  for the `.msis` surface; `AGENTS.md` for project intent
 - Review focus: behavior parity with msis-2.x; deterministic, diffable output (no
   clocks, no randomness, no map-order dependence); correctness on paths that can
   destroy customer data — preserved registry values, the uninstall folder/registry
   removal hooks, upgrade sequencing
-- Task list: GitHub issues on `gersonkurz/msis`. File a `[task]` finding as an issue
+- Task list: GitHub issues on `gersonkurz/msis`. **Check `docs/decisions.md` first**:
+  a finding that restates a question already settled there is closed with a pointer
+  to its entry rather than filed again, and a finding that CONTRADICTS one is filed
+  citing the entry and saying what new evidence changed it. That file exists because
+  #10 settled REG_QWORD handling with an install probe and the same question came
+  back as #40 from a note that outlived the fix. File a `[task]` finding as an issue
   labelled `review-task`, with the reviewer's own words quoted verbatim, so the
   finding keeps its state (open/closed) instead of becoming a line of prose someone
   has to remember to update. `TODO.md` held these until 2026-09-21 and was retired
