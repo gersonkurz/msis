@@ -324,6 +324,40 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			},
 			mustSay: "contradicts itself",
 		},
+		{
+			// The exemption for bytes that are not in the artifact is two-sided. If a ref
+			// declared unhashable turns out to carry a SHA-256, the expectation and the
+			// artifact disagree - and a one-sided check would let a stale exemption sit
+			// there forever, ready to excuse a digest the emitter drops later.
+			name:    "a component declared unhashable that does carry a SHA-256",
+			mutate:  func(d map[string]any) {},
+			want:    Expected{UnhashableComponents: []string{"ns/file/a"}},
+			mustSay: "declared unhashable but carries a SHA-256",
+		},
+		{
+			// Admitted as unhashable, but with no digest at all: nothing about it can be
+			// verified, which is the state the exemption is NOT for.
+			name: "an unhashable component with no digest of any kind",
+			mutate: func(d map[string]any) {
+				delete(d["components"].([]any)[0].(map[string]any), "hashes")
+			},
+			want:    Expected{UnhashableComponents: []string{"ns/file/a"}},
+			mustSay: "carries no digest at all",
+		},
+		{
+			// Admitted, and carrying the digest the artifact records - but silent about why
+			// there is no SHA-256. A reader would have to guess whether it was omitted or
+			// forgotten.
+			name: "an unhashable component that does not say why",
+			mutate: func(d map[string]any) {
+				c := d["components"].([]any)[0].(map[string]any)
+				c["hashes"] = []any{
+					map[string]any{"alg": "SHA-512", "content": strings.Repeat("b", 128)},
+				}
+			},
+			want:    Expected{UnhashableComponents: []string{"ns/file/a"}},
+			mustSay: "does not say why",
+		},
 	}
 
 	for _, c := range cases {
@@ -390,5 +424,24 @@ func TestKnownEmptyDependenciesAreAccepted(t *testing.T) {
 	if problems := check(t, d, Expected{}); len(problems) != 0 {
 		t.Errorf("a component with a genuinely empty, fully known dependency graph was "+
 			"rejected: %v", problems)
+	}
+}
+
+// The exemption must also ACCEPT the state it exists for, or it is just another refusal: a
+// component whose bytes are not in the artifact, carrying the digest the artifact records and
+// saying why there is no SHA-256, is a correct document.
+func TestAProperlyDeclaredUnhashableComponentIsAccepted(t *testing.T) {
+	d := good()
+	c := d["components"].([]any)[0].(map[string]any)
+	c["hashes"] = []any{map[string]any{"alg": "SHA-512", "content": strings.Repeat("b", 128)}}
+	c["properties"] = []any{
+		map[string]any{"name": "msis:role", "value": "payload"},
+		map[string]any{"name": "msis:payload.unavailable",
+			"value": "the engine downloads it at install time"},
+	}
+
+	want := Expected{UnhashableComponents: []string{"ns/file/a"}}
+	if problems := check(t, d, want); len(problems) != 0 {
+		t.Errorf("a correctly declared unhashable component was rejected: %v", problems)
 	}
 }

@@ -1,6 +1,6 @@
 //go:build windows
 
-package msiread
+package cabinet
 
 import (
 	"fmt"
@@ -92,37 +92,37 @@ type openFile struct {
 // handles come from a counter rather than from a pointer, so two concurrent extractions cannot
 // collide - Read is called concurrently in this package's own tests.
 var (
-	cabMu     sync.Mutex
-	cabFiles          = map[uintptr]*openFile{}
-	cabNextID uintptr = 1
-	// Extraction is serialised on cabExtractMu so one session's callbacks cannot see
-	// another's; cabSource is the cabinet the current session is reading and cabResult
+	mu        sync.Mutex
+	openFiles         = map[uintptr]*openFile{}
+	nextID    uintptr = 1
+	// Extraction is serialised on extractMu so one session's callbacks cannot see
+	// another's; source is the cabinet the current session is reading and result
 	// collects what comes out of it.
-	cabExtractMu sync.Mutex
-	cabSource    []byte
-	cabResult    map[string][]byte
-	cabSpanned   bool
+	extractMu sync.Mutex
+	source    []byte
+	result    map[string][]byte
+	spanned   bool
 )
 
-func cabRegister(f *openFile) uintptr {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	id := cabNextID
-	cabNextID++
-	cabFiles[id] = f
+func register(f *openFile) uintptr {
+	mu.Lock()
+	defer mu.Unlock()
+	id := nextID
+	nextID++
+	openFiles[id] = f
 	return id
 }
 
-func cabLookup(h uintptr) *openFile {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	return cabFiles[h]
+func lookup(h uintptr) *openFile {
+	mu.Lock()
+	defer mu.Unlock()
+	return openFiles[h]
 }
 
-func cabRelease(h uintptr) {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	delete(cabFiles, h)
+func release(h uintptr) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(openFiles, h)
 }
 
 // The callbacks. They are cdecl (fdi.h declares FNALLOC and friends __cdecl), so they must be
@@ -151,14 +151,14 @@ var (
 	// openFile made them clobber each other's position, which FDI reports as a corrupt
 	// cabinet. The bytes are shared read-only; only the offset is per-handle.
 	cbOpen = syscall.NewCallbackCDecl(func(name *byte, oflag int32, pmode int32) uintptr {
-		if cabSource == nil {
+		if source == nil {
 			return ^uintptr(0) // -1: FDI's "cannot open"
 		}
-		return cabRegister(&openFile{data: cabSource, name: "<cabinet>"})
+		return register(&openFile{data: source, name: "<cabinet>"})
 	})
 
 	cbRead = syscall.NewCallbackCDecl(func(h uintptr, pv unsafe.Pointer, cb uint32) uintptr {
-		f := cabLookup(h)
+		f := lookup(h)
 		if f == nil || f.data == nil {
 			return ^uintptr(0)
 		}
@@ -174,7 +174,7 @@ var (
 	})
 
 	cbWrite = syscall.NewCallbackCDecl(func(h uintptr, pv unsafe.Pointer, cb uint32) uintptr {
-		f := cabLookup(h)
+		f := lookup(h)
 		if f == nil {
 			return ^uintptr(0)
 		}
@@ -191,17 +191,17 @@ var (
 	// Every handle is released here, the cabinet's included. Releasing only the output handles
 	// left each extraction's compressed buffer in the registry for the life of the process.
 	cbClose = syscall.NewCallbackCDecl(func(h uintptr) uintptr {
-		if f := cabLookup(h); f != nil {
+		if f := lookup(h); f != nil {
 			if f.data == nil {
-				cabResult[f.name] = f.out
+				result[f.name] = f.out
 			}
-			cabRelease(h)
+			release(h)
 		}
 		return 0
 	})
 
 	cbSeek = syscall.NewCallbackCDecl(func(h uintptr, dist int32, seektype int32) uintptr {
-		f := cabLookup(h)
+		f := lookup(h)
 		if f == nil || f.data == nil {
 			return ^uintptr(0)
 		}
@@ -244,18 +244,18 @@ func cstring(p *byte) string {
 	}
 }
 
-// extractCabinet decompresses a cabinet held in memory and returns each entry's bytes by name.
+// Extract decompresses a cabinet held in memory and returns each entry's bytes by name.
 //
 // In a cabinet WiX produced, entry names are the File table's keys (FILE_ID00007 and so on),
 // which is what makes mapping payload to inventory rows exact rather than a guess at filenames.
-func extractCabinet(data []byte) (map[string][]byte, error) {
+func Extract(data []byte) (map[string][]byte, error) {
 	if len(data) < 4 || string(data[:4]) != "MSCF" {
 		return nil, fmt.Errorf("not a cabinet: missing the MSCF signature")
 	}
 
 	// FDI's callbacks carry no user context, so one extraction at a time.
-	cabExtractMu.Lock()
-	defer cabExtractMu.Unlock()
+	extractMu.Lock()
+	defer extractMu.Unlock()
 
 	var e erf
 	hfdi, _, _ := procFDICrt.Call(
@@ -268,16 +268,16 @@ func extractCabinet(data []byte) (map[string][]byte, error) {
 	}
 	defer procFDIDstr.Call(hfdi)
 
-	cabSource = data
-	cabResult = map[string][]byte{}
-	cabSpanned = false
+	source = data
+	result = map[string][]byte{}
+	spanned = false
 
 	// Whatever happens, no handle from this session outlives it. FDI closes what it opens on
 	// a clean run; an aborted one can leave handles behind, and they hold the cabinet buffer.
-	firstHandle := cabPeekNextID()
+	firstHandle := peekNextID()
 	defer func() {
-		cabReleaseFrom(firstHandle)
-		cabSource, cabResult = nil, nil
+		releaseFrom(firstHandle)
+		source, result = nil, nil
 	}()
 
 	// The names are handed to our open callback, which ignores them and returns the cabinet
@@ -294,15 +294,15 @@ func extractCabinet(data []byte) (map[string][]byte, error) {
 		0,
 	)
 	if ok == 0 {
-		if cabSpanned {
+		if spanned {
 			return nil, fmt.Errorf("this package's payload spans several cabinets, which msis " +
 				"cannot read: only the cabinet embedded in the package is available")
 		}
 		return nil, fmt.Errorf("FDICopy failed to extract the cabinet (erf oper=%d type=%d)", e.oper, e.typ)
 	}
 
-	out := cabResult
-	cabResult = nil
+	out := result
+	result = nil
 	return out, nil
 }
 
@@ -311,12 +311,12 @@ func extractCabinet(data []byte) (map[string][]byte, error) {
 func handleNotify(fdint int32, n *fdiNotification) uintptr {
 	switch fdint {
 	case fdintCOPY_FILE:
-		return cabRegister(&openFile{name: cstring(n.psz1)})
+		return register(&openFile{name: cstring(n.psz1)})
 
 	case fdintCLOSE_FILE_INFO:
-		if f := cabLookup(n.hf); f != nil {
-			cabResult[f.name] = f.out
-			cabRelease(n.hf)
+		if f := lookup(n.hf); f != nil {
+			result[f.name] = f.out
+			release(n.hf)
 		}
 		return 1 // TRUE: continue
 
@@ -325,7 +325,7 @@ func handleNotify(fdint int32, n *fdiNotification) uintptr {
 		// one cabinet in memory and no way to find a continuation, and the open callback
 		// would hand back the same bytes again - which FDI retries indefinitely, holding the
 		// extraction lock with it. Abort instead, and say so.
-		cabSpanned = true
+		spanned = true
 		return ^uintptr(0) // -1: abort
 
 	default:
@@ -333,29 +333,29 @@ func handleNotify(fdint int32, n *fdiNotification) uintptr {
 	}
 }
 
-// cabPeekNextID reports the id the next registration will use, so a session can tell which
+// peekNextID reports the id the next registration will use, so a session can tell which
 // handles are its own.
-func cabPeekNextID() uintptr {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	return cabNextID
+func peekNextID() uintptr {
+	mu.Lock()
+	defer mu.Unlock()
+	return nextID
 }
 
-// cabReleaseFrom drops every handle issued at or after from. Used to guarantee an extraction
+// releaseFrom drops every handle issued at or after from. Used to guarantee an extraction
 // leaves the registry as it found it, including after a failure.
-func cabReleaseFrom(from uintptr) {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	for id := range cabFiles {
+func releaseFrom(from uintptr) {
+	mu.Lock()
+	defer mu.Unlock()
+	for id := range openFiles {
 		if id >= from {
-			delete(cabFiles, id)
+			delete(openFiles, id)
 		}
 	}
 }
 
-// cabRegistrySize is for tests: the number of handles currently held.
-func cabRegistrySize() int {
-	cabMu.Lock()
-	defer cabMu.Unlock()
-	return len(cabFiles)
+// registrySize is for tests: the number of handles currently held.
+func registrySize() int {
+	mu.Lock()
+	defer mu.Unlock()
+	return len(openFiles)
 }

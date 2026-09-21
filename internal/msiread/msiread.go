@@ -23,6 +23,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/gersonkurz/msis/internal/cabinet"
 )
 
 // Package is everything read out of one installer database.
@@ -482,7 +484,7 @@ func hashPayload(db *database, p *Package) error {
 		if err != nil {
 			return fmt.Errorf("reading cabinet %s: %w", m.StreamName(), err)
 		}
-		files, err := extractCabinet(data)
+		files, err := cabinet.Extract(data)
 		if err != nil {
 			return fmt.Errorf("extracting cabinet %s: %w", m.StreamName(), err)
 		}

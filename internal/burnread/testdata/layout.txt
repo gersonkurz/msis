@@ -1,0 +1,1 @@
+a layout-only payload: ships in the bundle, never installed

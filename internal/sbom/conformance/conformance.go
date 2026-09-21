@@ -39,6 +39,17 @@ type Expected struct {
 	// IdentifiedComponents are the bom-refs whose identity really was determined, and so may
 	// legitimately carry a purl. Any OTHER component carrying one is guessing.
 	IdentifiedComponents []string
+
+	// UnhashableComponents are the bom-refs whose bytes are not in the artifact at all - a
+	// bundle payload the engine downloads at install time is the case that exists. They are
+	// the only components allowed to lack a SHA-256, and even then they must carry some
+	// digest the artifact records and say why the SHA-256 is missing.
+	//
+	// The caller must derive this from the ARTIFACT, not from the document: an exemption
+	// read out of the document under test would excuse exactly the components whose digest
+	// the emitter dropped. The check is two-sided for the same reason - a ref listed here
+	// that DOES carry a SHA-256 fails too, so a stale list cannot hide a regression.
+	UnhashableComponents []string
 }
 
 // Check runs every rule and returns each failure. It returns them all rather than stopping at
@@ -73,11 +84,28 @@ func Check(schemaDir string, data []byte, want Expected) []error {
 	}
 
 	// --- digests --------------------------------------------------------------------------
-	// #29 D5: SHA-256 on every payload file, no exceptions. The digest is what makes the
-	// document verifiable against a customer's installation.
+	// #29 D5: SHA-256 on every payload file. The digest is what makes the document verifiable
+	// against a customer's installation, so the single admitted exception - bytes that are
+	// not in the artifact for msis to hash - has to be declared by the caller and still
+	// carry a digest and a stated reason.
+	unhashable := map[string]bool{}
+	for _, ref := range want.UnhashableComponents {
+		unhashable[ref] = true
+	}
 	for _, c := range doc.Components {
-		if !hasSHA256(c.Hashes) {
+		switch {
+		case hasSHA256(c.Hashes):
+			if unhashable[c.BOMRef] {
+				fail("component %q was declared unhashable but carries a SHA-256; the "+
+					"expectation and the artifact disagree", c.BOMRef)
+			}
+		case !unhashable[c.BOMRef]:
 			fail("component %q has no SHA-256", c.BOMRef)
+		case len(c.Hashes) == 0:
+			fail("component %q is not in the artifact, which is admitted, but carries no "+
+				"digest at all, so nothing about it can be verified", c.BOMRef)
+		case !c.hasProperty(propPayloadUnavailable):
+			fail("component %q has no SHA-256 and the document does not say why", c.BOMRef)
 		}
 	}
 
@@ -379,6 +407,19 @@ func (c component) role() string {
 		}
 	}
 	return ""
+}
+
+// propPayloadUnavailable is the property a component must carry when it has no SHA-256: the
+// document has to state the gap, not merely leave one.
+const propPayloadUnavailable = "msis:payload.unavailable"
+
+func (c component) hasProperty(name string) bool {
+	for _, p := range c.Properties {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 type hash struct {

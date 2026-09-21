@@ -1,9 +1,9 @@
 //go:build !windows
 
-package msiread
+package cabinet
 
 import "fmt"
 
-func extractCabinet(data []byte) (map[string][]byte, error) {
+func Extract(data []byte) (map[string][]byte, error) {
 	return nil, fmt.Errorf("extracting a cabinet needs the Windows decompressor (cabinet.dll)")
 }

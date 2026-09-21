@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/burnread"
 	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/msiread"
 )
@@ -17,6 +18,9 @@ import (
 //
 // Inspection is passive. It opens the database read-only and never runs the package.
 func runInspect(path string) error {
+	if strings.EqualFold(pathExt(path), ".exe") {
+		return inspectBundle(path)
+	}
 	pkg, err := msiread.Read(path)
 	if err != nil {
 		return err
@@ -136,11 +140,94 @@ func humanSize(n int) string {
 // inspectablePath reports whether a file looks like something /INSPECT can read, so the error
 // for `msis /INSPECT setup.msis` names the mistake instead of MSI's return code.
 func inspectablePath(path string) error {
-	if strings.EqualFold(pathExt(path), ".msi") {
+	ext := pathExt(path)
+	if strings.EqualFold(ext, ".msi") || strings.EqualFold(ext, ".exe") {
 		return nil
 	}
-	return fmt.Errorf("/INSPECT reads a built .msi; %s is not one"+
-		"\n  hint: build it first (msis /BUILD ...), then inspect the .msi it produced", path)
+	return fmt.Errorf("/INSPECT reads a built .msi or a Burn bundle .exe; %s is neither"+
+		"\n  hint: build it first (msis /BUILD ...), then inspect what it produced", path)
+}
+
+// inspectBundle prints what is inside a Burn bundle: the bootstrapper application it runs and
+// the installers it chains. A chained installer's own contents are not expanded here - point
+// /INSPECT at the .msi for that - because the bundle's inventory is the chain, not the payload
+// of every package in it.
+func inspectBundle(path string) error {
+	b, err := burnread.Read(path)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s %s\n", cli.Bold("Bundle:"), cli.Filename(path))
+	for _, row := range [][2]string{
+		{"Name", b.Name}, {"Version", b.Version}, {"Publisher", b.Publisher},
+		{"BundleCode", b.Code}, {"UpgradeCode", b.UpgradeCode},
+		{"Scope", b.Scope}, {"Engine", b.EngineVersion},
+	} {
+		if row[1] != "" {
+			fmt.Printf("  %-16s %s\n", row[0], row[1])
+		}
+	}
+
+	fmt.Printf("\n%s (%s) %s\n", cli.Bold("Bootstrapper payloads"),
+		cli.Number(fmt.Sprintf("%d", len(b.UX))),
+		cli.Info("- run the install, never installed by it"))
+	for _, p := range b.UX {
+		fmt.Printf("  %9s  %s  %s\n", humanSize(p.Size), digest(p.SHA256), p.Name)
+	}
+
+	// Payloads that belong to no chain package. They ship inside the bundle (or beside it)
+	// all the same, so leaving them out of the listing would be the same hole the reader was
+	// fixed for - just one layer further out.
+	if len(b.Loose) > 0 {
+		fmt.Printf("\n%s (%s) %s\n", cli.Bold("Bundle payloads"),
+			cli.Number(fmt.Sprintf("%d", len(b.Loose))),
+			cli.Info("- carried by the bundle, referenced by no chain package"))
+		for _, p := range b.Loose {
+			note := ""
+			if p.LayoutOnly {
+				note = "  " + cli.Info("layout only")
+			}
+			fmt.Printf("  %9s  %s  %s%s\n", humanSize(p.Size), digest(p.SHA256), p.Name, note)
+			if p.Unavailable != "" {
+				fmt.Printf("    %s\n", cli.Warning("Warning: "+p.Unavailable))
+			}
+		}
+	}
+
+	fmt.Printf("\n%s (%s)\n", cli.Bold("Chain"), cli.Number(fmt.Sprintf("%d", len(b.Packages))))
+	for _, pkg := range b.Packages {
+		name := pkg.DisplayName
+		if name == "" {
+			name = pkg.ID
+		}
+		version := ""
+		if pkg.Version != "" {
+			version = "  v" + pkg.Version
+		}
+		fmt.Printf("  %s  %s%s\n", cli.Bold(name), cli.Info(pkg.Kind), version)
+		if pkg.InstallCondition != "" {
+			// What is in the bundle and what a given machine installs are different things.
+			fmt.Printf("    %s %s\n", cli.Info("installs when"), pkg.InstallCondition)
+		}
+		for _, pay := range pkg.Payloads {
+			fmt.Printf("    %9s  %s  %-28s %s\n",
+				humanSize(pay.Size), digest(pay.SHA256), pay.Name, cli.Info(string(pay.Role)))
+			if pay.Unavailable != "" {
+				fmt.Printf("      %s\n", cli.Warning("Warning: "+pay.Unavailable))
+			}
+		}
+	}
+
+	fmt.Printf("\n%s\n", cli.Bold("Not covered"))
+	fmt.Println("  - a chained installer's own payload; run /INSPECT against that .msi")
+	fmt.Println("  - what a payload binary was itself built from is opaque; the digest identifies")
+	fmt.Println("    the bytes, it says nothing about their provenance")
+	fmt.Println("  - install conditions decide which chained packages a machine actually installs")
+	fmt.Println("  - a payload the engine downloads at install time is not in this file; any such")
+	fmt.Println("    is named above")
+
+	return nil
 }
 
 func pathExt(p string) string {

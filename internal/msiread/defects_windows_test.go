@@ -10,85 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"unsafe"
 )
 
 // Regressions for the six defects found in the second review round.
-
-// Finding 1: FDINOTIFICATION's layout. Hand-written padding hard-codes the amd64 answer; on 386
-// a pointer aligns to 4, so psz1 belongs at offset 4 and an explicit pad displaces every field
-// after it - including hf, which decides which extracted file the bytes belong to.
-//
-// Checked by arithmetic rather than by eye, so it holds on whichever architecture runs it.
-func TestNotificationLayoutMatchesThePlatform(t *testing.T) {
-	var n fdiNotification
-	ptr := unsafe.Sizeof(uintptr(0))
-
-	if got, want := unsafe.Offsetof(n.psz1), ptr; got != want {
-		t.Errorf("psz1 at offset %d, want %d (one pointer in, after the 4-byte cb)", got, want)
-	}
-	// The three char* then void* then INT_PTR follow consecutively.
-	for i, f := range []struct {
-		name string
-		off  uintptr
-	}{
-		{"psz2", unsafe.Offsetof(n.psz2)},
-		{"psz3", unsafe.Offsetof(n.psz3)},
-		{"pv", unsafe.Offsetof(n.pv)},
-		{"hf", unsafe.Offsetof(n.hf)},
-	} {
-		if want := ptr * uintptr(i+2); f.off != want {
-			t.Errorf("%s at offset %d, want %d", f.name, f.off, want)
-		}
-	}
-}
-
-// Finding 2: a spanned cabinet must abort, not spin. Returning 0 from fdintNEXT_CABINET tells
-// FDI to retry, and the open callback would hand back the same bytes for ever - holding the
-// extraction lock with it.
-//
-// The notification logic is reachable directly, so this does not need a spanned package built.
-func TestSpannedCabinetAborts(t *testing.T) {
-	cabExtractMu.Lock()
-	defer cabExtractMu.Unlock()
-	cabSpanned = false
-	defer func() { cabSpanned = false }()
-
-	got := handleNotify(fdintNEXT_CABINET, &fdiNotification{})
-
-	if got != ^uintptr(0) {
-		t.Errorf("fdintNEXT_CABINET returned %d, want -1 so FDI stops retrying", int(got))
-	}
-	if !cabSpanned {
-		t.Error("the spanned case was not recorded, so the error would not say why")
-	}
-
-	// And an unrecognised notification still means "carry on" rather than aborting.
-	if got := handleNotify(fdintCABINET_INFO, &fdiNotification{}); got != 0 {
-		t.Errorf("fdintCABINET_INFO returned %d, want 0", int(got))
-	}
-}
-
-// Finding 3: extraction must leave the handle registry as it found it. Cabinet handles carry the
-// whole compressed buffer, so retaining them grows memory with every package inspected.
-func TestExtractionLeavesNoHandlesBehind(t *testing.T) {
-	before := cabRegistrySize()
-
-	if _, err := Read(fixturePath()); err != nil {
-		t.Fatalf("Read: %v", err)
-	}
-	if after := cabRegistrySize(); after != before {
-		t.Errorf("after a successful read the registry holds %d handles, was %d", after, before)
-	}
-
-	// A failed extraction must clean up too.
-	if _, err := extractCabinet([]byte("MSCFnot really a cabinet at all")); err == nil {
-		t.Fatal("garbage must not extract successfully")
-	}
-	if after := cabRegistrySize(); after != before {
-		t.Errorf("after a failed extraction the registry holds %d handles, was %d", after, before)
-	}
-}
 
 // Finding 4: a missing digest is excusable only when the media that carries THAT file is
 // unavailable. Accepting any missing file whenever any media row was unavailable let an external

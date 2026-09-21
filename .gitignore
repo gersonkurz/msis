@@ -33,6 +33,13 @@ bootstrap/dist/
 !internal/msiread/testdata/*.msi
 !internal/msiread/testdata/*.wxs
 
+# The same for the bundle fixture. fixture.exe is a real Burn bundle whose engine code sections
+# are zeroed after the build, so it packs to ~12 kB while still carrying the two things the
+# reader parses: a genuine .wixburn section and the cabinets appended behind it.
+# Rebuild: see internal/burnread/testdata/README.md
+!internal/burnread/testdata/*.exe
+!internal/burnread/testdata/*.wxs
+
 # Test binary, built with `go test -c`
 *.test
 

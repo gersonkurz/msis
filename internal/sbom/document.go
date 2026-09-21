@@ -48,6 +48,20 @@ type Component struct {
 	Supplier    *Supplier  `json:"supplier,omitempty"`
 	Hashes      []Hash     `json:"hashes,omitempty"`
 	Properties  []Property `json:"properties,omitempty"`
+
+	// ExternalReferences carries BOM-Links: a bundle's document points at the document for
+	// each installer it chains rather than repeating that installer's contents.
+	ExternalReferences []ExternalReference `json:"externalReferences,omitempty"`
+}
+
+// ExternalReference points at something outside the document. msis emits exactly one kind, a
+// BOM-Link of type "bom", and carries the subject digest with it: a link identifies a document,
+// and the digest is what proves that document describes the bytes this one carries.
+type ExternalReference struct {
+	Type    string `json:"type"`
+	URL     string `json:"url"`
+	Comment string `json:"comment,omitempty"`
+	Hashes  []Hash `json:"hashes,omitempty"`
 }
 
 type Hash struct {
@@ -107,6 +121,18 @@ const (
 	propSubjectArtifact = "msis:subject.artifact"
 	propCoverage        = "msis:coverage"
 	propIdentityUnknown = "msis:identity"
+
+	// Bundle-side vocabulary. A bundle inventories installers rather than files, so it needs
+	// terms for where a payload lives and whether its bytes are in the artifact at all.
+	propBundleCode         = "msis:burn.bundleCode"
+	propEngineVersion      = "msis:burn.engineVersion"
+	propPackageID          = "msis:burn.packageId"
+	propPackageKind        = "msis:burn.packageKind"
+	propInstallCondition   = "msis:burn.installCondition"
+	propCarried            = "msis:payload.carried"
+	propPayloadUnavailable = "msis:payload.unavailable"
+	propDownloadURL        = "msis:payload.downloadUrl"
+	propBOMLink            = "msis:bomLink"
 )
 
 // Role values for propRole.
@@ -114,3 +140,6 @@ const (
 	rolePayload = "payload"       // installed onto the machine
 	roleBinary  = "binary-stream" // executed during installation, never installed
 )
+
+// A bundle's roles are burnread.Role values, emitted as they are rather than restated here, so
+// the document's vocabulary and the reader's cannot drift apart.

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The bundle fixture for internal/burnread. Built to be READ, never run.
+
+  Two deliberate economies keep it committable (see README.md):
+    * its bootstrapper application is a text file, which avoids embedding the 444 kB wixstdba;
+    * the engine stub's code sections are zeroed after the build, which costs nothing in git
+      and makes the file plainly non-runnable.
+  Neither is visible to the reader, which touches only the PE headers, the .wixburn section and
+  the two cabinets.
+
+  The chain carries one package of each carriage state, because those are different code paths:
+  an embedded MsiPackage whose bytes msis extracts and hashes, and an uncompressed ExePackage
+  that the engine expects to find beside the installer and that therefore cannot be hashed from
+  this file alone. The MsiPackage also carries a supplementary payload, and LooseFiles is a
+  payload group no package references - carrying one payload that IS in the bundle and one that
+  is not - so all four payload roles and both carriage states appear.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Bundle Name="Burnread Fixture" Version="1.2.3" Manufacturer="NG Branch Technology GmbH"
+          UpgradeCode="{6E3B2A14-9C5D-4F7E-8A1B-2D4C6E8F0A12}"
+          Compressed="yes" DisableModify="yes">
+    <PayloadGroup Id="LooseFiles">
+      <Payload Name="layout.txt" SourceFile="layout.txt" Compressed="yes" />
+      <Payload Name="beside.txt" SourceFile="beside.txt" Compressed="no" />
+    </PayloadGroup>
+    <BootstrapperApplication SourceFile="fakeba.exe">
+      <Payload Name="extra.txt" SourceFile="extra.txt" />
+    </BootstrapperApplication>
+    <Chain>
+      <MsiPackage Id="Embedded" SourceFile="../../msiread/testdata/fixture.msi" Compressed="yes" Vital="yes">
+        <Payload Name="sidecar.txt" SourceFile="sidecar.txt" />
+      </MsiPackage>
+      <ExePackage Id="External" SourceFile="external.exe" Compressed="no" Vital="no"
+                  Permanent="yes" DetectCondition="0" InstallArguments="/q" />
+    </Chain>
+  </Bundle>
+</Wix>

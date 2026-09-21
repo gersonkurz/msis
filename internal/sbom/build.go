@@ -436,6 +436,10 @@ func sortDocument(d *Document) {
 	sort.Slice(d.Components, func(i, j int) bool { return d.Components[i].BOMRef < d.Components[j].BOMRef })
 	for i := range d.Components {
 		sortProperties(d.Components[i].Properties)
+		sort.Slice(d.Components[i].ExternalReferences, func(a, b int) bool {
+			return d.Components[i].ExternalReferences[a].URL <
+				d.Components[i].ExternalReferences[b].URL
+		})
 	}
 	sortProperties(d.Metadata.Properties)
 	sortProperties(d.Metadata.Component.Properties)

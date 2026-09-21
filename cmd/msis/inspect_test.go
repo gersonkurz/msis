@@ -9,12 +9,17 @@ import (
 // pointing it at the script instead. The error has to name that rather than surface MSI's
 // return code, which says only "1620".
 func TestInspectablePath(t *testing.T) {
-	for _, ok := range []string{`C:\dist\App.msi`, "app.MSI", "a.b.c-1.0.0.msi"} {
+	// A bundle reads too since #33: its .exe is the artifact, exactly as the .msi is for a
+	// standalone package.
+	for _, ok := range []string{
+		`C:\dist\App.msi`, "app.MSI", "a.b.c-1.0.0.msi",
+		`C:\dist\App-setup.exe`, "setup.EXE",
+	} {
 		if err := inspectablePath(ok); err != nil {
 			t.Errorf("inspectablePath(%q) = %v, want nil", ok, err)
 		}
 	}
-	for _, bad := range []string{"setup.msis", "setup.exe", "setup", `C:\dist\App.msi.cdx.json`} {
+	for _, bad := range []string{"setup.msis", "setup", `C:\dist\App.msi.cdx.json`} {
 		err := inspectablePath(bad)
 		if err == nil {
 			t.Errorf("inspectablePath(%q) = nil, want an error", bad)
