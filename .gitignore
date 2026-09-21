@@ -65,3 +65,14 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# A built SBOM index. It is derived from the CycloneDX corpus and rebuilt from scratch every
+# time (#29 D12: the documents are authoritative), so a committed copy could only ever be a
+# stale second answer.
+*.db
+
+# The sbom-index binary, when it is built rather than `go run`. Named rather than covered by a
+# broad rule, because the directory is a module of its own and `go build` there drops the
+# executable beside the source.
+/tools/sbom-index/sbom-index
+/tools/sbom-index/sbom-index.exe

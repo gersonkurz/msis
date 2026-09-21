@@ -1,0 +1,193 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "msis",
+      "version": "3.0.5",
+      "purl": "pkg:golang/github.com/gersonkurz/msis@v3.0.5",
+      "description": "Windows installer generator: .msis scripts to MSI packages via WiX"
+    },
+    "tools": [
+      {
+        "name": "msis tools/sbom",
+        "version": "3.0.5",
+        "vendor": "NG Branch Technology GmbH"
+      }
+    ],
+    "properties": [
+      {
+        "name": "msis:go.version",
+        "value": "go1.27.1"
+      },
+      {
+        "name": "msis:go.module",
+        "value": "v0.0.0-20260919125858-86b8486a19d9+dirty"
+      },
+      {
+        "name": "msis:vcs",
+        "value": "git"
+      },
+      {
+        "name": "msis:vcs.revision",
+        "value": "86b8486a19d9943867ee60816f3edff329ea6651"
+      },
+      {
+        "name": "msis:vcs.time",
+        "value": "2026-09-19T12:58:58Z"
+      },
+      {
+        "name": "msis:vcs.modified",
+        "value": "true"
+      },
+      {
+        "name": "msis:wix.version.observed",
+        "value": "7.0.0+b8977d6"
+      },
+      {
+        "name": "msis:wix.extensions.loaded",
+        "value": "WixToolset.UI.wixext,WixToolset.Util.wixext,WixToolset.BootstrapperApplications.wixext,WixToolset.Netfx.wixext"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "file",
+      "name": "msis-3.0.5-x64.msi",
+      "version": "3.0.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "78866ddf12b28e21dcd191cfd0f6ca5595d5ed176890d6b9e23dffe2e98a8d77"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "msis-3.0.5-x86.msi",
+      "version": "3.0.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9a6dd6dd65025c5358eafb6566640657a578c8f06cdb9f4d71792f5dd7eaf8a5"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "msis-3.0.5-arm64.msi",
+      "version": "3.0.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "69202d58a388a57d8fe1b836fefa785a506274fcbf465c99eaa1c562a1107566"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "msis-3.0.5-setup.exe",
+      "version": "3.0.5",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7bfe9ff08938639574d8fc10928eb468386b89a85226028873a2edc23a55d753"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "msis-x64.exe",
+      "version": "3.0.5",
+      "description": "msis binary inspected to produce this inventory; hashed before packaging began in the release run that produced the artifacts above",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6f6c75dfd86766691ab55bac29a0d0d1fec44c9d3af3b7f58d81288dc530a485"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "msis-x86.exe",
+      "version": "3.0.5",
+      "description": "msis binary inspected to produce this inventory; hashed before packaging began in the release run that produced the artifacts above",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9f2c83ee0b7d97992116313c28a0c627bdbc48db0a8d179bf4904a813599f7fb"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "msis-arm64.exe",
+      "version": "3.0.5",
+      "description": "msis binary inspected to produce this inventory; hashed before packaging began in the release run that produced the artifacts above",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3b41451118ef8b6f1334a38e75c04470f3cea583a5c2d50e0beb6480ff46a661"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "github.com/aymerick/raymond",
+      "version": "v2.0.2+incompatible",
+      "purl": "pkg:golang/github.com/aymerick/raymond@v2.0.2+incompatible",
+      "description": "go.sum h1:VEp3GpgdAnv9B2GFyTvqgcKvY+mfKMjPOA3SbKLtnU0="
+    },
+    {
+      "type": "library",
+      "name": "github.com/gersonkurz/go-regis3",
+      "version": "v0.0.0-20260204141052-9cc701fe149b",
+      "purl": "pkg:golang/github.com/gersonkurz/go-regis3@v0.0.0-20260204141052-9cc701fe149b",
+      "description": "go.sum h1:/bmcyvvvvfOgRGbXnq2xFkayFAlkRHz3ikblL16tvik="
+    },
+    {
+      "type": "library",
+      "name": "golang.org/x/sys",
+      "version": "v0.40.0",
+      "purl": "pkg:golang/golang.org/x/sys@v0.40.0",
+      "description": "go.sum h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ="
+    },
+    {
+      "type": "library",
+      "name": "golang.org/x/term",
+      "version": "v0.39.0",
+      "purl": "pkg:golang/golang.org/x/term@v0.39.0",
+      "description": "go.sum h1:RclSuaJf32jOqZz74CkPA9qFuVTX7vhLlpfj/IGWlqY="
+    },
+    {
+      "type": "library",
+      "name": "golang.org/x/text",
+      "version": "v0.20.0",
+      "purl": "pkg:golang/golang.org/x/text@v0.20.0",
+      "description": "go.sum h1:gK/Kv2otX8gz+wn7Rmb3vT96ZwuoxnQlY+HlJVj7Qug="
+    },
+    {
+      "type": "library",
+      "name": "msi-simplica",
+      "version": "3.0.5",
+      "purl": "pkg:generic/msi-simplica@3.0.5",
+      "description": "Native installer-hook DLL (x86/x64/arm64) built from native/msi-simplica and shipped inside every MSI, where it runs as a custom action"
+    },
+    {
+      "type": "library",
+      "name": "WixToolset.WcaUtil",
+      "version": "5.0.2",
+      "purl": "pkg:nuget/WixToolset.WcaUtil@5.0.2",
+      "description": "WiX custom-action utility library, linked into msi-simplica.dll"
+    },
+    {
+      "type": "library",
+      "name": "WixToolset.DUtil",
+      "version": "5.0.2",
+      "purl": "pkg:nuget/WixToolset.DUtil@5.0.2",
+      "description": "WiX base utility library, linked into msi-simplica.dll"
+    }
+  ]
+}

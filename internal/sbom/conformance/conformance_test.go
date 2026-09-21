@@ -2,7 +2,6 @@ package conformance
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,8 +10,6 @@ import (
 // that accepts everything is worse than none, because it looks like coverage. So every rule is
 // checked twice: once against a document that obeys it, and once against a document that
 // breaks exactly that rule and nothing else.
-
-func schemaDir() string { return filepath.Join("..", "testdata", "cyclonedx") }
 
 // good is a minimal document that satisfies every rule. Each test below mutates one thing.
 func good() map[string]any {
@@ -76,7 +73,7 @@ func check(t *testing.T, doc map[string]any, want Expected) []error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Check(schemaDir(), data, want)
+	return Check(data, want)
 }
 
 func TestACleanDocumentPasses(t *testing.T) {
@@ -384,26 +381,42 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 // ValidateSchema is what ticket D reuses on its own, so it has to work standalone.
 func TestValidateSchemaStandalone(t *testing.T) {
 	ok := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1}`)
-	if err := ValidateSchema(schemaDir(), ok); err != nil {
+	if err := ValidateSchema(ok); err != nil {
 		t.Errorf("a valid document was rejected: %v", err)
 	}
 	// The schema requires bomFormat and specVersion; `version` defaults to 1 and is not
 	// required, which is worth knowing before writing an assertion about it.
 	bad := []byte(`{"bomFormat":"CycloneDX"}`)
-	if err := ValidateSchema(schemaDir(), bad); err == nil {
+	if err := ValidateSchema(bad); err == nil {
 		t.Error("a document missing specVersion was accepted")
 	}
 }
 
-// A schema directory that is missing must fail loudly. Silently skipping validation would make
-// every emitter's conformance test pass for the wrong reason.
-func TestMissingSchemaIsAnError(t *testing.T) {
-	err := ValidateSchema(filepath.Join("testdata", "nonexistent"), []byte(`{}`))
-	if err == nil {
-		t.Fatal("a missing schema directory must fail, not skip validation")
+// The schema has to be COMPLETE, not merely present. It used to be a directory the caller
+// named, and a missing one had to fail loudly rather than skip validation; embedding removes
+// that failure mode but not this one - an embed pattern still matches whatever is there, so a
+// renamed or dropped file would leave a $ref unresolvable and a constraint unchecked.
+func TestTheVendoredSchemaIsComplete(t *testing.T) {
+	entries, err := schemaFS.ReadDir("schema")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "incomplete") {
-		t.Errorf("error = %v, want it to say the vendored schema is incomplete", err)
+	got := map[string]bool{}
+	for _, e := range entries {
+		got[e.Name()] = true
+	}
+	// bom-1.6 references the other two by absolute URL; without them the compile fails
+	// rather than silently skipping what they constrain.
+	for _, name := range []string{"bom-1.6.schema.json", "jsf-0.82.schema.json", "spdx.schema.json"} {
+		if !got[name] {
+			t.Errorf("the vendored schema is missing %s", name)
+		}
+	}
+
+	// And it really compiles, so a resolvable-looking but broken chain is caught here
+	// rather than as a mysteriously passing conformance run.
+	if _, err := compile(); err != nil {
+		t.Fatalf("the vendored schema does not compile: %v", err)
 	}
 }
 

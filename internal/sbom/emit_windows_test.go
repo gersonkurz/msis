@@ -21,8 +21,6 @@ func fixtureMSI() string {
 	return filepath.Join("..", "msiread", "testdata", "fixture.msi")
 }
 
-func schemaDirForTests() string { return filepath.Join("testdata", "cyclonedx") }
-
 // TestRealPackageProducesAConformingDocument is the end-to-end check: a real artifact, read by
 // the real reader, emitted and then put through the conformance package every later emitter
 // will use. Expected is supplied independently, so the document is judged against what the
@@ -48,7 +46,7 @@ func TestRealPackageProducesAConformingDocument(t *testing.T) {
 		PayloadNames:         []string{"payload.txt", "nested.txt", "hidden.txt", "merged.txt"},
 		IdentifiedComponents: []string{doc.Metadata.Component.BOMRef},
 	}
-	if problems := conformance.Check(schemaDirForTests(), data, want); len(problems) > 0 {
+	if problems := conformance.Check(data, want); len(problems) > 0 {
 		for _, p := range problems {
 			t.Errorf("conformance: %v", p)
 		}
@@ -252,7 +250,7 @@ func TestReleasedPackageProducesAConformingDocument(t *testing.T) {
 		PayloadNames:         []string{"msis.exe", "msi-simplica.dll"},
 		IdentifiedComponents: []string{doc.Metadata.Component.BOMRef},
 	}
-	for _, p := range conformance.Check(schemaDirForTests(), data, want) {
+	for _, p := range conformance.Check(data, want) {
 		t.Errorf("conformance: %v", p)
 	}
 	t.Logf("%s: %d components", filepath.Base(matches[0]), len(doc.Components))

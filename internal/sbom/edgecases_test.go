@@ -14,7 +14,7 @@ import (
 // produce a document the schema rejects.
 func TestEmptyInventoryIsStillValid(t *testing.T) {
 	pkg := &msiread.Package{
-		Path: "testdata/cyclonedx/spdx.schema.json",
+		Path: "testdata/artifact.bin",
 		Properties: map[string]string{
 			"ProductName": "RegistryOnly", "ProductVersion": "1.0",
 			"Manufacturer": "Acme", "UpgradeCode": "{AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE}",
@@ -40,7 +40,7 @@ func TestEmptyInventoryIsStillValid(t *testing.T) {
 		t.Errorf("the document contains a null where the schema wants an array:\n%s", data)
 	}
 
-	for _, p := range conformance.Check("testdata/cyclonedx", data, conformance.Expected{
+	for _, p := range conformance.Check(data, conformance.Expected{
 		IdentifiedComponents: []string{doc.Metadata.Component.BOMRef},
 	}) {
 		t.Errorf("conformance: %v", p)

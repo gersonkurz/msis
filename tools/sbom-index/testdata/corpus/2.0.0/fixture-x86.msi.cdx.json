@@ -1,0 +1,289 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:44444444-4444-4444-8444-444444444444",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-21T12:04:00Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "msis",
+          "version": "test",
+          "supplier": {
+            "name": "NG Branch Technology GmbH"
+          }
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product",
+      "name": "MsiReadFixture",
+      "version": "2.0.0",
+      "purl": "pkg:generic/MsiReadFixture@2.0.0",
+      "supplier": {
+        "name": "msis tests"
+      },
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4bbcbb0c17a9a73be09593dbaacc697ddfd229e59520c63e01e481dd58c65137"
+        }
+      ]
+    },
+    "supplier": {
+      "name": "msis tests"
+    },
+    "properties": [
+      {
+        "name": "msis:coverage",
+        "value": "payload and installation-time metadata read from the artifact; the provenance of payload bytes is not determined, and install-time conditions decide what actually lands on a machine"
+      },
+      {
+        "name": "msis:msi.productCode",
+        "value": "{2B8D5F30-77A1-4C62-9E14-3D0A5B7C9E28}"
+      },
+      {
+        "name": "msis:msi.upgradeCode",
+        "value": "{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF01}"
+      },
+      {
+        "name": "msis:subject.artifact",
+        "value": "fixture.msi"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "file",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/binary/FixtureBinary",
+      "name": "FixtureBinary",
+      "description": "Binary-table stream: executed during installation, not installed",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "751790d12f213afd7b7a5a53c8e2f981c3c1a4fb2f5273fb0125ec261c7ee7ce"
+        }
+      ],
+      "properties": [
+        {
+          "name": "msis:identity",
+          "value": "undetermined: msis reads the bytes, not their provenance"
+        },
+        {
+          "name": "msis:role",
+          "value": "binary-stream"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%07dded.txt#7c4a1e55-3b21-4d0f-9e88-5a6c2b9f1d30",
+      "name": "added.txt",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "00000000000000000000000000000000000000000000000000000000000000aa"
+        }
+      ],
+      "properties": [
+        {
+          "name": "msis:identity",
+          "value": "undetermined: msis reads the bytes, not their provenance"
+        },
+        {
+          "name": "msis:installTarget",
+          "value": "[ProgramFiles64Folder]MsiReadFixture\u0007dded.txt"
+        },
+        {
+          "name": "msis:msi.component",
+          "value": "C_Added"
+        },
+        {
+          "name": "msis:msi.componentGuid",
+          "value": "{7C4A1E55-3B21-4D0F-9E88-5A6C2B9F1D30}"
+        },
+        {
+          "name": "msis:msi.fileKey",
+          "value": "F_Added"
+        },
+        {
+          "name": "msis:msi.sequence",
+          "value": "1"
+        },
+        {
+          "name": "msis:role",
+          "value": "payload"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5chidden.txt#6fbbe0e6-4e39-52d3-b2c1-d404adebf62c",
+      "name": "hidden.txt",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "00000000000000000000000000000000000000000000000000000000000000ff"
+        }
+      ],
+      "properties": [
+        {
+          "name": "msis:identity",
+          "value": "undetermined: msis reads the bytes, not their provenance"
+        },
+        {
+          "name": "msis:installTarget",
+          "value": "[ProgramFiles64Folder]MsiReadFixture\\hidden.txt"
+        },
+        {
+          "name": "msis:msi.component",
+          "value": "C_Hidden"
+        },
+        {
+          "name": "msis:msi.componentGuid",
+          "value": "{6FBBE0E6-4E39-52D3-B2C1-D404ADEBF62C}"
+        },
+        {
+          "name": "msis:msi.fileKey",
+          "value": "F_Hidden"
+        },
+        {
+          "name": "msis:msi.sequence",
+          "value": "1"
+        },
+        {
+          "name": "msis:role",
+          "value": "payload"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cmerged%5cpfiles64%5cmergedin%5cmerged.txt#6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af02",
+      "name": "merged.txt",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d8de1e78568ddf0718148fc230e875f9f2864563e97ea57ae33987ba9452d362"
+        }
+      ],
+      "properties": [
+        {
+          "name": "msis:identity",
+          "value": "undetermined: msis reads the bytes, not their provenance"
+        },
+        {
+          "name": "msis:installTarget",
+          "value": "[ProgramFiles64Folder]MsiReadFixture\\merged\\PFiles64\\MergedIn\\merged.txt"
+        },
+        {
+          "name": "msis:msi.component",
+          "value": "C_Merged.6F1E2C3A_9B4D_4A21_8E77_27B1C0D4AF03"
+        },
+        {
+          "name": "msis:msi.componentGuid",
+          "value": "{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF02}"
+        },
+        {
+          "name": "msis:msi.fileKey",
+          "value": "F_Merged.6F1E2C3A_9B4D_4A21_8E77_27B1C0D4AF03"
+        },
+        {
+          "name": "msis:msi.sequence",
+          "value": "2"
+        },
+        {
+          "name": "msis:role",
+          "value": "payload"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423",
+      "name": "payload.txt",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "751790d12f213afd7b7a5a53c8e2f981c3c1a4fb2f5273fb0125ec261c7ee7ce"
+        }
+      ],
+      "properties": [
+        {
+          "name": "msis:identity",
+          "value": "undetermined: msis reads the bytes, not their provenance"
+        },
+        {
+          "name": "msis:installTarget",
+          "value": "[ProgramFiles64Folder]MsiReadFixture\\payload.txt"
+        },
+        {
+          "name": "msis:msi.component",
+          "value": "C_Main"
+        },
+        {
+          "name": "msis:msi.componentGuid",
+          "value": "{7C0F2CF4-0986-578E-9EE0-2F135A998423}"
+        },
+        {
+          "name": "msis:msi.fileKey",
+          "value": "F_Main"
+        },
+        {
+          "name": "msis:msi.sequence",
+          "value": "3"
+        },
+        {
+          "name": "msis:role",
+          "value": "payload"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product",
+      "dependsOn": [
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/binary/FixtureBinary",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%07dded.txt#7c4a1e55-3b21-4d0f-9e88-5a6c2b9f1d30",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5chidden.txt#6fbbe0e6-4e39-52d3-b2c1-d404adebf62c",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cmerged%5cpfiles64%5cmergedin%5cmerged.txt#6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af02",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+      ]
+    }
+  ],
+  "compositions": [
+    {
+      "aggregate": "complete",
+      "dependencies": [
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product"
+      ]
+    },
+    {
+      "aggregate": "incomplete",
+      "assemblies": [
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product"
+      ]
+    },
+    {
+      "aggregate": "unknown",
+      "assemblies": [
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/binary/FixtureBinary",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%07dded.txt#7c4a1e55-3b21-4d0f-9e88-5a6c2b9f1d30",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5chidden.txt#6fbbe0e6-4e39-52d3-b2c1-d404adebf62c",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cmerged%5cpfiles64%5cmergedin%5cmerged.txt#6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af02",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+      ],
+      "dependencies": [
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/binary/FixtureBinary",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%07dded.txt#7c4a1e55-3b21-4d0f-9e88-5a6c2b9f1d30",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5chidden.txt#6fbbe0e6-4e39-52d3-b2c1-d404adebf62c",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cmerged%5cpfiles64%5cmergedin%5cmerged.txt#6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af02",
+        "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "components": [
+    { "type": "not-a-component-type", "name": "wrong.dll" }
+  ]
+}

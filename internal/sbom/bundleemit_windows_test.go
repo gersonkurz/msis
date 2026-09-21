@@ -44,7 +44,7 @@ func TestRealBundleProducesAConformingDocument(t *testing.T) {
 		// Derived from the bundle, not from the document - see UnhashablePayloads.
 		UnhashableComponents: UnhashablePayloads(b),
 	}
-	if problems := conformance.Check(schemaDirForTests(), data, want); len(problems) > 0 {
+	if problems := conformance.Check(data, want); len(problems) > 0 {
 		for _, p := range problems {
 			t.Errorf("conformance: %v", p)
 		}

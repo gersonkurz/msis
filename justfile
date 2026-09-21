@@ -185,9 +185,57 @@ fmt-check:
 # Run go vet
 vet:
     go vet ./...
+    just vet-tools
+
+# go vet and go test are MODULE-scoped, so ./... at the root does not reach a nested module.
+# tools/sbom-index is its own module on purpose (#29 D11: the SQLite driver must stay out of the
+# root module's requirement graph), which means its checks have to be invoked separately or they
+# would simply never run.
+#
+# `go -C` rather than a cd/Push-Location wrapper, and the difference is not cosmetic: a
+# PowerShell recipe ending in `finally { Pop-Location }` exits 0 even when the command inside
+# failed, so `just vet` and `just check` would have passed with a failing nested module. `go -C`
+# is one native command whose exit status just sees directly, and it needs no platform variants.
+vet-tools:
+    go -C tools/sbom-index vet ./...
+
+test-tools:
+    go -C tools/sbom-index test -count=1 ./...
+
+# Build the SBOM index over a corpus of CycloneDX documents (see tools/sbom-index/README.md).
+#
+# The corpus is made absolute - the tool runs inside its own module directory, so a path
+# relative to the repository root would resolve somewhere else entirely - and then QUOTED. An
+# unquoted path split at its spaces, which a checkout under "C:\My Projects" produces without
+# anyone passing an odd argument; the tail then arrived as a positional argument, and Go's flag
+# package stops parsing at the first of those, so a later -query was ignored and the command
+# exited 0 having done nothing. The tool now rejects positional arguments outright, so a slip
+# like that is loud rather than silent, but the quoting is the actual fix.
+#
+# The two shells escape a literal quote differently - PowerShell doubles it, sh backslashes it -
+# so the recipe is split rather than papered over with one form that is wrong on one of them.
+[windows]
+sbom-index corpus=(bootstrap_dir / "dist"):
+    go -C tools/sbom-index run . -corpus '{{replace(absolute_path(corpus), "'", "''")}}'
+
+[unix]
+sbom-index corpus=(bootstrap_dir / "dist"):
+    go -C tools/sbom-index run . -corpus {{quote(absolute_path(corpus))}}
+
+# Ask the index one of its documented questions: `just sbom-query coverage`, or
+# `just sbom-query match-digest "-arg sha256=69202d..."`. Run `just sbom-query` for the list.
+#
+# `args` is passed to the shell as written, because it carries several tokens by design.
+[windows]
+sbom-query query="" args="" corpus=(bootstrap_dir / "dist"):
+    go -C tools/sbom-index run . -db '{{replace(absolute_path(corpus) / "sbom-index.db", "'", "''")}}' {{ if query == "" { "-queries" } else { "-query " + query } }} {{args}}
+
+[unix]
+sbom-query query="" args="" corpus=(bootstrap_dir / "dist"):
+    go -C tools/sbom-index run . -db {{quote(absolute_path(corpus) / "sbom-index.db")}} {{ if query == "" { "-queries" } else { "-query " + query } }} {{args}}
 
 # Run all checks
-check: fmt-check vet test
+check: fmt-check vet test test-tools
 
 # Platform extension helper
 ext := if os() == "windows" { ".exe" } else { "" }

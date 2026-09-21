@@ -264,7 +264,7 @@ func TestOpaqueComponentsGetNoEmptyDependsOn(t *testing.T) {
 func syntheticPackage() *msiread.Package {
 	return &msiread.Package{
 		// A real file is needed: the subject artifact is hashed.
-		Path: "testdata/cyclonedx/spdx.schema.json",
+		Path: "testdata/artifact.bin",
 		Properties: map[string]string{
 			"ProductName":    "Synthetic",
 			"ProductVersion": "2.1.0",

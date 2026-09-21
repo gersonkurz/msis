@@ -12,10 +12,9 @@
 package conformance
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -55,13 +54,13 @@ type Expected struct {
 // Check runs every rule and returns each failure. It returns them all rather than stopping at
 // the first, because an emitter under development usually breaks several at once and a single
 // error hides the shape of the problem.
-func Check(schemaDir string, data []byte, want Expected) []error {
+func Check(data []byte, want Expected) []error {
 	var problems []error
 	fail := func(format string, args ...any) {
 		problems = append(problems, fmt.Errorf(format, args...))
 	}
 
-	if err := ValidateSchema(schemaDir, data); err != nil {
+	if err := ValidateSchema(data); err != nil {
 		fail("schema: %w", err)
 	}
 
@@ -287,8 +286,8 @@ func Check(schemaDir string, data []byte, want Expected) []error {
 
 // ValidateSchema checks a document against the vendored CycloneDX 1.6 schema. Separated because
 // ticket D consumes documents rather than emitting them and needs this alone.
-func ValidateSchema(schemaDir string, data []byte) error {
-	sch, err := compile(schemaDir)
+func ValidateSchema(data []byte) error {
+	sch, err := compile()
 	if err != nil {
 		return err
 	}
@@ -299,51 +298,47 @@ func ValidateSchema(schemaDir string, data []byte) error {
 	return sch.Validate(v)
 }
 
-// Compiling the schema chain takes about a second, so the result is cached - but keyed by
-// directory, not once for the process. A single sync.Once made the FIRST caller's directory
-// win: a later call naming a different or missing directory silently validated against the
-// cached schema and reported success, which is the one outcome a validator must never produce.
-type compiledSchema struct {
-	schema *jsonschema.Schema
-	err    error
-}
+// schemaFS holds the official CycloneDX 1.6 schema and the two it references, vendored so that
+// no caller needs the network, and EMBEDDED rather than read from a directory.
+//
+// It used to be a directory the caller named, cached per directory - a caller-chosen path meant
+// a single sync.Once let the first caller's directory win, and a later call naming a different
+// or missing one validated against the cached schema and reported success. Embedding removes
+// the parameter and the bug class with it, and is what lets a tool outside this module (the
+// SBOM index, #35) validate from any working directory.
+//
+//go:embed schema/*.json
+var schemaFS embed.FS
 
 var (
-	schemaMu    sync.Mutex
-	schemaCache = map[string]compiledSchema{}
+	schemaOnce sync.Once
+	schema     *jsonschema.Schema
+	schemaErr  error
 )
 
 // compile loads the vendored schema and the two it references. Registered under their canonical
 // $id values, not their filenames: the refs inside are absolute URLs and would not otherwise
 // resolve - and an unresolvable ref means a constraint silently not checked.
-func compile(dir string) (*jsonschema.Schema, error) {
-	schemaMu.Lock()
-	defer schemaMu.Unlock()
-	if got, ok := schemaCache[dir]; ok {
-		return got.schema, got.err
-	}
-
-	result := func() compiledSchema {
+func compile() (*jsonschema.Schema, error) {
+	schemaOnce.Do(func() {
 		c := jsonschema.NewCompiler()
 		for _, name := range []string{"spdx.schema.json", "jsf-0.82.schema.json", "bom-1.6.schema.json"} {
-			f, err := os.Open(filepath.Join(dir, name))
+			f, err := schemaFS.Open("schema/" + name)
 			if err != nil {
-				return compiledSchema{err: fmt.Errorf(
-					"the vendored CycloneDX schema is incomplete: %w", err)}
+				schemaErr = fmt.Errorf("the vendored CycloneDX schema is incomplete: %w", err)
+				return
 			}
 			doc, err := jsonschema.UnmarshalJSON(f)
 			f.Close()
 			if err != nil {
-				return compiledSchema{err: fmt.Errorf("parsing %s: %w", name, err)}
+				schemaErr = fmt.Errorf("parsing %s: %w", name, err)
+				return
 			}
 			c.AddResource("http://cyclonedx.org/schema/"+name, doc)
 		}
-		sch, err := c.Compile("http://cyclonedx.org/schema/bom-1.6.schema.json")
-		return compiledSchema{schema: sch, err: err}
-	}()
-
-	schemaCache[dir] = result
-	return result.schema, result.err
+		schema, schemaErr = c.Compile("http://cyclonedx.org/schema/bom-1.6.schema.json")
+	})
+	return schema, schemaErr
 }
 
 func hasSHA256(hashes []hash) bool {

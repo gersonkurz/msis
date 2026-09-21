@@ -57,6 +57,14 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `template` | Renders Handlebars (`raymond`) templates from `templates/`, with a custom-templates overlay. |
 | `wix` | `wix build` invocation, EULA acceptance, version/extension detection, artifact cleanup. |
 | `cli` | ANSI color helpers (respects `NO_COLOR` and `/NO-COLOR`). |
+| `msiread` / `burnread` | Read a **built** artifact — an MSI's tables and cabinet payload, a Burn bundle's manifest, chain and containers. Passive: never executes the package. |
+| `cabinet` | Shared in-memory cabinet extraction (Windows FDI), used by both readers. |
+| `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
+
+Outside `internal/`: **`tools/sbom-index` is its own Go module** (nested `go.mod`) holding the
+SQLite index over the CycloneDX corpus. That is deliberate — see its README and #29 D11 — and
+it means the root module's `go vet ./...` / `go test ./...` do **not** cover it; `just vet` and
+`just check` invoke `vet-tools`/`test-tools` for it.
 
 Key cross-cutting design points:
 
@@ -185,10 +193,13 @@ The C# version at `../msis-2.x/` defines expected behavior. Most relevant files:
 @C:/Projects/yaaadabi/protocol.md
 
 Loop parameters:
-- Verify: `just fmt-check && just vet && go test -count=1 -p=1 ./...`
-  (`just check` is the same three steps; spell the test step out so the Go test
+- Verify: `just fmt-check && just vet && go test -count=1 -p=1 ./... && just test-tools`
+  (`just check` is the same steps; spell the root test step out so the Go test
   cache cannot replay results, and keep `-p=1` — some tests drive the real `wix`
-  CLI and the filesystem)
+  CLI and the filesystem. `just test-tools` is not redundant: `go vet`/`go test`
+  are module-scoped, so `./...` at the root never reaches the nested module under
+  `tools/sbom-index`, which exists precisely so its SQLite dependency stays out of
+  the root module's graph. `just vet` already chains `vet-tools`.)
 - Yardstick docs: this file (architecture, WiX 6/7 conventions, directory roots,
   the MSI-vs-bundle variable table); the reference implementation under
   `../msis-2.x/` — it defines expected behavior; `docs/msis.xsd` for the `.msis`

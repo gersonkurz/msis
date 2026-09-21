@@ -1,7 +1,7 @@
 package sbom
 
 // CycloneDX 1.6 types, carrying only the fields msis emits. The vendored schema in
-// testdata/cyclonedx is the authority on shape; these structs are the subset that gets used, and
+// The schema vendored in conformance/schema is the authority on shape; these structs are the subset that gets used, and
 // the conformance test validates the output against the real thing rather than against them.
 //
 // Every slice is emitted in a defined order (see sortDocument) because two documents describing
