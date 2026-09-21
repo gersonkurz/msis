@@ -416,14 +416,21 @@ func supplierOf(name string) *Supplier {
 // msisTool identifies what produced the document - and hashes it, because the generator is part
 // of the build chain and an auditor will ask which one ran.
 func msisTool(opts Options) Component {
+	return MsisTool(opts.MsisVersion, opts.MsisPath)
+}
+
+// MsisTool describes the tool that produced a document: what msis is, which version, and the
+// hash of the binary that ran (#29 D7). Exported because the VEX sidecar (#37) is written by a
+// different package and has to name the same producer the same way.
+func MsisTool(version, path string) Component {
 	c := Component{
 		Type:     "application",
 		Name:     "msis",
-		Version:  opts.MsisVersion,
+		Version:  version,
 		Supplier: &Supplier{Name: "NG Branch Technology GmbH"},
 	}
-	if opts.MsisPath != "" {
-		if sum, err := hashFile(opts.MsisPath); err == nil {
+	if path != "" {
+		if sum, err := hashFile(path); err == nil {
 			c.Hashes = []Hash{{Alg: "SHA-256", Content: sum}}
 		}
 	}
@@ -447,6 +454,11 @@ func coverageNote(pkg *msiread.Package) string {
 // newSerialNumber returns a fresh RFC 4122 version 4 UUID as a urn, which is what CycloneDX's
 // serialNumber pattern requires. A new one per document is deliberate: the serial identifies the
 // DOCUMENT, while bom-refs identify the things it describes.
+// NewSerialNumber generates the fresh serial every document needs (#29 D2). Exported because
+// the VEX sidecar (#37) is a document of its own, written by another package, and two documents
+// must never share a serial: a BOM-Link addresses one.
+func NewSerialNumber() (string, error) { return newSerialNumber() }
+
 func newSerialNumber() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

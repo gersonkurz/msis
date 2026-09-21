@@ -18,6 +18,7 @@ import (
 	"github.com/gersonkurz/msis/internal/requirements"
 	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/variables"
+	"github.com/gersonkurz/msis/internal/vex"
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
@@ -180,8 +181,16 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 // first so that the bundle's can link to it. #33 verifies a BOM-Link against the child's
 // subject digest before making it, so a bundle written first would simply record that no
 // document was there - correct, but less useful than doing it the other way round.
-func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied) error {
+func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied,
+	statements *vex.Source) error {
+
 	self, _ := os.Executable()
+
+	// The VEX annotates ONE document: the inventory of what is installed. Where a build
+	// produces both an MSI and the bundle wrapping it, that is the MSI - its components are
+	// the files a statement is about, and the wrapper links to it rather than repeating it.
+	inventory, inventoryDoc := "", (*sbom.Document)(nil)
+
 	for _, artifact := range artifacts {
 		var doc *sbom.Document
 		var err error
@@ -221,6 +230,14 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 		if preserved != "" {
 			fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 		}
+
+		if inventoryDoc == nil || !isBundleArtifact(artifact) {
+			inventory, inventoryDoc = artifact, doc
+		}
+	}
+
+	if inventoryDoc != nil {
+		return emitVEX(inventory, inventoryDoc, statements)
 	}
 	return nil
 }

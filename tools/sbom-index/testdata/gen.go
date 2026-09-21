@@ -26,6 +26,7 @@ import (
 	"github.com/gersonkurz/msis/internal/burnread"
 	"github.com/gersonkurz/msis/internal/msiread"
 	"github.com/gersonkurz/msis/internal/sbom"
+	"github.com/gersonkurz/msis/internal/vex"
 )
 
 const corpus = "corpus"
@@ -59,7 +60,24 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	write(msi, pkg, "1.0.0", at(1), "11111111-1111-4111-8111-111111111111")
+	release1 := write(msi, pkg, "1.0.0", at(1), "11111111-1111-4111-8111-111111111111")
+
+	// The team's assessments for release 1, evaluated by the real evaluator against the
+	// document above. One statement applies to 1.0.0; the other was made for 0.9.0 and never
+	// widened, so msis flags it and stops it suppressing anything.
+	//
+	// CVE-2024-4321 is assessed HERE AND NOWHERE ELSE, which is what makes "an assessment for
+	// one release does not cover the next" visible in a query: release 2 ships the same
+	// component under the same ref and must still be reported.
+	assess(msi, release1, at(5), "55555555-5555-4555-8555-555555555555",
+		vexFor(refOf(release1, "payload.txt"), "1.0.0", `
+    {
+      "id": "CVE-2024-4321",
+      "analysis": {"state": "not_affected", "justification": "code_not_reachable",
+                   "detail": "assessed for this release only"},
+      "affects": [{"ref": "`+refOf(release1, "payload.txt")+`"}],
+      "properties": [{"name": "msis:vex.assessedProductVersion", "value": "1.0.0"}]
+    },`))
 
 	// Release 2 of the SAME product: same UpgradeCode, later version, one payload's bytes
 	// changed and one file gone. The corpus has only one fixture MSI, so this second release
@@ -102,7 +120,13 @@ func main() {
 	pkg3 := pkg2
 	pkg3.Properties["ProductCode"] = "{2B8D5F30-77A1-4C62-9E14-3D0A5B7C9E28}"
 	variant := copyIn("2.0.0/fixture-x86.msi", filepath.Join("..", "..", "..", "internal", "msiread", "testdata", "fixture.msi"))
-	write(variant, pkg3, "2.0.0", at(4), "44444444-4444-4444-8444-444444444444")
+	x86 := write(variant, pkg3, "2.0.0", at(4), "44444444-4444-4444-8444-444444444444")
+
+	// ONE of release 2's two inventories is assessed, and the other is not. They carry the
+	// same component refs and the same version, so this is the case that decides whether an
+	// assessment suppresses a finding in a build nobody assessed.
+	assess(variant, x86, at(6), "66666666-6666-4666-8666-666666666666",
+		vexFor(refOf(x86, "payload.txt"), "2.0.0", ""))
 
 	// The bundle, whose document links to release 1's - the digests agree because the bundle
 	// really does carry that MSI.
@@ -129,13 +153,69 @@ func main() {
 	fmt.Println("wrote the corpus to", corpus)
 }
 
-func write(artifact string, pkg *msiread.Package, version, ts, serial string) {
+func write(artifact string, pkg *msiread.Package, version, ts, serial string) *sbom.Document {
 	pkg.Properties["ProductVersion"] = version
 	doc, err := sbom.FromPackage(pkg, options(ts, serial))
 	if err != nil {
 		log.Fatal(err)
 	}
 	save(artifact, doc)
+	return doc
+}
+
+// assess writes a VEX sidecar for one inventory, THROUGH THE REAL EVALUATOR.
+//
+// Hand-writing this file is how the corpus stopped testing the thing it was there to test: a
+// hand-written document carried the product identity that vex.Apply was failing to copy, so the
+// index joined it to the right product and the defect was invisible. Everything else here comes
+// from the real emitters for the same reason.
+func assess(artifact string, bom *sbom.Document, ts, serial, statements string) {
+	doc, err := vex.Apply(bom, vex.Source{Path: "assessments.vex.json", Data: []byte(statements)},
+		vex.Options{
+			MsisVersion: "test",
+			Now:         func() time.Time { t, _ := time.Parse(time.RFC3339, ts); return t },
+			NewSerial:   func() (string, error) { return "urn:uuid:" + serial, nil },
+		})
+	if err != nil {
+		log.Fatal(err)
+	}
+	save(artifact+".vex", doc)
+}
+
+// refOf finds the bom-ref an inventory gave one of its payload files, so a statement names the
+// ref the document really uses rather than one written out by hand.
+func refOf(doc *sbom.Document, name string) string {
+	for _, c := range doc.Components {
+		if c.Name == name {
+			return c.BOMRef
+		}
+	}
+	log.Fatalf("the inventory has no component named %s", name)
+	return ""
+}
+
+// vexFor writes the statements a team would keep in its repository: one that applies to the
+// release being built, and one made for an earlier release and never widened.
+func vexFor(ref, assessed, extra string) string {
+	return `{
+  "bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+  "vulnerabilities": [` + extra + `
+    {
+      "id": "CVE-2024-1234",
+      "analysis": {"state": "not_affected", "justification": "code_not_reachable",
+                   "detail": "payload.txt is data; nothing parses it"},
+      "affects": [{"ref": "` + ref + `"}],
+      "properties": [{"name": "msis:vex.assessedProductVersion", "value": "` + assessed + `"}]
+    },
+    {
+      "id": "CVE-2024-9999",
+      "analysis": {"state": "not_affected", "justification": "code_not_present",
+                   "detail": "assessed for 0.9.0 and never widened"},
+      "affects": [{"ref": "` + ref + `"}],
+      "properties": [{"name": "msis:vex.assessedProductVersion", "value": "0.9.0"}]
+    }
+  ]
+}`
 }
 
 func save(artifact string, doc *sbom.Document) {

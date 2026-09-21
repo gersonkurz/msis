@@ -39,6 +39,7 @@ type xmlSetup struct {
 	Sets     []xmlSet
 	Requires []xmlRequires // Top-level runtime requirements
 	SBOMs    []xmlSBOM     // Supplied component SBOMs (#36)
+	VEX      *xmlVEX       // The VEX document annotating this product (#37)
 	Features []xmlFeature
 	Items    []xmlItem // Preserves document order
 	Bundle   *xmlBundle
@@ -190,6 +191,27 @@ func (s *xmlSBOM) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	}
 	if s.For == "" {
 		return fmt.Errorf("<sbom> requires a for attribute naming the file it describes")
+	}
+	return d.Skip()
+}
+
+// xmlVEX represents the VEX document annotating this product: <vex source="..."/>
+type xmlVEX struct {
+	Source string `xml:"source,attr"`
+}
+
+// UnmarshalXML for xmlVEX - source is required, and an unknown attribute is an error.
+func (v *xmlVEX) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		switch attr.Name.Local {
+		case "source":
+			v.Source = attr.Value
+		default:
+			return fmt.Errorf("unknown attribute '%s' on <vex>", attr.Name.Local)
+		}
+	}
+	if v.Source == "" {
+		return fmt.Errorf("<vex> requires a source attribute")
 	}
 	return d.Skip()
 }
@@ -575,6 +597,17 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				s.SBOMs = append(s.SBOMs, sb)
 
+			case "vex":
+				if s.VEX != nil {
+					return fmt.Errorf("<vex> is given twice; one VEX document covers the " +
+						"product, and two would each have to say which statements win")
+				}
+				var vx xmlVEX
+				if err := d.DecodeElement(&vx, &t); err != nil {
+					return err
+				}
+				s.VEX = &vx
+
 			case "files":
 				var files xmlFiles
 				if err := d.DecodeElement(&files, &t); err != nil {
@@ -789,6 +822,11 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 			Version: r.Version,
 			Source:  r.Source,
 		})
+	}
+
+	// Convert the VEX document
+	if raw.VEX != nil {
+		setup.VEX = raw.VEX.Source
 	}
 
 	// Convert supplied SBOMs

@@ -1,0 +1,36 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:77777777-7777-4777-8777-777777777777",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-01-01T00:00:00Z",
+    "tools": { "components": [ { "type": "application", "name": "some-other-scanner" } ] },
+    "component": {
+      "type": "application",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product",
+      "name": "MsiReadFixture",
+      "version": "2.0.0"
+    },
+    "supplier": { "name": "msis tests" },
+    "properties": [
+      { "name": "msis:msi.upgradeCode", "value": "{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF01}" }
+    ]
+  },
+  "components": [],
+  "vulnerabilities": [
+    {
+      "id": "CVE-2024-5678",
+      "analysis": {
+        "state": "not_affected",
+        "justification": "code_not_present",
+        "detail": "written by another tool: msis never evaluated whether its conditions hold"
+      },
+      "affects": [
+        {
+          "ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+        }
+      ]
+    }
+  ]
+}

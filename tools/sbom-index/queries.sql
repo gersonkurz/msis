@@ -45,6 +45,10 @@ SELECT d.id, d.subject_version AS release, d.subject_artifact, d.source,
        (SELECT COUNT(*) FROM component c WHERE c.document_id = d.id) AS components
 FROM document d
 WHERE d.product_id = :product
+  -- Inventories only. A VEX sidecar is a document about this release too, but it inventories
+  -- nothing, so diffing one against an inventory would report every component as removed.
+  -- `assessments` is the query for those.
+  AND d.kind = 'inventory'
 ORDER BY d.subject_version, d.subject_artifact, d.id;
 
 -- name: document-diff
@@ -153,6 +157,80 @@ SELECT 'BOM-Links that resolve in this corpus', CAST(COUNT(*) AS TEXT) FROM rela
 UNION ALL
 SELECT 'BOM-Links that do not', CAST(COUNT(*) AS TEXT) FROM relationship
   WHERE kind = 'bom-link' AND resolved_document_id IS NULL;
+
+-- name: affected-unassessed
+--
+-- "Which of our products ship this component, MINUS the ones we have already assessed as not
+-- exploitable?"
+--
+-- The question a VEX sidecar exists to answer (#37). A CVE match against a component is not an
+-- exploitable vulnerability in the product that ships it, and an assessment that says so is
+-- worth having only if it can be subtracted from the next alert without being re-litigated.
+--
+-- Only an assessment that STILL APPLIES subtracts. msis records, per statement, whether the
+-- conditions it was made under still held for the release it was evaluated against
+-- (msis:vex.applicability); one that needs review is deliberately NOT subtracted here, because
+-- the whole failure this is written against is an assessment outliving the reason it was true.
+--
+-- :name     the component's file name, e.g. 'zlib1.dll'
+-- :version  the component's version, or '' for any version
+-- :cve      the vulnerability identifier, e.g. 'CVE-2024-1234'
+SELECT p.name             AS product,
+       d.subject_version  AS release,
+       c.name             AS component,
+       c.version          AS component_version,
+       c.bom_ref,
+       d.source
+FROM component c
+JOIN document d ON d.id = c.document_id
+JOIN product  p ON p.id = d.product_id
+WHERE c.name = :name
+  AND (:version = '' OR c.version = :version)
+  AND NOT EXISTS (
+        SELECT 1
+        FROM vulnerability v
+        JOIN vulnerability_affects a
+          ON a.document_id = v.document_id AND a.ordinal = v.ordinal
+        JOIN document vd ON vd.id = v.document_id
+        WHERE v.id = :cve
+          -- The inventory it was actually evaluated against, not merely one of the same
+          -- product and version. A release commonly has several inventories - x64, x86,
+          -- arm64 - carrying the same component refs, and an assessment made against one of
+          -- them says nothing about the others.
+          AND vd.assesses = d.id
+          AND a.ref = c.bom_ref
+          AND v.applicability = 'applies'
+          AND v.state IN ('not_affected', 'false_positive', 'resolved', 'resolved_with_pedigree')
+  )
+ORDER BY p.name, d.subject_version, c.name, d.source;
+
+-- name: assessments
+--
+-- "What have we said about this vulnerability, and does it still hold?"
+--
+-- The other half of the question above: the statements themselves, with msis's verdict on
+-- whether their recorded conditions still held. A statement that needs review is the one to act
+-- on - it was true once, and the release it was written for is not the release it was made for.
+--
+-- :cve  the vulnerability identifier, or '' for every one in the corpus
+SELECT p.name            AS product,
+       d.subject_version AS release,
+       d.assesses        AS inventory,
+       v.id              AS vulnerability,
+       v.state,
+       v.justification,
+       v.applicability,
+       v.assessed_version,
+       v.review_reason,
+       (SELECT GROUP_CONCAT(a.ref, ' ')
+          FROM vulnerability_affects a
+         WHERE a.document_id = v.document_id AND a.ordinal = v.ordinal) AS affects,
+       d.source
+FROM vulnerability v
+JOIN document d ON d.id = v.document_id
+JOIN product  p ON p.id = d.product_id
+WHERE (:cve = '' OR v.id = :cve)
+ORDER BY p.name, d.subject_version, v.id, v.ordinal;
 
 -- name: rejected
 --

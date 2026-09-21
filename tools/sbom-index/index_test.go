@@ -93,8 +93,8 @@ func TestRebuildingOverAnExistingIndexReplacesIt(t *testing.T) {
 	}
 	n := scalar(t, db, `SELECT COUNT(*) FROM document`)
 	db.Close()
-	if n != "5" {
-		t.Errorf("%s documents after rebuilding in place, want 5 - rows were added, not replaced", n)
+	if n != "8" {
+		t.Errorf("%s documents after rebuilding in place, want 8 - rows were added, not replaced", n)
 	}
 	if before == "" {
 		t.Error("empty dump")
@@ -149,8 +149,8 @@ func TestAnInvalidDocumentIsReportedNotSkipped(t *testing.T) {
 	}
 
 	// The valid documents around it still loaded: one bad file must not cost the corpus.
-	if n := scalar(t, db, `SELECT COUNT(*) FROM document`); n != "5" {
-		t.Errorf("%s documents indexed, want 5", n)
+	if n := scalar(t, db, `SELECT COUNT(*) FROM document`); n != "8" {
+		t.Errorf("%s documents indexed, want 8", n)
 	}
 }
 

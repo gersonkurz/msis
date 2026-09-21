@@ -1,0 +1,140 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:66666666-6666-4666-8666-666666666666",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-21T12:06:00Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "msis",
+          "version": "test",
+          "supplier": {
+            "name": "NG Branch Technology GmbH"
+          }
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/product",
+      "name": "MsiReadFixture",
+      "version": "2.0.0",
+      "purl": "pkg:generic/MsiReadFixture@2.0.0",
+      "supplier": {
+        "name": "msis tests"
+      },
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "4bbcbb0c17a9a73be09593dbaacc697ddfd229e59520c63e01e481dd58c65137"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "bom",
+          "url": "urn:cdx:44444444-4444-4444-8444-444444444444/1",
+          "comment": "the inventory these statements are about",
+          "hashes": [
+            {
+              "alg": "SHA-256",
+              "content": "4bbcbb0c17a9a73be09593dbaacc697ddfd229e59520c63e01e481dd58c65137"
+            }
+          ]
+        }
+      ]
+    },
+    "supplier": {
+      "name": "msis tests"
+    },
+    "properties": [
+      {
+        "name": "msis:msi.upgradeCode",
+        "value": "{6F1E2C3A-9B4D-4A21-8E77-27B1C0D4AF01}"
+      },
+      {
+        "name": "msis:msi.productCode",
+        "value": "{2B8D5F30-77A1-4C62-9E14-3D0A5B7C9E28}"
+      },
+      {
+        "name": "msis:subject.artifact",
+        "value": "fixture.msi"
+      },
+      {
+        "name": "msis:vex.subject",
+        "value": "urn:cdx:44444444-4444-4444-8444-444444444444/1"
+      },
+      {
+        "name": "msis:vex.coverage",
+        "value": "2 statement(s) from assessments.vex.json evaluated against MsiReadFixture 2.0.0: 1 still apply, 1 need review. msis checks only the conditions an assessment recorded - whether the assessment itself is right is its author's claim, not msis's."
+      }
+    ]
+  },
+  "components": [],
+  "vulnerabilities": [
+    {
+      "affects": [
+        {
+          "ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+        }
+      ],
+      "analysis": {
+        "detail": "payload.txt is data; nothing parses it",
+        "justification": "code_not_reachable",
+        "state": "not_affected"
+      },
+      "id": "CVE-2024-1234",
+      "properties": [
+        {
+          "name": "msis:vex.assessedProductVersion",
+          "value": "2.0.0"
+        },
+        {
+          "name": "msis:vex.observedComponentDigest",
+          "value": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423=751790d12f213afd7b7a5a53c8e2f981c3c1a4fb2f5273fb0125ec261c7ee7ce"
+        },
+        {
+          "name": "msis:vex.applicability",
+          "value": "applies"
+        }
+      ]
+    },
+    {
+      "affects": [
+        {
+          "ref": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423"
+        }
+      ],
+      "analysis": {
+        "detail": "assessed for 0.9.0 and never widened",
+        "justification": "code_not_present",
+        "state": "in_triage"
+      },
+      "id": "CVE-2024-9999",
+      "properties": [
+        {
+          "name": "msis:vex.assessedProductVersion",
+          "value": "0.9.0"
+        },
+        {
+          "name": "msis:vex.observedComponentDigest",
+          "value": "msis/6f1e2c3a-9b4d-4a21-8e77-27b1c0d4af01/file/%5bprogramfiles64folder%5dmsireadfixture%5cpayload.txt#7c0f2cf4-0986-578e-9ee0-2f135a998423=751790d12f213afd7b7a5a53c8e2f981c3c1a4fb2f5273fb0125ec261c7ee7ce"
+        },
+        {
+          "name": "msis:vex.applicability",
+          "value": "needs-review"
+        },
+        {
+          "name": "msis:vex.reviewReason",
+          "value": "it was assessed against 0.9.0 and this is 2.0.0; an assessment is about the product using the component, so it does not carry to another release unless msis:vex.appliesToProductVersions says so"
+        },
+        {
+          "name": "msis:vex.previousState",
+          "value": "not_affected"
+        }
+      ]
+    }
+  ]
+}

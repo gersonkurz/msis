@@ -19,6 +19,18 @@ func SidecarPath(artifact string) string {
 	return artifact + ".cdx.json"
 }
 
+// VEXStem is what Write is given for a VEX sidecar (#37), so the two documents beside one
+// artifact land at app.msi.cdx.json and app.msi.vex.cdx.json - and their archived revisions
+// stay apart too, since Write derives an archive name from the same stem.
+//
+// Both end in .cdx.json because both ARE CycloneDX documents: the corpus scan that feeds the
+// index looks for exactly that suffix, so a VEX sidecar is indexed by being written, not by
+// anything having to learn about it.
+func VEXStem(artifact string) string { return artifact + ".vex" }
+
+// VEXSidecarPath is where the VEX document for artifact lands.
+func VEXSidecarPath(artifact string) string { return SidecarPath(VEXStem(artifact)) }
+
 // Marshal renders a document as the bytes that get written.
 func Marshal(doc *Document) ([]byte, error) {
 	data, err := json.MarshalIndent(doc, "", "  ")

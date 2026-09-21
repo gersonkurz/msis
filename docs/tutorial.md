@@ -892,7 +892,133 @@ than failing later. The bundle's document links to the MSI's, and the MSI's carr
 
 ---
 
-## Tutorial 14: Putting It All Together
+## Tutorial 14: Recording What Is Not Exploitable
+
+A scanner matches a CVE against a library you ship. Most of the time the answer is "yes, that
+library, no, we never call the affected code". Unless that answer is written down in a form a
+machine can read, it is worked out again at the next audit, and the one after that.
+
+That is what a VEX document is — Vulnerability Exploitability eXchange. You keep one in your
+repository beside the `.msis`, and name it:
+
+```xml
+<setup>
+  <set name="PRODUCT_NAME" value="MyApp"/>
+  <set name="PRODUCT_VERSION" value="4.1"/>
+  ...
+  <vex source="app.vex.json"/>
+
+  <feature name="Main">
+    <files source="bin" target="[INSTALLDIR]"/>
+  </feature>
+</setup>
+```
+
+```bash
+msis /BUILD /SBOM setup.msis
+```
+
+msis writes the evaluated result beside the SBOM, as `MyApp.msi.vex.cdx.json`.
+
+### What a statement looks like
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "vulnerabilities": [
+    {
+      "id": "CVE-2024-1234",
+      "analysis": {
+        "state": "not_affected",
+        "justification": "code_not_reachable",
+        "detail": "zlib is linked for the compressor only; the affected inflate path is never called"
+      },
+      "affects": [{ "ref": "msis/<upgrade-code>/file/%5binstalldir%5dapp.exe" }],
+      "properties": [
+        { "name": "msis:vex.assessedProductVersion", "value": "4.1" }
+      ]
+    }
+  ]
+}
+```
+
+The `ref` is a `bom-ref` from your SBOM — build once with `/SBOM` and copy it out of the
+document. Those refs are deliberately stable across releases, so you write one once.
+
+### The property that matters
+
+`msis:vex.assessedProductVersion` records **which release you assessed**. It is required, and
+the build fails without it.
+
+That is not bureaucracy. Consider what happens when it is missing: version 4.1 ships zlib and
+never calls the vulnerable path, so you record `not_affected`. In 4.2 the library is *byte for
+byte identical* — but the application has started calling that path. Any tool that carried the
+assessment forward on the strength of the unchanged hash would state `not_affected` about a
+vulnerability that is now real, and the alert that should have been raised would be subtracted
+by the very record meant to make triage honest.
+
+So msis checks the release being built against the release you assessed:
+
+| what your statement records | building 4.1 | building 4.2 |
+|---|---|---|
+| `assessedProductVersion: 4.1` | applies | **needs review** |
+| `assessedProductVersion: 4.1`, `appliesToProductVersions: 4.1, 4.2` | applies | applies |
+| `assessedProductVersion: 4.1`, `appliesToProductVersions: *` | applies | applies |
+
+Carrying an assessment across releases is possible — it is just your decision rather than a
+guess msis made for you. `msis:vex.appliesToProductVersions` takes an exact list or `*`; there
+is no range syntax, because comparing versions in someone else's scheme is precisely the kind of
+inference that would silently widen an assessment.
+
+You may also record `msis:vex.assessedComponentDigest`. If the component's bytes change, the
+statement needs review whatever its version scope says.
+
+### What msis does with a statement that no longer applies
+
+It keeps it — dropping an assessment loses the work and the audit trail — and marks it:
+
+- `msis:vex.applicability` becomes `needs-review`, with `msis:vex.reviewReason` saying which
+  condition lapsed;
+- if the statement was **suppressing** a finding (`not_affected`, `false_positive`, `resolved`),
+  its `analysis.state` becomes `in_triage`, and the original is preserved in
+  `msis:vex.previousState`. A conclusion whose premises no longer hold must stop reading as a
+  conclusion.
+- if the statement was **warning** (`exploitable`), it is left exactly as it is. Silencing a
+  warning because its scope lapsed would be the same mistake in the other direction.
+
+The build prints how many statements apply and how many need review, and warns when any do.
+
+### Asking the question later
+
+`tools/sbom-index` indexes VEX sidecars alongside the SBOMs — they are CycloneDX documents, so
+the same corpus scan finds them:
+
+```bash
+just sbom-index                    # build the index over your corpus
+just sbom-query affected-unassessed "-arg name=zlib1.dll -arg version= -arg cve=CVE-2024-1234"
+```
+
+That is "which of our releases ship this component, minus the ones we have already assessed as
+not exploitable". Only an assessment that *still applies* subtracts; one needing review is
+reported, which is the whole point.
+
+```bash
+just sbom-query assessments "-arg cve=CVE-2024-1234"
+```
+
+lists what was claimed, for which release, and whether it still holds.
+
+### What msis does not do
+
+msis assesses nothing, and cannot: whether a vulnerable path is reachable is a question about
+your source. It checks the conditions you recorded, and it makes sure an assessment cannot
+outlive the reason it was true. Everything else in the document is your claim, not msis's.
+
+---
+
+## Tutorial 15: Putting It All Together
 
 Here's a complete example for a real-world application:
 

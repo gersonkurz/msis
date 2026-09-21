@@ -1095,3 +1095,40 @@ func TestParseSuppliedSBOMRejectsIncompleteElements(t *testing.T) {
 		})
 	}
 }
+
+// <vex source=> (#37). One document covers the product, so a second is an error rather than a
+// silent choice about which statements win.
+func TestParseVEX(t *testing.T) {
+	setup, err := ParseBytes([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    <set name="PRODUCT_NAME" value="Test"/>
+    <vex source="assessments/app.vex.json"/>
+</setup>`))
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if setup.VEX != "assessments/app.vex.json" {
+		t.Errorf("VEX = %q", setup.VEX)
+	}
+}
+
+func TestParseVEXRejectsWhatCannotBeActedOn(t *testing.T) {
+	for _, tc := range []struct{ name, body, mustSay string }{
+		{"no source", `<vex/>`, "source"},
+		{"a misspelt attribute", `<vex path="app.vex.json"/>`, "path"},
+		{"two documents", `<vex source="a.json"/><vex source="b.json"/>`, "twice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseBytes([]byte(`<?xml version="1.0" encoding="utf-8"?>
+<setup>
+    ` + tc.body + `
+</setup>`))
+			if err == nil {
+				t.Fatalf("%s was accepted", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.mustSay) {
+				t.Errorf("%q does not mention %q", err, tc.mustSay)
+			}
+		})
+	}
+}

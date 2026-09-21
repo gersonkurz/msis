@@ -11,6 +11,7 @@ type Setup struct {
 	Items    []Item // Top-level items outside features
 	Bundle   *Bundle
 	SBOMs    []SuppliedSBOM // Component SBOMs to compose into the installer's document (#36)
+	VEX      string         // Path to the VEX document annotating this product's SBOM (#37)
 }
 
 // SuppliedSBOM is a CycloneDX document the build supplies for one payload file.

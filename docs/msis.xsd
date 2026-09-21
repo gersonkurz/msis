@@ -265,6 +265,25 @@
     </xs:attribute>
   </xs:complexType>
 
+  <!-- Top-level vex element: the VEX document annotating this product's SBOM (#37) -->
+  <xs:complexType name="VEXType">
+    <xs:annotation>
+      <xs:documentation>
+        Names the VEX (Vulnerability Exploitability eXchange) document for this product: the
+        team's record of which CVE matches against its components are actually exploitable.
+        MSIS assesses nothing - whether a vulnerable path is reachable is a question about your
+        source. What it does is check that each statement's recorded conditions still hold for
+        the release being built, and flag the ones that do not, so an assessment cannot outlive
+        the reason it was true. The evaluated document is written beside the installer's SBOM.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="source" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>Path to the CycloneDX VEX JSON document, relative to the .msis file</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
   <xs:element name="setup">
     <xs:complexType>
       <xs:sequence>
@@ -272,6 +291,7 @@
           <xs:element name="set" type="SetType"/>
           <xs:element name="requires" type="RequiresType"/>
           <xs:element name="sbom" type="SBOMType"/>
+          <xs:element name="vex" type="VEXType"/>
           <xs:element name="feature" type="FeatureType"/>
           <xs:element name="files" type="FilesType"/>
           <xs:element name="registry" type="RegistryType"/>

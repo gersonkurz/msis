@@ -19,6 +19,89 @@ type Document struct {
 	Components   []Component   `json:"components"`
 	Dependencies []Dependency  `json:"dependencies,omitempty"`
 	Compositions []Composition `json:"compositions,omitempty"`
+
+	// Vulnerabilities carries VEX statements (#37). A document msis builds from an artifact
+	// never has any - msis assesses nothing - but the VEX sidecar it writes is a document of
+	// this same shape, and the index reads both through one type.
+	Vulnerabilities []Vulnerability `json:"vulnerabilities,omitempty"`
+}
+
+// Vulnerability is one VEX statement, held EXACTLY as its author wrote it.
+//
+// A map rather than a struct, for the same reason an imported component is raw (#36): the
+// schema gives a vulnerability eighteen fields - ratings, cwes, advisories, credits, tools,
+// workarounds - and msis reads four of them. Decoding through a struct would silently drop the
+// rest, and an assessment that lost its ratings and its advisories on the way through would
+// look exactly like one that never had them.
+type Vulnerability map[string]any
+
+// ID is the identifier the statement is about, e.g. CVE-2024-1234.
+func (v Vulnerability) ID() string { return v.str("id") }
+
+// AnalysisState is the impact analysis state: not_affected, exploitable, in_triage and so on.
+func (v Vulnerability) AnalysisState() string {
+	a, _ := v["analysis"].(map[string]any)
+	if a == nil {
+		return ""
+	}
+	s, _ := a["state"].(string)
+	return s
+}
+
+// SetAnalysisState replaces the state, creating the analysis object if the statement has none.
+func (v Vulnerability) SetAnalysisState(state string) {
+	a, _ := v["analysis"].(map[string]any)
+	if a == nil {
+		a = map[string]any{}
+		v["analysis"] = a
+	}
+	a["state"] = state
+}
+
+// AffectedRefs lists the bom-refs this statement is about.
+func (v Vulnerability) AffectedRefs() []string {
+	list, _ := v["affects"].([]any)
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if m, ok := item.(map[string]any); ok {
+			if ref, ok := m["ref"].(string); ok && ref != "" {
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
+}
+
+// Property reads one msis: property off the statement, which is where its applicability
+// conditions live: the schema has no field for them, and inventing one would put msis's own
+// vocabulary where a consumer expects CycloneDX's.
+func (v Vulnerability) Property(name string) string {
+	list, _ := v["properties"].([]any)
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		if n, _ := m["name"].(string); n == name {
+			s, _ := m["value"].(string)
+			return s
+		}
+	}
+	return ""
+}
+
+func (v Vulnerability) SetProperty(name, value string) {
+	list, _ := v["properties"].([]any)
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		if n, _ := m["name"].(string); n == name {
+			m["value"] = value
+			return
+		}
+	}
+	v["properties"] = append(list, map[string]any{"name": name, "value": value})
+}
+
+func (v Vulnerability) str(key string) string {
+	s, _ := v[key].(string)
+	return s
 }
 
 type Metadata struct {
@@ -55,12 +138,50 @@ type Component struct {
 	// each installer it chains rather than repeating that installer's contents.
 	ExternalReferences []ExternalReference `json:"externalReferences,omitempty"`
 
+	// Components: CycloneDX lets a component contain components, and a supplied document's
+	// dependency graph really is that shape (#36). msis emits none of its own, so this is
+	// empty on everything it builds - but a document READ back carries them here, which is
+	// what lets anything reasoning about a parsed document see the whole tree.
+	Components []Component `json:"components,omitempty"`
+
 	// raw is set only for a component imported from a supplied document (#36). That
 	// component is emitted EXACTLY as its author wrote it - including every field msis does
 	// not model, licences above all - because re-serialising it through the struct above
 	// would silently drop whatever this file does not happen to mention. The typed fields
 	// beside it are populated too, so sorting and the digest rules still work.
 	raw rawComponent
+}
+
+// Nested gives the components held INSIDE this one, which CycloneDX allows and a supplied
+// document really does use (#36 keeps them, refs and all). They are shipped exactly as their
+// parent is, so anything reasoning about what a build contains has to see them - a VEX statement
+// naming one would otherwise be reported as assessing something absent.
+func (c Component) Nested() []Component {
+	// A document read back from JSON carries them in the typed field; one just built by the
+	// merge carries them inside the raw component it imported. Both are the same components.
+	if len(c.Components) > 0 {
+		return c.Components
+	}
+	list, _ := c.raw["components"].([]any)
+	out := make([]Component, 0, len(list))
+	for _, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		child := rawComponent(m)
+		nested := Component{
+			Type:   child.str("type"),
+			BOMRef: child.str("bom-ref"),
+			Name:   child.str("name"),
+			raw:    child,
+		}
+		if sum := child.sha256(); sum != "" {
+			nested.Hashes = []Hash{{Alg: "SHA-256", Content: sum}}
+		}
+		out = append(out, nested)
+	}
+	return out
 }
 
 // MarshalJSON emits an imported component verbatim and everything else from the struct.
@@ -190,6 +311,37 @@ const (
 	// gave it none. A bom-ref is addressing, not identity, so assigning one invents nothing -
 	// but a reader must not mistake it for something its author wrote.
 	propSuppliedRef = "msis:supplied.ref"
+
+	// VEX (#37). The conditions an assessment was made under are the assessor's, and the
+	// evaluation of them is msis's; the two are namespaced apart so a reader can tell what
+	// was claimed from what was checked.
+	//
+	// PropAssessedVersion and PropAppliesToVersions are INPUT: they are what the author of a
+	// statement records about when it applies. The rest are what msis wrote after checking.
+	PropAssessedVersion   = "msis:vex.assessedProductVersion"
+	PropAppliesToVersions = "msis:vex.appliesToProductVersions"
+	PropAssessedDigest    = "msis:vex.assessedComponentDigest"
+
+	PropApplicability  = "msis:vex.applicability"
+	PropReviewReason   = "msis:vex.reviewReason"
+	PropPreviousState  = "msis:vex.previousState"
+	PropObservedDigest = "msis:vex.observedComponentDigest"
+	PropVEXSubject     = "msis:vex.subject"
+	PropVEXCoverage    = "msis:vex.coverage"
+)
+
+// IdentityProperties are the metadata properties that say WHICH product and which build a
+// document is about, as opposed to what it found. A document derived from another one - a VEX
+// sidecar (#37) - copies exactly these, so a consumer identifies the two as the same product.
+var IdentityProperties = []string{propUpgradeCode, propProductCode, propSubjectArtifact}
+
+// Applicability values for PropApplicability.
+const (
+	// ApplicabilityApplies: every condition the assessor recorded still holds.
+	ApplicabilityApplies = "applies"
+	// ApplicabilityNeedsReview: at least one does not. The statement is KEPT - dropping an
+	// assessment loses the work and the audit trail - but it no longer asserts what it did.
+	ApplicabilityNeedsReview = "needs-review"
 )
 
 // Role values for propRole.

@@ -92,8 +92,31 @@ to a future document is indexed without a schema change.
 | `hash` | every digest of a component |
 | `component_property` / `document_property` | the `msis:*` vocabulary, minus what was promoted |
 | `relationship` | `dependsOn` edges and BOM-Links, with the link's target resolved where the corpus holds **that revision** |
+| `vulnerability` | one VEX statement, with msis's verdict on whether its conditions still hold |
+| `vulnerability_affects` | the refs a statement is about |
+| `vulnerability_property` | the `msis:vex` vocabulary, minus what was promoted |
 | `ingest_error` | every document that did **not** make it in, and why |
 | `build_info` | what produced this index, and from where |
+
+### VEX statements are documents too
+
+A VEX sidecar (#37) is a CycloneDX document, so the same corpus scan finds it, the same keys
+address it, and it joins to the same product as the inventory it annotates — no second tool and
+no second corpus. That is what makes
+
+```
+just sbom-query affected-unassessed "-arg name=zlib1.dll -arg version= -arg cve=CVE-2024-1234"
+```
+
+— "which of our releases ship this, minus the ones we have already assessed as not exploitable"
+— one query.
+
+`vulnerability.applicability` is the column that makes it safe. It is **msis's verdict**, not
+the assessor's: whether the conditions a statement recorded still held for the release it was
+evaluated against. Only `applies` subtracts. A statement needing review is reported, because an
+assessment outliving the reason it was true is the precise failure the sidecar exists to
+prevent — a library can be byte-identical between two releases while the application around it
+starts calling the vulnerable path.
 
 ### What it deliberately does not project
 

@@ -59,6 +59,7 @@ func TestEveryDocumentedQueryRuns(t *testing.T) {
 		"from":    "urn:cdx:11111111-1111-4111-8111-111111111111/1",
 		"to":      "urn:cdx:22222222-2222-4222-8222-222222222222/1",
 		"sha256":  "0000000000000000000000000000000000000000000000000000000000000000",
+		"cve":     "CVE-2024-1234",
 	}
 
 	for _, q := range all {
@@ -340,7 +341,7 @@ func TestCoverageReportsWhatTheIndexDoesNotCover(t *testing.T) {
 		got[r[index(cols, "item")]] = r[index(cols, "value")]
 	}
 	for item, want := range map[string]string{
-		"documents indexed":                     "5",
+		"documents indexed":                     "8",
 		"documents rejected":                    "1",
 		"products":                              "3",
 		"BOM-Links that resolve in this corpus": "1",

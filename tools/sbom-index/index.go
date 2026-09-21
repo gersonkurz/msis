@@ -365,6 +365,18 @@ func normaliseGUID(s string) string {
 	return strings.ToLower(s)
 }
 
+// documentKind says what a document IS, which decides which questions it belongs to.
+//
+// Vulnerabilities and no components of its own: an assessment OF an inventory rather than one.
+// A document carrying both is treated as an inventory, because it still says what a release
+// contains and that is what the inventory queries are for.
+func documentKind(d *cdxDocument) string {
+	if len(d.Vulnerabilities) > 0 && len(d.Components) == 0 {
+		return "vex"
+	}
+	return "inventory"
+}
+
 func insertDocumentRow(tx *sql.Tx, d ingested) error {
 	productID, _ := productIdentity(&d.doc)
 	subject := d.doc.Metadata.Component
@@ -372,12 +384,13 @@ func insertDocumentRow(tx *sql.Tx, d ingested) error {
 	version := documentVersion(d.doc.Version)
 
 	if _, err := tx.Exec(`
-		INSERT INTO document(id, serial, version, spec_version, timestamp, source, sha256,
-		                     product_id, subject_ref, subject_name, subject_version,
+		INSERT INTO document(id, serial, version, spec_version, timestamp, source, sha256, kind,
+		                     assesses, product_id, subject_ref, subject_name, subject_version,
 		                     subject_sha256, subject_artifact, supplier)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.id, nullable(d.doc.SerialNumber), version, d.doc.SpecVersion,
-		nullable(d.doc.Metadata.Timestamp), d.source, d.sha256, productID,
+		nullable(d.doc.Metadata.Timestamp), d.source, d.sha256, documentKind(&d.doc),
+		nullable(propertyOf(d.doc.Metadata.Properties, "msis:vex.subject")), productID,
 		nullable(subject.BOMRef), nullable(subject.Name), nullable(subject.Version),
 		nullable(subject.hash("SHA-256")), nullable(propertyOf(d.doc.Metadata.Properties,
 			"msis:subject.artifact")), nullable(subject.supplierName()),
@@ -425,6 +438,12 @@ func insertDocumentContents(tx *sql.Tx, d ingested, byLink map[string]string) er
 		return err
 	}
 
+	for i, v := range d.doc.Vulnerabilities {
+		if err := insertVulnerability(tx, d, i, v); err != nil {
+			return fmt.Errorf("vulnerability %d (%s): %w", i, v.ID, err)
+		}
+	}
+
 	for _, dep := range d.doc.Dependencies {
 		for _, on := range dep.DependsOn {
 			if _, err := tx.Exec(`
@@ -432,6 +451,53 @@ func insertDocumentContents(tx *sql.Tx, d ingested, byLink map[string]string) er
 				VALUES (?, ?, ?, 'dependsOn')`, d.id, dep.Ref, on); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// vexPromoted are the statement properties that became vulnerability columns, kept out of
+// vulnerability_property for the same reason as the component ones: one fact, one place.
+var vexPromoted = map[string]bool{
+	"msis:vex.applicability":          true,
+	"msis:vex.reviewReason":           true,
+	"msis:vex.assessedProductVersion": true,
+}
+
+func insertVulnerability(tx *sql.Tx, d ingested, ordinal int, v cdxVulnerability) error {
+	state, justification := "", ""
+	if v.Analysis != nil {
+		state, justification = v.Analysis.State, v.Analysis.Justification
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO vulnerability(document_id, ordinal, bom_ref, id, state, justification,
+		                          applicability, review_reason, assessed_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.id, ordinal, nullable(v.BOMRef), v.ID, nullable(state), nullable(justification),
+		nullable(propertyOf(v.Properties, "msis:vex.applicability")),
+		nullable(propertyOf(v.Properties, "msis:vex.reviewReason")),
+		nullable(propertyOf(v.Properties, "msis:vex.assessedProductVersion")),
+	); err != nil {
+		return err
+	}
+	for _, a := range v.Affects {
+		if a.Ref == "" {
+			continue
+		}
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO vulnerability_affects(document_id, ordinal, ref)
+			VALUES (?, ?, ?)`, d.id, ordinal, a.Ref); err != nil {
+			return err
+		}
+	}
+	for _, p := range v.Properties {
+		if vexPromoted[p.Name] {
+			continue
+		}
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO vulnerability_property(document_id, ordinal, name, value)
+			VALUES (?, ?, ?, ?)`, d.id, ordinal, p.Name, p.Value); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -576,6 +642,23 @@ type cdxDocument struct {
 		Ref       string   `json:"ref"`
 		DependsOn []string `json:"dependsOn"`
 	} `json:"dependencies"`
+
+	// VEX statements (#37). A document msis builds from an artifact has none; the VEX
+	// sidecar beside it is found by the same scan and carries these.
+	Vulnerabilities []cdxVulnerability `json:"vulnerabilities"`
+}
+
+type cdxVulnerability struct {
+	BOMRef   string `json:"bom-ref"`
+	ID       string `json:"id"`
+	Analysis *struct {
+		State         string `json:"state"`
+		Justification string `json:"justification"`
+	} `json:"analysis"`
+	Affects []struct {
+		Ref string `json:"ref"`
+	} `json:"affects"`
+	Properties []cdxProperty `json:"properties"`
 }
 
 // noteSuppliers walks a component tree, so every supplier the index will write a reference to

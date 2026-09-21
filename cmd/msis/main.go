@@ -22,6 +22,7 @@ import (
 	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/template"
 	"github.com/gersonkurz/msis/internal/variables"
+	"github.com/gersonkurz/msis/internal/vex"
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
@@ -320,6 +321,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	if err != nil {
 		return err
 	}
+	// #37: the team's own VEX document, read now so a path that does not exist is a build
+	// error rather than a surprise at release time.
+	statements, err := resolveVEX(setup.VEX, filename)
+	if err != nil {
+		return err
+	}
 	if recordPath == buildrecord.PathStandalone {
 		recordStandaloneRuntimes(rec, setup.Requires, vars.Platform())
 	}
@@ -418,12 +425,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		// Milestone 6.2 - Auto-bundle if requirements present
 		if needsAutoBundle {
 			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath,
-				args, rec, supplied)
+				args, rec, supplied, statements)
 		}
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{msiPath}, supplied)
+			return emitBuildSBOM(rec, []string{msiPath}, supplied, statements)
 		}
 	}
 
@@ -439,7 +446,8 @@ func bundleWxsPath(baseName string) string {
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
-func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record, supplied []sbom.Supplied) error {
+func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record, supplied []sbom.Supplied,
+	statements *vex.Source) error {
 	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
 
 	// Convert and validate requirements
@@ -514,7 +522,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		// document exists and its subject digest matches, so this order is what turns two
 		// documents into a linked pair rather than two unrelated files.
 		rec.Sort()
-		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied)
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, statements)
 	}
 
 	return nil
@@ -587,6 +595,14 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		return fmt.Errorf("<sbom for=%q> is in a script that builds a bundle, which installs no "+
 			"files of its own; put it in the .msis that packages that file",
 			setup.SBOMs[0].For)
+	}
+
+	// A VEX document, on the other hand, is about the product rather than about an installed
+	// file, and a bundle IS a product: its statements are checked against the bundle's own
+	// inventory.
+	statements, err := resolveVEX(setup.VEX, filename)
+	if err != nil {
+		return err
 	}
 	// Generate bundle chain
 	gen := bundle.NewGenerator(setup, vars, workDir)
@@ -669,7 +685,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil)
+			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, statements)
 		}
 	}
 

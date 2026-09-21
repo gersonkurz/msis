@@ -50,6 +50,27 @@ CREATE TABLE document (
     sha256           TEXT NOT NULL,     -- of the document file itself
     product_id       TEXT NOT NULL REFERENCES product(id),
 
+    -- What this document IS. Both kinds live in this table because both are CycloneDX
+    -- documents about the same product, found by the same scan - but they answer different
+    -- questions, and a query that mixed them would compare an inventory against an
+    -- assessment and report every component as removed.
+    --
+    --   'inventory'  what a release contains
+    --   'vex'        statements about what a release contains (#37): vulnerabilities and no
+    --                components of its own
+    kind             TEXT NOT NULL DEFAULT 'inventory',
+
+    -- For a 'vex' document: the BOM-Link of the inventory it was evaluated against, which is
+    -- spelled exactly as document.id so resolving it is a join rather than a reconstruction.
+    -- NULL for an inventory, and for a VEX document that names none.
+    --
+    -- It is the difference between "assessed" and "assessed something LIKE this". One release
+    -- routinely has several inventories - msis's own 3.0.5 ships x64, x86 and arm64 under one
+    -- UpgradeCode and one version - and they carry the same component refs. Matching an
+    -- assessment on product and version alone therefore lets one that was made against the x86
+    -- build suppress a finding in the x64 one, which nobody assessed.
+    assesses         TEXT,
+
     -- metadata.component: the thing the document is ABOUT, which is not one of its components.
     subject_ref      TEXT,
     subject_name     TEXT,
@@ -157,6 +178,57 @@ CREATE TABLE relationship (
     kind                 TEXT NOT NULL,
     resolved_document_id TEXT REFERENCES document(id),
     PRIMARY KEY (document_id, from_ref, to_ref, kind)
+);
+
+-- One VEX statement (#37): an assessment of whether a known vulnerability is exploitable in
+-- the product that ships the component it was matched against.
+--
+-- In the same tables as everything else because a VEX sidecar IS a CycloneDX document: it is
+-- found by the same corpus scan, keyed to the same product, and its statements point at the same
+-- bom-refs the inventory uses. That is what makes "which products are affected, minus what we
+-- have already assessed" one query rather than a join across two tools.
+--
+-- `applicability` is msis's verdict, not the assessor's: whether the conditions the statement
+-- recorded still held for the release it was written against. A query that ignores it is asking
+-- "what did anyone ever conclude"; a query that filters on it is asking "what still holds", and
+-- those are different questions.
+CREATE TABLE vulnerability (
+    document_id      TEXT NOT NULL REFERENCES document(id),
+    ordinal          INTEGER NOT NULL,  -- position in vulnerabilities[], from 0
+    bom_ref          TEXT,
+    id               TEXT NOT NULL,     -- CVE-2024-1234, GHSA-..., whatever the source names
+    state            TEXT,              -- analysis.state as WRITTEN IN THE DOCUMENT
+    justification    TEXT,              -- analysis.justification
+    applicability    TEXT,              -- msis:vex.applicability: 'applies' or 'needs-review'
+    review_reason    TEXT,              -- msis:vex.reviewReason, when it needs review
+    assessed_version TEXT,              -- msis:vex.assessedProductVersion
+    PRIMARY KEY (document_id, ordinal)
+);
+
+CREATE INDEX vulnerability_by_id ON vulnerability(id);
+
+-- What a statement is about. Text rather than a foreign key into component, for the same reason
+-- relationship is: a statement names a ref in ANOTHER document - the inventory it annotates -
+-- and the corpus may or may not contain it.
+CREATE TABLE vulnerability_affects (
+    document_id TEXT NOT NULL,
+    ordinal     INTEGER NOT NULL,
+    ref         TEXT NOT NULL,
+    PRIMARY KEY (document_id, ordinal, ref),
+    FOREIGN KEY (document_id, ordinal) REFERENCES vulnerability(document_id, ordinal)
+);
+
+CREATE INDEX vulnerability_affects_by_ref ON vulnerability_affects(ref);
+
+-- The msis:vex vocabulary minus what was promoted above, kept whole for the same reason
+-- component_property is: the index must not quietly drop what it does not recognise.
+CREATE TABLE vulnerability_property (
+    document_id TEXT NOT NULL,
+    ordinal     INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    PRIMARY KEY (document_id, ordinal, name, value),
+    FOREIGN KEY (document_id, ordinal) REFERENCES vulnerability(document_id, ordinal)
 );
 
 -- A document that could not be indexed. It is recorded HERE, not merely printed, because an
