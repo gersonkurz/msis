@@ -1170,5 +1170,6 @@ WiX runs validation checks (ICEs) on the generated MSI. Common issues:
 - [Schema Reference](msis.xsd) - Complete XML element and attribute reference
 - [Templates & Customization](templates.md) - Logo branding, custom templates
 - [Bundle Guide](Bundle.md) - Advanced bundle options and prerequisites
+- [SBOM](sbom.md) - `/INSPECT` and `/SBOM`, retention, BOM-Links, and what the document does not cover
 - [Roadmap](roadmap.md) - Planned features including custom UI properties
 - [Developer Overview](overview.md) - Architecture and internals for contributors

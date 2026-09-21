@@ -187,8 +187,12 @@ The C# version at `../msis-2.x/` defines expected behavior. Most relevant files:
 ## Schema & Docs
 
 - `docs/msis.xsd` — authoritative `.msis` schema (element/attribute reference)
-- `docs/Bundle.md`, `docs/Prerequisites.md`, `docs/tutorial.md`, `docs/templates.md`,
-  `docs/overview.md` — feature and architecture documentation
+- `docs/Bundle.md`, `docs/prerequisites.md`, `docs/tutorial.md`, `docs/templates.md`,
+  `docs/overview.md`, `docs/installer-hooks.md` — feature and architecture documentation
+- `docs/sbom.md` — the SBOM feature as a whole (#44): what `/INSPECT` and `/SBOM` read, why
+  they never execute the package, sidecar retention and the archive naming contract, what is
+  verified before a BOM-Link is made, the `msis:*` vocabulary, and the CRA/NTIA framing.
+  Tutorials 13 and 14 cover `<sbom>` and `<vex>` from the user's side.
 
 ## Review loop
 

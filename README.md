@@ -111,6 +111,7 @@ That's it. Your installer is ready at `setup.msi`.
 | **[Templates & Customization](docs/templates.md)** | Template locations, logo branding, custom templates |
 | **[Bundle Guide](docs/Bundle.md)** | Multi-architecture installers and prerequisites |
 | **[Installer Hooks](docs/installer-hooks.md)** | Native hooks, destructive uninstall cleanup, and `RETAIN_FILES_ON_UNINSTALL` |
+| **[SBOM](docs/sbom.md)** | `/INSPECT` and `/SBOM`, what the document claims and what it does not, retention and BOM-Links |
 | **[Schema](docs/msis.xsd)** | Complete XML element and attribute reference |
 | **[Roadmap](docs/roadmap.md)** | Planned features and future direction |
 | **[Developer Overview](docs/overview.md)** | Architecture, code structure, and internals |

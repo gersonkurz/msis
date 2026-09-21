@@ -37,7 +37,7 @@ When you build with `/BUILD`, MSIS automatically:
 
 Use `/STANDALONE` to skip auto-bundling and generate only the MSI with launch conditions.
 
-See [Prerequisites.md](Prerequisites.md) for complete documentation on the `<requires>` element.
+See [prerequisites.md](prerequisites.md) for complete documentation on the `<requires>` element.
 
 ## Basic Bundle Syntax
 
