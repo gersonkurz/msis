@@ -39,6 +39,9 @@ bootstrap/dist/
 # Rebuild: see internal/burnread/testdata/README.md
 !internal/burnread/testdata/*.exe
 !internal/burnread/testdata/*.wxs
+# shapes.wxs declares a detached container; building it writes far.cab beside shapes.exe, and
+# the fixture's point is that the reader must not need it. A test checks it is absent.
+internal/burnread/testdata/*.cab
 
 # Test binary, built with `go test -c`
 *.test

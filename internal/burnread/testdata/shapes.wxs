@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The second bundle fixture for internal/burnread: the shapes fixture.exe cannot carry. Built to
+  be READ, never run, with the same two economies as fixture.exe (text-file BA, zeroed engine
+  code sections; see README.md).
+
+  It exists for three layouts the reader supports that fixture.exe does not exercise:
+    * MORE THAN TWO CONTAINERS. WiX puts everything in one attached container unless told
+      otherwise; Second and Third are explicit attached containers, so the .wixburn header
+      declares four (UX, the default, Second, Third) and the offset arithmetic for index >= 2
+      runs against a real header.
+    * A DETACHED CONTAINER. Far is written as far.cab beside the bundle at build time and is
+      deliberately NOT committed: the reader must report FarExe as not carried, naming the
+      container and its DownloadUrl, and must not try to open it.
+    * A REMOTE PAYLOAD. Remote has no SourceFile at all - only a DownloadUrl, a size and the
+      SHA-512 Burn will verify the download against. The reader must report it not carried,
+      with the URL and the recorded digest, and no SHA-256 of its own.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Bundle Name="Burnread Shapes" Version="2.0.0" Manufacturer="NG Branch Technology GmbH"
+          UpgradeCode="{0B7D5E21-4A6C-4F3E-9D8B-1C2A3E4F5A67}"
+          Compressed="yes" DisableModify="yes">
+    <Container Id="Second" Type="attached">
+      <PackageGroupRef Id="InSecond" />
+    </Container>
+    <Container Id="Third" Type="attached">
+      <PackageGroupRef Id="InThird" />
+    </Container>
+    <Container Id="Far" Type="detached" Name="far.cab" DownloadUrl="https://example.invalid/far.cab">
+      <PackageGroupRef Id="InFar" />
+    </Container>
+    <BootstrapperApplication SourceFile="fakeba.exe" />
+    <Chain>
+      <MsiPackage Id="Embedded" SourceFile="../../msiread/testdata/fixture.msi" Compressed="yes" Vital="yes" />
+      <PackageGroupRef Id="InSecond" />
+      <PackageGroupRef Id="InThird" />
+      <PackageGroupRef Id="InFar" />
+      <ExePackage Id="Remote" Permanent="yes" DetectCondition="0" InstallArguments="/q" Vital="no">
+        <ExePackagePayload Name="remote.exe" DownloadUrl="https://example.invalid/remote.exe"
+                           Hash="FD3AA8ABC14B0AD75C4A9B428EFABA7EB6B4F53BD6DF4BC8C7CE28D72BBF6788810892EBF97B6B828F0E62657C7281342EBED17D9725E9124582F4A6F6FF6AD6"
+                           Size="40" />
+      </ExePackage>
+    </Chain>
+  </Bundle>
+  <Fragment>
+    <PackageGroup Id="InSecond">
+      <ExePackage Id="SecondExe" SourceFile="second.exe" Compressed="yes" Vital="no"
+                  Permanent="yes" DetectCondition="0" InstallArguments="/q" />
+    </PackageGroup>
+  </Fragment>
+  <Fragment>
+    <PackageGroup Id="InThird">
+      <ExePackage Id="ThirdExe" SourceFile="third.exe" Compressed="yes" Vital="no"
+                  Permanent="yes" DetectCondition="0" InstallArguments="/q">
+        <Payload Name="third.txt" SourceFile="third.txt" />
+      </ExePackage>
+    </PackageGroup>
+  </Fragment>
+  <Fragment>
+    <PackageGroup Id="InFar">
+      <ExePackage Id="FarExe" SourceFile="far.exe" Compressed="yes" Vital="no"
+                  Permanent="yes" DetectCondition="0" InstallArguments="/q" />
+    </PackageGroup>
+  </Fragment>
+</Wix>
