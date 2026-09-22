@@ -233,26 +233,42 @@ Windows Registry Editor Version 5.00
 "MaxConnections"=dword:00000010
 ```
 
-### Using Install-Time Properties in Registry Values
+### Using Variables and Properties in Registry Values
 
-A string value in your `.reg` file can refer to a Windows Installer property, so it is filled
-in on the user's machine rather than at build time:
+A string value in your `.reg` file can be filled in at two different times.
+
+**At build time, with msis variables.** `{{VAR}}` in a string value is replaced with the
+variable's value when msis runs, exactly as in a `.msis` attribute:
+
+```
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyCompany\MyApp]
+"Version"="{{PRODUCT_VERSION}}"
+"Vendor"="{{MANUFACTURER}}"
+```
+
+Only string values are expanded — not value names, not key paths, not DWORDs or binary or
+multi-string values. A reference to a variable that is not defined, or text the template
+engine cannot parse, is written **as authored** and reported as a build warning, so a typo
+cannot silently turn a value into an empty string. That includes a variable used in a
+condition: `{{#if FOO}}…{{/if}}` with FOO undefined is reported rather than treated as false,
+so define an optional variable as empty. (msis-2.x expanded `{{VAR}}` here too, but rendered an
+unknown name as nothing.) The `$$VAR$$` form an earlier version of this page described was
+never honoured by any version and is plain text.
+
+**At install time, with Windows Installer properties.** `[PROPERTY]` is resolved on the
+user's machine, which is the only place a value like the install folder is known:
 
 ```
 [HKEY_LOCAL_MACHINE\SOFTWARE\MyCompany\MyApp]
 "InstallPath"="[INSTALLDIR]"
-"Executable"="[INSTALLDIR]MyApp.exe"
-"Version"="[ProductVersion]"
+"Executable"="[INSTALLDIR]{{PRODUCT_NAME}}.exe"
 ```
 
 `[INSTALLDIR]` becomes the folder the user chose, trailing backslash included — so there is
-no `\` between it and `MyApp.exe`. Any Windows Installer property works the same way.
-
-**msis variables are not expanded in `.reg` files.** Neither `{{PRODUCT_VERSION}}` nor the
-`$$PRODUCT_VERSION$$` form an earlier version of this page described reaches the registry as
-anything but literal text. msis-2.x expanded `{{VAR}}` here and msis 3 does not yet; that gap
-is [#46](https://github.com/gersonkurz/msis/issues/46). Until it is closed, use an install-time
-property as above, or have the application write the value itself.
+no `\` between it and the file name. Any Windows Installer property works the same way, and
+the two mechanisms combine: in the second line msis fills in the product name at build time
+and Windows Installer fills in the folder at install time. What brackets mean in a string
+value, and when they need escaping, is the next section.
 
 ### Brackets: literal or formatted?
 

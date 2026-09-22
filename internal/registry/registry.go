@@ -13,6 +13,7 @@ import (
 
 	"github.com/gersonkurz/go-regis3"
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/variables"
 )
 
 // DefaultSDDL is the default security descriptor for registry keys.
@@ -56,6 +57,13 @@ type RegistryValue struct {
 
 // Processor handles registry file parsing and WiX generation.
 type Processor struct {
+	// Variables, when set, are expanded in REG_SZ values: "{{PRODUCT_VERSION}}" in a .reg
+	// string becomes the variable's value at build time, as msis-2.x did
+	// (msi-simplified/WxsItem/RegistryKey.cs ran every SZ value through Handlebars; #46).
+	// Only string VALUES - not value names, not key paths, not other value types. Nil
+	// leaves every value as written.
+	Variables variables.Dictionary
+
 	workDir          string
 	upgradeCode      string
 	nextKeyID        int
@@ -357,7 +365,7 @@ func (p *Processor) convertValue(entry *regis3.ValueEntry) *RegistryValue {
 	switch entry.Kind() {
 	case regis3.RegSz:
 		val.Type = "string"
-		val.Value = entry.GetString("")
+		val.Value = p.expand(entry.GetString(""), entry.Name())
 	case regis3.RegExpandSz:
 		val.Type = "expandable"
 		val.Value = entry.GetString("")
@@ -405,6 +413,42 @@ func (p *Processor) convertValue(entry *regis3.ValueEntry) *RegistryValue {
 	}
 
 	return val
+}
+
+// expand substitutes {{VAR}} references in a REG_SZ value at build time (#46, decisions D8).
+//
+// msis-2.x ran every SZ value through Handlebars, so "{{PRODUCT_VERSION}}" in a .reg file
+// became the version; msis 3 wrote it literally until #46. Restored for string values only -
+// value names and key paths were never expanded in msis-2.x either, and neither are other
+// value types. A value without "{{" is returned untouched, so a .reg file that never heard
+// of variables costs nothing and changes nothing.
+//
+// Two things differ from msis-2.x, deliberately. Handlebars renders an UNDEFINED name as
+// empty, so a typo turned a registry value into "" with nothing said; here the dictionary's
+// ResolveChecked reports every undefined name the render actually reaches - in whatever form
+// the engine accepts, and including a name used as a condition - and such a value is written
+// as authored with a build warning. A reference the template engine cannot parse ("{{X, y}}", a
+// stray "{{") is likewise warned about and written as authored - the same policy the
+// generator applies to item values (#14). Nothing becomes empty silently.
+//
+// Install-time [PROPERTY] references are a different mechanism (Windows Installer's Formatted
+// field, D4) and pass through here unchanged.
+func (p *Processor) expand(value, name string) string {
+	if p.Variables == nil || !strings.Contains(value, "{{") {
+		return value
+	}
+	resolved, undefined, err := p.Variables.ResolveChecked(value)
+	if err != nil {
+		p.warn("registry value %q could not be resolved and is written as authored: %q (%s)",
+			displayValueName(name), value, strings.Join(strings.Fields(err.Error()), " "))
+		return value
+	}
+	if len(undefined) > 0 {
+		p.warn("registry value %q refers to {{%s}}, which is not a defined variable; the value is written as authored: %q",
+			displayValueName(name), strings.Join(undefined, "}}, {{"), value)
+		return value
+	}
+	return resolved
 }
 
 // RemovalEntry represents a registry key or value to be removed.

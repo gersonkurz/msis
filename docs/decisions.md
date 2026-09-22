@@ -160,9 +160,10 @@ because the parser reads `\[` as an escaped `[`). Emission is pinned by
 `TestWarnFormattedRegistryValues` and `TestWarnFormattedIgnoresEscapedBrackets`, all in
 `internal/registry/registry_test.go`.
 
-Related but separate: msis variables (`{{VAR}}`) are not expanded in `.reg` strings at build
-time either, where msis-2.x expanded them. That is a parity gap, not a decision, and is
-tracked as [#46](https://github.com/gersonkurz/msis/issues/46).
+Related but separate: msis variables (`{{VAR}}`) ARE expanded in `.reg` string values at build
+time, as in msis-2.x — restored under [#46](https://github.com/gersonkurz/msis/issues/46), see
+D8. That is the build-time half; this entry is the install-time half, and the two combine
+(`[INSTALLDIR]{{PRODUCT_NAME}}.exe`).
 
 **What would reopen this:** an authoring switch that declares a value literal — an attribute
 on `<registry>`, or a per-value marker — so that msis could escape on the author's say-so
@@ -294,3 +295,54 @@ that recipe step is now redundant but harmless.
 
 **What would reopen this:** a requirement that msis never write outside directories that already
 exist (a locked-down CI layout, say) — then the diagnostic option, behind a flag.
+
+## D8 — `{{VAR}}` expands in `.reg` string values; an undefined name stays literal and warns
+
+**Settled in:** [#46](https://github.com/gersonkurz/msis/issues/46), 2026-09-22, product owner's
+decision between expanding (msis-2.x parity), not expanding, and expanding in names and key
+paths too.
+**Implemented by:** `internal/registry/registry.go` — `func (p *Processor) expand(`, `p.Variables.ResolveChecked(value)`
+
+msis-2.x ran every REG_SZ value of a `.reg` file through Handlebars
+(`msi-simplified/WxsItem/RegistryKey.cs`, both the plain and the preserved path), so
+`"Version"="{{PRODUCT_VERSION}}"` landed as the version. msis 3 wrote it literally, found while
+probing for #38, and the tutorial of the time documented a `$$VAR$$` form that no version ever
+honoured in a string value. The product owner chose to restore the expansion.
+
+Scope, exactly msis-2.x's: **REG_SZ values only**. Value names, key paths, `REG_EXPAND_SZ`,
+DWORD, binary and multi-string values are not touched — msis-2.x did not expand them either,
+and widening the scope was the option rejected ("no known user asking for it, more ways for a
+literal `{{` to be misread"). A value without `{{` is returned as it came from the parser.
+
+Two deliberate departures from msis-2.x, both in the direction of not losing data silently:
+
+- **An undefined variable is not rendered as empty.** Handlebars renders an unknown name as
+  `""`, and so did msis-2.x — a typo in `{{PRODUCT_VERSOIN}}` installed an empty registry value
+  with nothing said. `variables.ResolveChecked` (`internal/variables/references.go`) reports
+  every undefined name the render **actually reaches**, found the way the dependency resolver
+  finds dependencies: the parsed template supplies the candidates (paths that can be variables —
+  not helper names like `if`, not syntax like `else`), each undefined candidate gets a sentinel,
+  and the render says which were reached — under the key the evaluator looks up, so a
+  bracketed literal segment `{{[MY VAR]}}` is checked as `MY VAR`. So every reference form the
+  engine accepts is covered (`{{~X~}}`, hyphenated names, `[bracketed]` segments), a reference
+  in an untaken branch is not reported, and a name
+  used as a **condition** must be defined too — `{{#if FOO}}` with FOO undefined is reported,
+  not treated as false; a variable meant to be optional is defined as empty. Any undefined
+  reference leaves the whole value **as authored**, with a build warning naming the value and
+  the references. (The first version of this guard was a regexp; review found it rejected
+  `{{else}}` and missed `{{~X~}}` — the reason the check is now the engine's own evaluation.)
+- **Text the engine cannot parse** — `{{VAR, DEFAULT}}` (the form #14 met in item values), a
+  stray `{{` — is likewise written as authored with a warning, the policy `resolveOrWarn`
+  already applies to item values.
+
+Expansion happens where the string value is read (`convertValue`), so everything downstream
+sees the expanded text: the preserved default (`PS_RV_n`), and the Formatted-field warning of
+D4, which must judge what will actually land in the Registry table. Build-time `{{VAR}}` and
+install-time `[PROPERTY]` are different mechanisms and combine in one value.
+
+Executed by `internal/registry/variables_test.go` and, end to end, by the #38 probe `.reg` re-run
+against the built binary: `{{PRODUCT_VERSION}}` → `1.2.3`, `$$PRODUCT_VERSION$$` unchanged.
+
+**What would reopen this:** a user needing `{{VAR}}` in a value name or key path (then the
+third option, with the same undefined-stays-literal rule), or evidence that a production `.reg`
+carries a literal `{{` that the warning does not make obvious enough.

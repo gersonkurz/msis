@@ -124,7 +124,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		fileSourcePaths:        make(map[string]string),
 		fileComponents:         make(map[string]*Component),
 		fileComponentsBySource: make(map[string][]placedComponent),
-		registryProcessor:      registry.NewProcessor(workDir, vars.UpgradeCode()),
+		registryProcessor:      newRegistryProcessor(workDir, vars),
 		RegistryComponents:     make([]*registry.Component, 0),
 		DesktopShortcuts:       make([]*ShortcutComponent, 0),
 		StartMenuShortcuts:     make([]*ShortcutComponent, 0),
@@ -1466,6 +1466,14 @@ func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {
 	}
 
 	return nil
+}
+
+// newRegistryProcessor builds the .reg processor with the variable dictionary attached, so
+// {{VAR}} references in REG_SZ values expand at build time as they did in msis-2.x (#46).
+func newRegistryProcessor(workDir string, vars variables.Dictionary) *registry.Processor {
+	p := registry.NewProcessor(workDir, vars.UpgradeCode())
+	p.Variables = vars
+	return p
 }
 
 func (c *Context) processRegistry(reg ir.Registry, featureID string) error {
