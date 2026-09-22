@@ -396,8 +396,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	// Determine output filename
 	wxsFile := wxsPath(filename, vars)
 
-	// Write WXS file
-	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+	if err := writeWxs(wxsFile, wxsContent); err != nil {
 		return fmt.Errorf("writing WXS file: %w", err)
 	}
 	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
@@ -443,6 +442,23 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 // TestBundleWxsRoundTrip pins that.
 func bundleWxsPath(baseName string) string {
 	return baseName + "-bundle.wxs"
+}
+
+// writeWxs writes a generated .wxs, creating its directory first. All three .wxs writes (MSI,
+// auto-bundle, explicit bundle) go through here, so a BUILD_TARGET naming a directory that does
+// not exist yet - `dist\App-1.0.0.msi` on a fresh checkout - works the way it did in msis-2.x,
+// whose BuildContext.CreateReleaseFolder called Directory.CreateDirectory on the target's
+// directory (#42, decisions D7). Before this, the first write failed with the OS's own message
+// ("The system cannot find the path specified"). The .wxs shares its directory with every other
+// artifact of the build (BUILD_TARGET is a name pattern), so creating it here creates the
+// output directory for the .msi and .exe as well.
+func writeWxs(path, content string) error {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating output directory %s: %w", dir, err)
+		}
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
@@ -500,8 +516,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// Determine output filename (bundle produces .exe)
 	wxsFile := bundleWxsPath(strings.TrimSuffix(msiPath, filepath.Ext(msiPath)))
 
-	// Write WXS file
-	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+	if err := writeWxs(wxsFile, wxsContent); err != nil {
 		return fmt.Errorf("writing bundle WXS file: %w", err)
 	}
 	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))
@@ -664,8 +679,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// Determine output filename (bundle produces .exe)
 	wxsFile := bundleWxsPath(bundleBaseName(filename, vars))
 
-	// Write WXS file
-	if err := os.WriteFile(wxsFile, []byte(wxsContent), 0644); err != nil {
+	if err := writeWxs(wxsFile, wxsContent); err != nil {
 		return fmt.Errorf("writing bundle WXS file: %w", err)
 	}
 	fmt.Printf("  Written: %s\n", cli.Filename(wxsFile))

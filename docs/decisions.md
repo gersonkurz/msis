@@ -266,3 +266,31 @@ so the release recipes were never affected.
 **What would reopen this:** a decision that msis 3 should match msis-2.x's directory change
 (then also the `.wxs` moves beside the script, and the docs and this entry are rewritten), or an
 explicit `/OUTDIR`-style flag that makes the base a stated choice rather than an implicit one.
+
+## D7 — The `BUILD_TARGET` directory is created if it does not exist
+
+**Settled in:** [#42](https://github.com/gersonkurz/msis/issues/42), 2026-09-22, by the standing
+rule (AGENTS.md: prefer parity with msis-2.x unless requirements explicitly change).
+**Implemented by:** `cmd/msis/main.go` — `func writeWxs(`, `os.MkdirAll(dir, 0o755)`
+
+The issue offered two ways out of the raw OS error a missing target directory produced
+(`open nodir\probe.wxs: The system cannot find the path specified`): create the directory, or
+refuse with a message naming it. msis-2.x created it — `BuildContext.CreateReleaseFolder` split
+`BUILD_TARGET` into folder and file pattern and called `Directory.CreateDirectory` on the folder
+— and nothing since has asked for that to change, so parity decides it. Creating a directory the
+user named in their own script is not a surprising side effect; failing a release build on a
+fresh checkout because `dist\` was not there is.
+
+One helper, `writeWxs`, does it for all three `.wxs` writes (MSI, auto-bundle, explicit bundle),
+because the `.wxs` is the first artifact written and shares its directory with the `.msi` and the
+`.exe` (`BUILD_TARGET` is a name pattern, #28). A directory that cannot be created fails with
+"creating output directory <dir>", so the reader is pointed at the directory rather than at a
+file inside it. Executed by `TestBuildTargetDirectoryIsCreatedForAnMSI`,
+`TestBuildTargetDirectoryIsCreatedForABundle` (both through `processFile`, two levels deep) and
+the `writeWxs` unit tests, including the cannot-create case.
+
+`just release-all` never hit the defect because `clean-bootstrap` creates `bootstrap/dist` first;
+that recipe step is now redundant but harmless.
+
+**What would reopen this:** a requirement that msis never write outside directories that already
+exist (a locked-down CI layout, say) — then the diagnostic option, behind a flag.

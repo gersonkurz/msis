@@ -260,9 +260,19 @@ value straight to `wix build` used to make it infer the output type from the ext
 Two more things to know:
 
 - A **relative** value is resolved against the **current working directory**, not against the
-  `.msis`. `just release-all` relies on this: `bootstrap/setup-bundle.msis` sets
+  `.msis` (msis-2.x changed into the `.msis` directory before building, so there a relative target
+  landed beside the script; msis 3 does not change directory — settled as D6 in
+  `docs/decisions.md`). `just release-all` relies on this: `bootstrap/setup-bundle.msis` sets
   `dist\msis-<version>-setup.exe` and the recipe runs from `bootstrap/`, so the artifacts land in
-  `bootstrap/dist/`. The directory has to exist; msis does not create it.
+  `bootstrap/dist/`. Every consumer of the output path reads one absolute value, so the check
+  that removes a stale output before the build cannot delete a different file than the one the
+  build writes (#41). Run msis from the directory the target is meant to be relative to, or give
+  an absolute target.
+- The target's **directory is created if it does not exist**, as msis-2.x did (#42, D7):
+  `dist\App-1.0.0.msi` on a fresh checkout creates `dist\`. The `.wxs` is the first artifact
+  written and shares its directory with the `.msi` and `.exe`, so creating it creates the output
+  directory. A path that cannot be created — a file already has its name, say — fails naming
+  the directory.
 - Only a real `.exe` or `.msi` suffix is replaced. A value with **no** extension keeps every
   version segment: `MyApp-1.0.0` yields `MyApp-1.0.0.msi` and `MyApp-1.0.0.exe`. (msis-2.x cut
   at the last `.` here, which turned that into `MyApp-1.0`.)
@@ -282,15 +292,8 @@ it always did — the fix never changed how a relative value is resolved — so 
 ending in `.exe` or `.msi`, this repo's own release among them, produce the same filenames as
 before. A `BUILD_TARGET` with *no* extension is the one case that changes: it now keeps its full
 version, so `MyApp-1.0.0` yields `MyApp-1.0.0.exe` where it used to yield `MyApp-1.0.exe`.
-
-**A relative `BUILD_TARGET` resolves against the directory msis is run from**, not against the
-`.msis` file's directory: `dist\setup.exe` means `<current directory>\dist\setup.exe`, and the
-`.wxs`, `.msi` and `.exe` all go there. (msis-2.x changed into the `.msis` directory before
-building, so there a relative target landed beside the script; msis 3 does not change directory.
-Settled as D6 in `docs/decisions.md`.) Before #41 the check that removes a stale output before
-the build resolved the same relative value against a different base and could delete a file the
-build was never going to write; every consumer of the output path now reads one absolute value.
-Run msis from the directory the target is meant to be relative to, or give an absolute target.
+Where a relative target lands, and that its directory is created, is under *Two more things to
+know* above.
 
 ## Silent vs UI Bundles
 
