@@ -802,6 +802,11 @@ func chainableMSI(t *testing.T, dir string) string {
 
 // seedCache points the prerequisite cache at a directory of this test's own and fills it, so
 // the build resolves every architecture it may ask for without going near the network.
+//
+// Since #30 a cached file is reused only if it matches its pinned digest, so the stand-in
+// bytes are pinned for the duration of the test: each entry's SHA256 becomes that of the
+// seeded content and its URL an address nothing answers on, so that a verification failure
+// shows up as a failed download rather than as a 25 MB fetch from Microsoft in a unit test.
 func seedCache(t *testing.T, dir, typ, version string) map[string]string {
 	t.Helper()
 	t.Setenv("LOCALAPPDATA", dir)
@@ -811,9 +816,17 @@ func seedCache(t *testing.T, dir, typ, version string) map[string]string {
 		if u == nil {
 			continue
 		}
+		body := "stands in for " + u.FileName + ", " + arch + "\n"
 		path := filepath.Join(dir, "msis", "prerequisites", typ, version, u.FileName)
-		write(t, path, "stands in for "+u.FileName+", "+arch+"\n")
+		write(t, path, body)
 		seeded[arch] = path
+
+		orig := prereqcache.DownloadURLs[typ][version][arch]
+		pinned := orig
+		pinned.SHA256 = sha256Hex([]byte(body))
+		pinned.URL = "https://127.0.0.1:9/" + u.FileName
+		prereqcache.DownloadURLs[typ][version][arch] = pinned
+		t.Cleanup(func() { prereqcache.DownloadURLs[typ][version][arch] = orig })
 	}
 	if len(seeded) == 0 {
 		t.Fatalf("msis knows no download for %s %s, so nothing can be seeded", typ, version)

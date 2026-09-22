@@ -943,10 +943,16 @@ func printStatus(args *cliArgs) {
 	cacheDir := prereqcache.GetDefaultCacheDir()
 	fmt.Printf("  Location: %s\n", cli.Filename(cacheDir))
 	if cache := prereqcache.NewCacheReadOnly(); cache != nil {
-		if cached, err := cache.ListCached(); err == nil && len(cached) > 0 {
+		// Verified, not merely listed: the cache is user-writable, and a build reuses a
+		// file only if it still matches its pinned digest (#30). Show what a build would see.
+		if cached, err := cache.VerifyCached(); err == nil && len(cached) > 0 {
 			fmt.Printf("  Cached files: %s\n", cli.Number(fmt.Sprintf("%d", len(cached))))
 			for _, f := range cached {
-				fmt.Printf("    - %s\n", cli.Filename(f))
+				if f.Verified {
+					fmt.Printf("    - %s  %s\n", cli.Filename(f.RelPath), cli.Success("(SHA-256 verified)"))
+				} else {
+					fmt.Printf("    - %s  %s\n", cli.Filename(f.RelPath), cli.Warning(f.Detail))
+				}
 			}
 		} else {
 			fmt.Printf("  Cached files: %s\n", cli.Info("(none)"))

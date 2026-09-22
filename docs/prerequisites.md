@@ -28,14 +28,18 @@ When you build with `/BUILD`, MSIS will:
 
 ### VC++ Redistributable
 
-| Version | Type | Architectures | Auto-Download |
-|---------|------|---------------|---------------|
-| `2022` | `vcredist` | x64, x86, arm64 | ✅ Yes |
-| `2019` | `vcredist` | x64, x86 | ✅ Yes |
-| `2017` | `vcredist` | x64, x86 | ❌ No (use `source`) |
-| `2015` | `vcredist` | x64, x86 | ❌ No (use `source`) |
+| Version | Type | Architectures | Auto-Download | Pinned installer |
+|---------|------|---------------|---------------|------------------|
+| `2022` | `vcredist` | x64, x86, arm64 | ✅ Yes | 14.44.35211.0 |
+| `2019` | `vcredist` | x64, x86 | ✅ Yes | 14.29.30157.0 |
+| `2017` | `vcredist` | x64, x86 | ❌ No (use `source`) | — |
+| `2015` | `vcredist` | x64, x86 | ❌ No (use `source`) | — |
 
 **Note:** VC++ 2015-2022 are binary compatible. If you need VC++ 2015 or 2017, using `version="2022"` is recommended as it provides the latest security fixes while maintaining compatibility and supports auto-download.
+
+"Pinned installer" is the exact build this msis release downloads and verifies — see
+[Integrity: pinned URL and digest](#integrity-pinned-url-and-digest). A newer build of the same
+redistributable reaches your bundle through an msis update, or through `source=`.
 
 ```xml
 <requires type="vcredist" version="2022"/>
@@ -48,14 +52,19 @@ For versions without auto-download, provide a local installer:
 
 ### .NET Framework
 
-| Version | Type | Notes | Auto-Download |
-|---------|------|-------|---------------|
-| `4.8.1` | `netfx` | Latest, Windows 10 21H2+ | ✅ Yes |
-| `4.8` | `netfx` | Recommended for broad compatibility | ✅ Yes |
-| `4.7.2` | `netfx` | Windows 7 SP1+ | ✅ Yes |
-| `4.7.1` | `netfx` | | ❌ No (use `source`) |
-| `4.7` | `netfx` | | ❌ No (use `source`) |
-| `4.6.2` | `netfx` | Minimum for modern .NET apps | ❌ No (use `source`) |
+| Version | Type | Notes | Auto-Download | Pinned installer |
+|---------|------|-------|---------------|------------------|
+| `4.8.1` | `netfx` | Latest, Windows 10 21H2+ | ✅ Yes | 4.8.09195.10 (offline) |
+| `4.8` | `netfx` | Recommended for broad compatibility | ✅ Yes | 4.8.04115.00 (offline) |
+| `4.7.2` | `netfx` | Windows 7 SP1+ | ✅ Yes | 4.7.03081.00 (offline) |
+| `4.7.1` | `netfx` | | ❌ No (use `source`) | — |
+| `4.7` | `netfx` | | ❌ No (use `source`) | — |
+| `4.6.2` | `netfx` | Minimum for modern .NET apps | ❌ No (use `source`) | — |
+
+All three are the **offline** installers, so a bundle carrying one installs without network
+access. (Before the pins of #30 the 4.8.1 and 4.7.2 entries pointed at links that served the 1.4 MB *web*
+installer under the offline installer's name; a bundle built with those needed the internet at
+install time. A cache holding one of them fails verification and is replaced on the next build.)
 
 ```xml
 <requires type="netfx" version="4.8"/>
@@ -96,7 +105,7 @@ The MSI will check for prerequisites at install time and show an error if they'r
 
 ## Prerequisite Caching
 
-MSIS automatically downloads prerequisite installers from official Microsoft sources and caches them locally:
+MSIS downloads prerequisite installers from Microsoft and caches them locally:
 
 **Cache Location:** `%LOCALAPPDATA%\msis\prerequisites\`
 
@@ -106,7 +115,42 @@ Benefits:
 - Cache is shared across all projects
 - No need to include large installers in source control
 
-**Integrity Note:** MSIS will display a warning when downloading prerequisites without SHA256 hash verification. This is informational—the files are downloaded from official Microsoft URLs but integrity cannot be cryptographically verified.
+### Integrity: pinned URL and digest
+
+Every installer msis can download is **pinned**: msis carries, for each one, a version-specific
+Microsoft URL and the SHA-256 of the file that URL serves (the "Pinned installer" columns above
+name the builds). msis verifies that digest
+
+- **after every download**, before the file is given its name in the cache. A corrupted or
+  substituted download never becomes a cached file;
+- **on every reuse** of a cached file. The cache directory is writable by you and by anything
+  running as you, so a file that verified last week is checked again today. A cached file that
+  no longer matches is discarded and downloaded again, once.
+
+If the fresh download does not match either, the build is **refused**, and the error names both
+digests. The bytes arriving at the pinned URL are not the bytes this msis release pinned — a
+damaged transfer, something on the network path answering in Microsoft's place, or Microsoft
+having republished the file. msis cannot tell which; see
+[the troubleshooting entry](#does-not-match-the-digest-msis-pins) for how to find out before
+using `source=` or updating msis.
+
+Each download goes to an exclusively created temporary file of its own, so two builds fetching
+the same prerequisite at once verify and publish only their own bytes.
+
+**Pinned rather than "latest", on purpose.** The `aka.ms` links Microsoft offers for the VC++
+redistributable always serve the newest build, so a digest recorded against one of them fails as
+soon as Microsoft ships an update. With a pin, every machine that builds with the same msis
+release chains byte-identical prerequisites — which is what a reproducible bundle, and the SBOM
+msis emits for it, need. The cost is that a newer redistributable reaches your bundles with an
+msis release rather than automatically; `source=` is the escape hatch in between. The decision
+and its alternatives are recorded as D5 in `docs/decisions.md`.
+
+**Where the digests come from.** Each was recorded from a download over TLS from the pinned URL,
+with the file's Authenticode signature checked (signer: Microsoft Corporation). For the Visual
+Studio download URLs the path itself carries the file's SHA-256, and the pinned value is that
+one. Microsoft publishes no separate digest list for these files, so this is the provenance: that
+download, on the date recorded in the source, signed by that signer. A test in msis holds the
+table to these rules.
 
 ### View Cached Prerequisites
 
@@ -114,7 +158,9 @@ Benefits:
 msis /STATUS
 ```
 
-Shows cached prerequisites and their locations.
+Shows each cached file, marked `(SHA-256 verified)` or with the reason a build would not reuse
+it — it does not match its pin, or no pinned download has that name. Nothing is deleted by
+`/STATUS`; a build makes that decision when it needs the file.
 
 ### Custom/Offline Source
 
@@ -127,7 +173,9 @@ For offline builds or custom installers, specify a `source` attribute:
 When `source` is specified:
 - No automatic download occurs
 - The specified file is used directly
-- You are responsible for providing the correct installer
+- You are responsible for providing the correct installer. msis does **not** verify it — it has
+  no digest to check a file of yours against — so check the download yourself (Microsoft's
+  installers carry an Authenticode signature; `Get-AuthenticodeSignature` in PowerShell shows it)
 
 ## Detection Logic
 
@@ -187,6 +235,25 @@ If downloads fail:
 1. Check your internet connection
 2. Check if corporate firewall blocks Microsoft download URLs
 3. Use the `source` attribute to provide a local installer
+
+### "does not match the digest msis pins"
+
+The bytes msis received are not the bytes it expected, and it has already discarded them —
+nothing unverified is in the cache. Possible causes: the download was damaged (a connection
+dropped mid-file); something on the path answers in Microsoft's place (a proxy serving an HTML
+sign-in page, a captive portal, a filtering appliance rewriting the download); or Microsoft
+republished the file at the pinned URL since this msis release recorded its digest.
+
+1. Retry once; a damaged download rarely repeats.
+2. If it repeats, the cause is **not yet known** — a persistent proxy response or a substitution
+   repeats just as reliably as a republished file. Do not reach for `source=` with a copy from
+   the same network path. Verify an installer independently first: check its Authenticode
+   signature (`Get-AuthenticodeSignature` — signer Microsoft Corporation, status Valid) and its
+   file version against the pinned build in the tables above. Only then either supply it with
+   `source=`, or update msis to a release whose pin matches the file Microsoft now serves.
+
+The error names the expected and the received digest and the installer build msis was pinned to,
+so a report of it is complete as it stands.
 
 ### Launch Condition Failed
 

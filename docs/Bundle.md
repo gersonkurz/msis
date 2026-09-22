@@ -90,7 +90,7 @@ msis-3.x has built-in support for common prerequisites:
 | `netfx` | 4.8.1, 4.8, 4.7.2 | ✅ Yes |
 | `netfx` | 4.7.1, 4.7, 4.6.2 | ❌ No (provide `source`) |
 
-Versions with auto-download are fetched from official Microsoft URLs and cached locally. Other versions require a `source` attribute pointing to the installer file.
+Versions with auto-download are fetched from a pinned, version-specific Microsoft URL, verified against a pinned SHA-256 both when downloaded and every time the cached copy is reused, and cached locally — see [Integrity: pinned URL and digest](prerequisites.md#integrity-pinned-url-and-digest). Other versions require a `source` attribute pointing to the installer file, which msis does not verify.
 
 Example:
 ```xml
@@ -105,9 +105,9 @@ For versions without auto-download:
 
 ### Automatic Prerequisite Downloads
 
-**New in 3.x:** MSIS automatically downloads prerequisite installers from official Microsoft sources and caches them in `%LOCALAPPDATA%\msis\prerequisites\`. This means you don't need to manually download or include prerequisite installers.
+**New in 3.x:** MSIS automatically downloads prerequisite installers from Microsoft and caches them in `%LOCALAPPDATA%\msis\prerequisites\`. This means you don't need to manually download or include prerequisite installers.
 
-First build downloads prerequisites; subsequent builds use the cache.
+First build downloads prerequisites; subsequent builds use the cache. Each download is pinned to a version-specific URL and a SHA-256 digest carried in msis, checked after the download and again on every reuse of the cached file; a cached file that stopped matching is replaced, and a download that does not match refuses the build. `msis /STATUS` shows the cache with each file's verification result. Details, and the reasoning behind pinning rather than fetching "latest", are in the [prerequisites guide](prerequisites.md#integrity-pinned-url-and-digest).
 
 ### Manual Prerequisite Files (Legacy)
 

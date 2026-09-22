@@ -168,3 +168,60 @@ tracked as [#46](https://github.com/gersonkurz/msis/issues/46).
 on `<registry>`, or a per-value marker — so that msis could escape on the author's say-so
 rather than guess; or evidence that no production package uses a mid-string reference
 deliberately.
+
+## D5 — Prerequisite downloads are pinned to a version-specific URL and SHA-256, not fetched "latest"
+
+**Settled in:** [#30](https://github.com/gersonkurz/msis/issues/30), 2026-09-22, product owner's
+decision between three options put to them.
+**Implemented by:** `internal/prereqcache/cache.go` — `download.visualstudio.microsoft.com/download/pr/`, `if err := verifyHash(destPath, urlInfo.SHA256); err == nil {`, `verifyHash(tempPath, urlInfo.SHA256)`
+
+Until #30, msis fetched Microsoft's VC++ and .NET Framework redistributables, chained them into
+customer bundles, and never checked what it got: no entry in `DownloadURLs` carried a digest,
+and `EnsurePrerequisite` returned a cached file before the verification branch was reached at
+all. The cache lives in `%LOCALAPPDATA%`, writable by the user and by anything running as them.
+
+Three ways to get a trusted digest were weighed:
+
+1. **Pin a version-specific URL and its SHA-256 in msis; verify on download and on every reuse.**
+   Chosen.
+2. **Keep the mutable `aka.ms` links and verify the Authenticode signature** (WinVerifyTrust,
+   signer Microsoft Corporation). New releases would flow automatically. Windows-only; a
+   substituted file that is *also* Microsoft-signed would pass; and two machines building the
+   same msis release could chain different bytes.
+3. **Both.** The widest net and the most code.
+
+Why pinning: the `aka.ms` and `fwlink` URLs are mutable by design — the same URL serves a new
+redistributable when one ships — so a digest recorded against one disagrees with it sooner or
+later, and "verify against a pinned hash" and "follow latest" cannot both hold. Pinning makes the
+prerequisite bytes a function of the msis release: reproducible across machines, and exactly what
+the SBOM (#34) records as the payload's digest. It needs no Windows API, so it verifies on every
+platform msis builds on. The cost is staleness: a newer redistributable reaches bundles through
+an msis release that re-pins, or through `<requires source=...>`, which remains unverified because
+msis has no digest for a file the author supplied.
+
+Where the digests came from, since Microsoft publishes no digest list for these files: each of
+the eight was downloaded over TLS from the pinned URL on 2026-09-22, hashed, and its Authenticode
+signature checked (`Get-AuthenticodeSignature`: Valid, `CN=Microsoft Corporation`). The Visual
+Studio CDN URLs carry the file's SHA-256 in their path; every pinned digest equals that segment,
+and `TestEveryDownloadIsPinned` requires it to. So the pin is Microsoft's statement of the
+digest, confirmed against the bytes and their signature — not a third party's attestation.
+
+The same probe found that the `fwlink`s for .NET 4.8.1 and 4.7.2 resolved to the 1.4 MB **web**
+installers while the cache named the files after the offline ones, so a bundle carried an
+installer that needs the network at install time. Pinning the offline installers' direct URLs
+fixed that as a side effect; `TestPinnedDownloadNamesMatchTheChainSources` keeps the cache's
+names and the chain's in step.
+
+Mismatch policy: a cached file that no longer matches is discarded and downloaded again, once; a
+download that does not match is deleted while it still has its temporary name and the build is
+refused with both digests. The two paths are executed by `TestTamperedCacheEntryIsReplaced`,
+`TestTamperedCacheAndBadDownloadRefuseTheBuild` and `TestCorruptDownloadNeverLandsInTheCache`.
+The temporary file is created exclusively, per download (`os.CreateTemp`), because a fixed
+`<name>.download` path let two concurrent builds share it, and the one that had verified its
+own bytes could publish the other's unchecked ones — found in review, executed by
+`TestConcurrentDownloadsUseSeparateTemporaryFiles`.
+
+**What would reopen this:** Microsoft publishing a signed digest manifest msis could fetch; a
+requirement to follow the latest redistributable automatically (then option 2 or 3, with the
+reproducibility cost stated); or a `sha256=` attribute on `<requires source=...>` so that a
+supplied file can be verified too.

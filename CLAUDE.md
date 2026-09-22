@@ -53,7 +53,7 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `generator` | IR → WiX XML fragments. `Context` carries all generation state. |
 | `requirements` | Standalone-MSI launch conditions (RegistrySearch) for `<requires>` runtimes. |
 | `bundle` | Burn bootstrapper chain generation; prerequisite registry (VC++, .NET versions). |
-| `prereqcache` | Downloads/caches prerequisite installers in `%LOCALAPPDATA%\msis\prerequisites\`. |
+| `prereqcache` | Downloads/caches prerequisite installers in `%LOCALAPPDATA%\msis\prerequisites\`. Every download is pinned to a version-specific URL and SHA-256 (D5, #30), verified after download and on every cache reuse; `source=` files are the one unverified path. |
 | `template` | Renders Handlebars (`raymond`) templates from `templates/`, with a custom-templates overlay. |
 | `wix` | `wix build` invocation, EULA acceptance, version/extension detection, artifact cleanup. |
 | `cli` | ANSI color helpers (respects `NO_COLOR` and `/NO-COLOR`). |
