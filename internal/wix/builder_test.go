@@ -20,8 +20,10 @@ func TestNewBuilder(t *testing.T) {
 	if b.WxsFile != "test.wxs" {
 		t.Errorf("WxsFile = %q, want %q", b.WxsFile, "test.wxs")
 	}
-	if b.OutputFile != "output.msi" {
-		t.Errorf("OutputFile = %q, want %q", b.OutputFile, "output.msi")
+	// OutputFile is absolute since #41: a relative BUILD_TARGET is resolved against the
+	// process working directory once, and every consumer reads that one value.
+	if want := mustAbs(t, "output.msi"); b.OutputFile != want {
+		t.Errorf("OutputFile = %q, want %q", b.OutputFile, want)
 	}
 	if b.Platform != "x64" {
 		t.Errorf("Platform = %q, want %q", b.Platform, "x64")
@@ -323,10 +325,11 @@ func TestNewBundleBuilderOutputFile(t *testing.T) {
 		t.Errorf("default OutputFile = %q, want %q", b.OutputFile, want)
 	}
 
-	// BUILD_TARGET wins, and keeps its full version even without an extension.
+	// BUILD_TARGET wins, and keeps its full version even without an extension. A relative
+	// target is resolved against the process working directory, once (#41, D6).
 	vars["BUILD_TARGET"] = "out/Probe-1.0.0"
 	b = NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
-	if want := "out/Probe-1.0.0.exe"; b.OutputFile != want {
+	if want := mustAbs(t, "out/Probe-1.0.0.exe"); b.OutputFile != want {
 		t.Errorf("BUILD_TARGET OutputFile = %q, want %q", b.OutputFile, want)
 	}
 
@@ -334,9 +337,20 @@ func TestNewBundleBuilderOutputFile(t *testing.T) {
 	// names a .msi; the bundle beside it must keep being "<same name>.exe", version and all.
 	vars["BUILD_TARGET"] = "out/Probe-1.0.0.msi"
 	b = NewBundleBuilder(vars, filepath.Join(dir, "probe-bundle.wxs"), "", "", dir, false)
-	if want := "out/Probe-1.0.0.exe"; b.OutputFile != want {
+	if want := mustAbs(t, "out/Probe-1.0.0.exe"); b.OutputFile != want {
 		t.Errorf("BUILD_TARGET .msi OutputFile = %q, want %q", b.OutputFile, want)
 	}
+}
+
+// mustAbs is what a relative output resolves to: the process working directory, at the moment
+// the builder is constructed.
+func mustAbs(t *testing.T, p string) string {
+	t.Helper()
+	a, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
 }
 
 // TestTargetPathRenamesExtension covers issue #28: BUILD_TARGET is a name pattern, so every
@@ -374,8 +388,9 @@ func TestNewBuilderMsiOutputFromBuildTarget(t *testing.T) {
 	for _, c := range cases {
 		vars := variables.New()
 		vars["BUILD_TARGET"] = c.target
-		if got := NewBuilder(vars, "probe.wxs", "", "", "", false).OutputFile; got != c.want {
-			t.Errorf("BUILD_TARGET %q -> OutputFile %q, want %q", c.target, got, c.want)
+		want := mustAbs(t, c.want) // relative targets resolve against the working directory (#41)
+		if got := NewBuilder(vars, "probe.wxs", "", "", "", false).OutputFile; got != want {
+			t.Errorf("BUILD_TARGET %q -> OutputFile %q, want %q", c.target, got, want)
 		}
 	}
 
@@ -417,5 +432,132 @@ func TestDefaultOutputKeepsWholeSourceStem(t *testing.T) {
 		if want := filepath.Join(dir, c.wantExe); got != want {
 			t.Errorf("NewBundleBuilder(%q).OutputFile = %q, want %q", c.wxs, got, want)
 		}
+	}
+}
+
+// --- #41: the overwrite check and the build must mean the same file ------------------------
+
+// outputArg returns the value wix is given for -o.
+func outputArg(t *testing.T, args []string) string {
+	t.Helper()
+	for i, a := range args {
+		if a == "-o" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	t.Fatalf("no -o in %v", args)
+	return ""
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// TestOverwriteCheckRemovesOnlyTheFileTheBuildWrites is the reviewer's example from #41,
+// executed. Bundle target `dist\setup.exe`, .wxs at `dist\setup-bundle.wxs`: the old check
+// joined the target onto the .wxs directory and deleted `dist\dist\setup.exe` — a file the build
+// never writes — while the stale `dist\setup.exe` the build DOES overwrite was left alone. A
+// sentinel sits where the old code deleted; it must survive, the real stale output must go, and
+// the `-o` handed to wix must be the very path that was checked.
+func TestOverwriteCheckRemovesOnlyTheFileTheBuildWrites(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	sentinel := filepath.Join(cwd, "dist", "dist", "setup.exe")
+	stale := filepath.Join(cwd, "dist", "setup.exe")
+	for _, p := range []string{sentinel, stale} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Inputs are built with filepath.Join so the test means the same thing on every platform:
+	// on Windows this is the reviewer's literal `dist\setup.exe`; on Unix a backslash is not a
+	// separator and a literal one would name a file called "dist\setup.exe" in the cwd.
+	vars := variables.New()
+	vars["BUILD_TARGET"] = filepath.Join("dist", "setup.exe")
+	b := NewBundleBuilder(vars, filepath.Join("dist", "setup-bundle.wxs"), "", "", filepath.Join(cwd, "src"), false)
+
+	if b.OutputFile != stale {
+		t.Fatalf("OutputFile = %q, want the cwd-relative %q", b.OutputFile, stale)
+	}
+	_, args := b.buildArgs()
+	if got := outputArg(t, args); got != b.OutputFile {
+		t.Errorf("wix -o %q, but the overwrite check uses %q", got, b.OutputFile)
+	}
+
+	if err := checkOutputWritable(b.OutputFile); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(sentinel) {
+		t.Errorf("%s was deleted; the build writes %s, not this", sentinel, b.OutputFile)
+	}
+	if exists(stale) {
+		t.Errorf("the stale output %s was not removed before the build", stale)
+	}
+}
+
+// The MSI builder had the same defect against a different base: it joined a relative target onto
+// the .msis directory. Target `out\app.msi` with the script in `src\`: the old check deleted
+// `src\out\app.msi`; the build writes `out\app.msi` under the working directory.
+func TestMsiOverwriteCheckResolvesLikeTheBuild(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	sourceDir := filepath.Join(cwd, "src")
+
+	sentinel := filepath.Join(sourceDir, "out", "app.msi")
+	stale := filepath.Join(cwd, "out", "app.msi")
+	for _, p := range []string{sentinel, stale} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	vars := variables.New()
+	vars["BUILD_TARGET"] = filepath.Join("out", "app.msi")
+	b := NewBuilder(vars, filepath.Join("out", "app.wxs"), "", "", sourceDir, false)
+
+	if b.OutputFile != stale {
+		t.Fatalf("OutputFile = %q, want the cwd-relative %q", b.OutputFile, stale)
+	}
+	_, args := b.buildArgs()
+	if got := outputArg(t, args); got != b.OutputFile {
+		t.Errorf("wix -o %q, but the overwrite check uses %q", got, b.OutputFile)
+	}
+
+	if err := checkOutputWritable(b.OutputFile); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(sentinel) {
+		t.Errorf("%s was deleted; the build writes %s, not this", sentinel, b.OutputFile)
+	}
+	if exists(stale) {
+		t.Errorf("the stale output %s was not removed before the build", stale)
+	}
+}
+
+// The resolution happens once, at construction. A later change of directory — msis does not
+// make one, but nothing should depend on that — must not move the output between the check and
+// the build.
+func TestOutputIsResolvedAtConstructionNotAtUse(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	t.Chdir(first)
+
+	vars := variables.New()
+	vars["BUILD_TARGET"] = filepath.Join("dist", "setup.exe")
+	b := NewBundleBuilder(vars, filepath.Join("dist", "setup-bundle.wxs"), "", "", first, false)
+
+	t.Chdir(second)
+	_, args := b.buildArgs()
+	if want := filepath.Join(first, "dist", "setup.exe"); outputArg(t, args) != want || b.OutputFile != want {
+		t.Errorf("-o %q / OutputFile %q after chdir, want %q", outputArg(t, args), b.OutputFile, want)
 	}
 }

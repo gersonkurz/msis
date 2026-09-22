@@ -225,3 +225,44 @@ own bytes could publish the other's unchecked ones — found in review, executed
 requirement to follow the latest redistributable automatically (then option 2 or 3, with the
 reproducibility cost stated); or a `sha256=` attribute on `<requires source=...>` so that a
 supplied file can be verified too.
+
+## D6 — A relative `BUILD_TARGET` resolves against the process working directory, once
+
+**Settled in:** [#41](https://github.com/gersonkurz/msis/issues/41), 2026-09-22, product owner's
+decision between the two bases.
+**Implemented by:** `internal/wix/builder.go` — `func absPath(`, `checkOutputWritable(b.OutputFile)`, `outputArgs(b.OutputFile)`
+
+`BUILD_TARGET` is a name pattern (#28) whose directory and stem every artifact shares. When it is
+relative, something has to say relative to WHAT — and before #41 the code said two different
+things. The `.wxs` was written and `wix build -o` was given the value resolved against the
+process working directory; the pre-build overwrite check resolved the same value against the
+`.msis` directory (MSI) or the `.wxs` directory (bundle), and then deleted what it had resolved.
+For a bundle target `dist\setup.exe` whose `.wxs` sits at `dist\setup-bundle.wxs`, that check
+removed `dist\dist\setup.exe` while the build wrote `dist\setup.exe` — a file the build was never
+going to touch, gone, and the actual stale output left in place to be silently overwritten.
+
+Two bases were possible, and the choice is user-visible because it decides where artifacts land
+for anyone who runs msis from a directory other than the script's:
+
+1. **The process working directory** — where the artifacts have effectively always landed in
+   msis 3, what the docs promised ("a `BUILD_TARGET` still lands where it always did", written for
+   #27), and what the review finding that became #41 asked to retain. Chosen.
+2. **The `.msis` directory** — msis-2.x parity: `BuildContext` called
+   `Directory.SetCurrentDirectory(WorkingDirectory)` before building, so a relative target
+   landed beside the script there. It is also what the no-`BUILD_TARGET` default does. Rejected
+   as a behaviour change for existing msis 3 users, with no defect it fixes that option 1 does
+   not; the parity gap is documented instead (`docs/Bundle.md`).
+
+The implementation is one resolution, at construction: `Builder.OutputFile` and
+`BundleBuilder.OutputFile` are absolute, and the overwrite check, the `-o` handed to `wix`, the
+`.wixpdb` cleanup and the "Built:" line main prints all read that one value. There is no second
+place that resolves the path, so there is nothing to drift.
+`TestOverwriteCheckRemovesOnlyTheFileTheBuildWrites` executes the reviewer's example with a
+sentinel file where the old code deleted, and asserts the `-o` argument equals the path checked.
+
+`just release` and `just release-all` run msis from `bootstrap/`, where the two bases coincide,
+so the release recipes were never affected.
+
+**What would reopen this:** a decision that msis 3 should match msis-2.x's directory change
+(then also the `.wxs` moves beside the script, and the docs and this entry are rewritten), or an
+explicit `/OUTDIR`-style flag that makes the base a stated choice rather than an implicit one.

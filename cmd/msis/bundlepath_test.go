@@ -81,8 +81,10 @@ func TestBundleFileWxsDefaultsBesideSource(t *testing.T) {
 	if got, want := bundleBaseName(filename, vars), `dist\probe-1.0.0-setup`; got != want {
 		t.Errorf("bundleBaseName with BUILD_TARGET = %q, want %q", got, want)
 	}
+	// The builder resolves a relative target against the process working directory, once
+	// (#41, D6), so the value it holds is absolute.
 	b = wix.NewBundleBuilder(vars, bundleWxsPath(bundleBaseName(filename, vars)), "", "", dir, false)
-	if want := `dist\probe-1.0.0-setup.exe`; b.OutputFile != want {
+	if want := mustAbs(t, `dist\probe-1.0.0-setup.exe`); b.OutputFile != want {
 		t.Errorf("OutputFile = %q, want %q", b.OutputFile, want)
 	}
 
@@ -92,7 +94,16 @@ func TestBundleFileWxsDefaultsBesideSource(t *testing.T) {
 		t.Errorf("bundleBaseName with a .msi BUILD_TARGET = %q, want %q", got, want)
 	}
 	b = wix.NewBundleBuilder(vars, bundleWxsPath(bundleBaseName(filename, vars)), "", "", dir, false)
-	if want := `dist\probe-1.0.0.exe`; b.OutputFile != want {
+	if want := mustAbs(t, `dist\probe-1.0.0.exe`); b.OutputFile != want {
 		t.Errorf("OutputFile = %q, want %q", b.OutputFile, want)
 	}
+}
+
+func mustAbs(t *testing.T, p string) string {
+	t.Helper()
+	a, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
 }

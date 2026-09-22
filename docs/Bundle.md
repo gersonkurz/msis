@@ -283,6 +283,15 @@ ending in `.exe` or `.msi`, this repo's own release among them, produce the same
 before. A `BUILD_TARGET` with *no* extension is the one case that changes: it now keeps its full
 version, so `MyApp-1.0.0` yields `MyApp-1.0.0.exe` where it used to yield `MyApp-1.0.exe`.
 
+**A relative `BUILD_TARGET` resolves against the directory msis is run from**, not against the
+`.msis` file's directory: `dist\setup.exe` means `<current directory>\dist\setup.exe`, and the
+`.wxs`, `.msi` and `.exe` all go there. (msis-2.x changed into the `.msis` directory before
+building, so there a relative target landed beside the script; msis 3 does not change directory.
+Settled as D6 in `docs/decisions.md`.) Before #41 the check that removes a stale output before
+the build resolved the same relative value against a different base and could delete a file the
+build was never going to write; every consumer of the output path now reads one absolute value.
+Run msis from the directory the target is meant to be relative to, or give an absolute target.
+
 ## Silent vs UI Bundles
 
 ### UI Bundle (Default)

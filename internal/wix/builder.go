@@ -15,7 +15,11 @@ import (
 
 // Builder handles WiX CLI invocation for MSI generation.
 type Builder struct {
-	WxsFile         string
+	WxsFile string
+	// OutputFile is ABSOLUTE, resolved once at construction against the process working
+	// directory (see absPath). Everything that touches the output — the overwrite check, the
+	// `-o` handed to wix, cleanup, the "Built:" line main prints — reads this one value, so
+	// they cannot disagree about which file is meant (#41).
 	OutputFile      string
 	Platform        string
 	Language        string
@@ -45,7 +49,7 @@ func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTempla
 
 	return &Builder{
 		WxsFile:         wxsFile,
-		OutputFile:      outputFile,
+		OutputFile:      absPath(outputFile),
 		Platform:        vars.Platform(),
 		Language:        vars["LANGUAGE"],
 		TemplateFolder:  templateFolder,
@@ -58,8 +62,7 @@ func NewBuilder(vars variables.Dictionary, wxsFile, templateFolder, customTempla
 
 // Build invokes WiX CLI to compile the WXS into an MSI.
 func (b *Builder) Build() error {
-	// Check if output file exists and can be overwritten
-	if err := b.checkOutputWritable(); err != nil {
+	if err := checkOutputWritable(b.OutputFile); err != nil {
 		return err
 	}
 
@@ -68,31 +71,57 @@ func (b *Builder) Build() error {
 		return fmt.Errorf("wix build: %w", err)
 	}
 
-	// Cleanup
 	b.cleanup()
-
 	return nil
 }
 
-// checkOutputWritable checks if the output file can be written to.
-// If the file exists, tries to delete it to ensure it's not locked.
-func (b *Builder) checkOutputWritable() error {
-	outputPath := b.OutputFile
-	if !filepath.IsAbs(outputPath) {
-		outputPath = filepath.Join(b.SourceDir, outputPath)
+// absPath resolves a path against the process working directory, once, at construction.
+//
+// A relative BUILD_TARGET is deliberately cwd-relative (decisions D6): that is where the .wxs is
+// written and where `wix build` puts `-o`, so it is where the artifact has always landed. What
+// went wrong before #41 was that the pre-delete resolved the same relative value against a
+// DIFFERENT base — the .msis directory for the MSI, the .wxs directory for the bundle — and so
+// checked, and removed, a file the build was never going to write: for a bundle target
+// `dist\setup.exe` with its .wxs at `dist\setup-bundle.wxs`, it deleted `dist\dist\setup.exe`.
+// Resolving once and reading the one value everywhere is what rules that out.
+func absPath(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		return a
 	}
+	return p
+}
 
-	// Check if file exists
+// checkOutputWritable removes an existing output so a locked file is found before the build
+// rather than as a wix error at the end. outputPath is the ABSOLUTE path the build will write
+// to — the builder's OutputFile — and nothing is re-resolved here.
+func checkOutputWritable(outputPath string) error {
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		return nil // File doesn't exist, we're good
+		return nil
 	}
-
-	// File exists - try to delete it
 	if err := os.Remove(outputPath); err != nil {
 		return fmt.Errorf("cannot overwrite output file %s: file may be locked or in use by another process", outputPath)
 	}
-
 	return nil
+}
+
+// removeArtifacts deletes the .wixpdb wix leaves beside the output, and the .wxs unless it is
+// to be retained. Shared by both builders so their cleanup cannot drift.
+func removeArtifacts(outputFile, wxsFile string, retainWxs bool) {
+	wixpdb := strings.TrimSuffix(outputFile, filepath.Ext(outputFile)) + ".wixpdb"
+	if _, err := os.Stat(wixpdb); err == nil {
+		os.Remove(wixpdb)
+	}
+	if !retainWxs {
+		if _, err := os.Stat(wxsFile); err == nil {
+			os.Remove(wxsFile)
+		}
+	}
+}
+
+// outputArgs is the `-o` wix is given: the builder's OutputFile, verbatim. It exists as a
+// function so a test can hold the argument next to the path the overwrite check used.
+func outputArgs(outputFile string) []string {
+	return []string{"-o", outputFile}
 }
 
 // parseMajorVersion extracts the major version number from a WiX version
@@ -163,14 +192,20 @@ func bindPathArgs(workDir, sourceDir, customTemplates, templateFolder string) []
 
 // runWixBuild executes wix build command.
 func (b *Builder) runWixBuild() error {
-	// Convert paths to absolute for consistent resolution
-	absWxsFile, _ := filepath.Abs(b.WxsFile)
-	absOutputFile, _ := filepath.Abs(b.OutputFile)
-	workDir := filepath.Dir(absWxsFile)
+	workDir, args := b.buildArgs()
+	return runWix(workDir, args)
+}
+
+// buildArgs assembles the `wix build` invocation: the directory to run it from (the .wxs's,
+// so the .wxs is named bare) and the arguments. Separate from running it so a test can check
+// what wix is told without wix being present.
+func (b *Builder) buildArgs() (workDir string, args []string) {
+	absWxsFile := absPath(b.WxsFile)
+	workDir = filepath.Dir(absWxsFile)
 
 	// Build args - use just filename since we run from its directory
 	wxsFilename := filepath.Base(absWxsFile)
-	args := []string{"build", wxsFilename}
+	args = []string{"build", wxsFilename}
 
 	// Architecture
 	if b.Platform != "" {
@@ -196,9 +231,13 @@ func (b *Builder) runWixBuild() error {
 	// No PDB file (cleaner output)
 	args = append(args, "-pdbtype", "none")
 
-	// Output file - use absolute path
-	args = append(args, "-o", absOutputFile)
+	// Output file: the one absolute path the overwrite check already used
+	args = append(args, outputArgs(b.OutputFile)...)
+	return workDir, args
+}
 
+// runWix runs `wix` with the given arguments from workDir, streaming its output.
+func runWix(workDir string, args []string) error {
 	wixPath := GetWixPath()
 	fmt.Printf("  Running: %s %s\n", cli.Filename(wixPath), strings.Join(args, " "))
 
@@ -236,18 +275,7 @@ func (b *Builder) getLocalizationFile() string {
 
 // cleanup removes temporary files unless retention is requested.
 func (b *Builder) cleanup() {
-	// Remove .wixpdb if it exists
-	wixpdb := strings.TrimSuffix(b.OutputFile, filepath.Ext(b.OutputFile)) + ".wixpdb"
-	if _, err := os.Stat(wixpdb); err == nil {
-		os.Remove(wixpdb)
-	}
-
-	// Remove .wxs unless --retainwxs
-	if !b.RetainWxs {
-		if _, err := os.Stat(b.WxsFile); err == nil {
-			os.Remove(b.WxsFile)
-		}
-	}
+	removeArtifacts(b.OutputFile, b.WxsFile, b.RetainWxs)
 }
 
 // GetWixPath returns the path to the WiX 6 CLI.
@@ -313,7 +341,9 @@ func GetInstalledExtensions() []string {
 
 // BundleBuilder handles WiX CLI invocation for Bundle (bootstrapper) generation.
 type BundleBuilder struct {
-	WxsFile         string
+	WxsFile string
+	// OutputFile is ABSOLUTE, resolved once at construction against the process working
+	// directory — see Builder.OutputFile and absPath (#41).
 	OutputFile      string
 	TemplateFolder  string
 	CustomTemplates string
@@ -373,7 +403,7 @@ func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, custom
 
 	return &BundleBuilder{
 		WxsFile:         wxsFile,
-		OutputFile:      outputFile,
+		OutputFile:      absPath(outputFile),
 		TemplateFolder:  templateFolder,
 		CustomTemplates: customTemplates,
 		SourceDir:       sourceDir,
@@ -384,8 +414,7 @@ func NewBundleBuilder(vars variables.Dictionary, wxsFile, templateFolder, custom
 
 // Build invokes WiX CLI to compile the bundle WXS into an EXE.
 func (b *BundleBuilder) Build() error {
-	// Check if output file exists and can be overwritten
-	if err := b.checkOutputWritable(); err != nil {
+	if err := checkOutputWritable(b.OutputFile); err != nil {
 		return err
 	}
 
@@ -394,40 +423,23 @@ func (b *BundleBuilder) Build() error {
 		return fmt.Errorf("wix build: %w", err)
 	}
 
-	// Cleanup
 	b.cleanup()
-
-	return nil
-}
-
-// checkOutputWritable checks if the output file can be written to.
-func (b *BundleBuilder) checkOutputWritable() error {
-	outputPath := b.OutputFile
-	if !filepath.IsAbs(outputPath) {
-		outputPath = filepath.Join(filepath.Dir(b.WxsFile), outputPath)
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
-		return nil // File doesn't exist, we're good
-	}
-
-	// File exists - try to delete it
-	if err := os.Remove(outputPath); err != nil {
-		return fmt.Errorf("cannot overwrite output file %s: file may be locked or in use by another process", outputPath)
-	}
-
 	return nil
 }
 
 // runWixBuild executes wix build command for bundle.
 func (b *BundleBuilder) runWixBuild() error {
-	absWxsFile, _ := filepath.Abs(b.WxsFile)
-	absOutputFile, _ := filepath.Abs(b.OutputFile)
-	workDir := filepath.Dir(absWxsFile)
+	workDir, args := b.buildArgs()
+	return runWix(workDir, args)
+}
+
+// buildArgs assembles the bundle's `wix build` invocation; see Builder.buildArgs.
+func (b *BundleBuilder) buildArgs() (workDir string, args []string) {
+	absWxsFile := absPath(b.WxsFile)
+	workDir = filepath.Dir(absWxsFile)
 
 	wxsFilename := filepath.Base(absWxsFile)
-	args := []string{"build", wxsFilename}
+	args = []string{"build", wxsFilename}
 
 	// Bundle-specific extensions (see setup.go for the canonical list)
 	args = append(args, extArgs(bundleExtensions)...)
@@ -441,32 +453,12 @@ func (b *BundleBuilder) runWixBuild() error {
 	// No PDB file
 	args = append(args, "-pdbtype", "none")
 
-	// Output file
-	args = append(args, "-o", absOutputFile)
-
-	wixPath := GetWixPath()
-	fmt.Printf("  Running: %s %s\n", cli.Filename(wixPath), strings.Join(args, " "))
-
-	cmd := exec.Command(wixPath, args...)
-	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
+	// Output file: the one absolute path the overwrite check already used
+	args = append(args, outputArgs(b.OutputFile)...)
+	return workDir, args
 }
 
 // cleanup removes temporary files unless retention is requested.
 func (b *BundleBuilder) cleanup() {
-	// Remove .wixpdb if it exists
-	wixpdb := strings.TrimSuffix(b.OutputFile, filepath.Ext(b.OutputFile)) + ".wixpdb"
-	if _, err := os.Stat(wixpdb); err == nil {
-		os.Remove(wixpdb)
-	}
-
-	// Remove .wxs unless --retainwxs
-	if !b.RetainWxs {
-		if _, err := os.Stat(b.WxsFile); err == nil {
-			os.Remove(b.WxsFile)
-		}
-	}
+	removeArtifacts(b.OutputFile, b.WxsFile, b.RetainWxs)
 }
