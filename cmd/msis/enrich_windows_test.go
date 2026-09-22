@@ -861,16 +861,26 @@ func TestACachedPrerequisiteKeepsItsProvenanceThroughTheBuild(t *testing.T) {
 			found[compProp(c, "msis:prerequisite.arch")] = c
 		}
 	}
-	if len(found) == 0 {
-		t.Fatalf("no prerequisite was attributed; the record lost its provenance. Unresolved: %v",
-			allMetaProps(doc, "msis:build.unresolved"))
+	// The COMPLETE set, both ways (#45): an explicit <bundle> has no PLATFORM filter on its
+	// prerequisites, so it carries every architecture msis can download - exactly the set
+	// seedCache seeded. Iterating whatever the document happened to attribute would let one
+	// architecture's attribution vanish while another still passed.
+	for arch := range seeded {
+		if _, ok := found[arch]; !ok {
+			t.Errorf("architecture %q was seeded and carried but is not attributed in the document. Unresolved: %v",
+				arch, allMetaProps(doc, "msis:build.unresolved"))
+		}
+	}
+	for arch := range found {
+		if _, ok := seeded[arch]; !ok {
+			t.Errorf("the document claims architecture %q, which was never seeded", arch)
+		}
+	}
+	if len(found) != len(seeded) {
+		t.Fatalf("%d architecture(s) attributed, want %d (%v)", len(found), len(seeded), seeded)
 	}
 	for arch, c := range found {
-		path, ok := seeded[arch]
-		if !ok {
-			t.Errorf("the document claims architecture %q, which was never seeded", arch)
-			continue
-		}
+		path := seeded[arch]
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
