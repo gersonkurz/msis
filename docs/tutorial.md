@@ -233,17 +233,63 @@ Windows Registry Editor Version 5.00
 "MaxConnections"=dword:00000010
 ```
 
-### Using Variables in Registry Values
+### Using Install-Time Properties in Registry Values
 
-You can reference msis variables in your `.reg` file using `$$VAR$$` syntax:
+A string value in your `.reg` file can refer to a Windows Installer property, so it is filled
+in on the user's machine rather than at build time:
 
 ```
 [HKEY_LOCAL_MACHINE\SOFTWARE\MyCompany\MyApp]
-"InstallPath"="$$INSTALLDIR$$"
-"Version"="$$PRODUCT_VERSION$$"
+"InstallPath"="[INSTALLDIR]"
+"Executable"="[INSTALLDIR]MyApp.exe"
+"Version"="[ProductVersion]"
 ```
 
-These get expanded when the installer runs, so `InstallPath` correctly reflects where the user chose to install.
+`[INSTALLDIR]` becomes the folder the user chose, trailing backslash included — so there is
+no `\` between it and `MyApp.exe`. Any Windows Installer property works the same way.
+
+**msis variables are not expanded in `.reg` files.** Neither `{{PRODUCT_VERSION}}` nor the
+`$$PRODUCT_VERSION$$` form an earlier version of this page described reaches the registry as
+anything but literal text. msis-2.x expanded `{{VAR}}` here and msis 3 does not yet; that gap
+is [#46](https://github.com/gersonkurz/msis/issues/46). Until it is closed, use an install-time
+property as above, or have the application write the value itself.
+
+### Brackets: literal or formatted?
+
+The column Windows Installer writes a string value from is a *Formatted* field. That gives
+brackets a meaning, and which meaning depends on how the value reaches the column.
+
+**A value written from your `.reg` file** — the default — is placed in that field exactly as
+you wrote it. msis escapes it for XML and changes nothing else. Windows Installer then:
+
+- substitutes `[NAME]` with the property `NAME`, or with nothing if there is no such property:
+  `a[Foo]b` installs as `ab`;
+- reads `[~]` as the REG_MULTI_SZ separator: `a[~]b` installs as a **multi-string** of `a` and
+  `b`. The value changes type, and the install reports success;
+- resolves `[\c]` to the character `c`. To install a literal `[`, write `[\[]` — which in a
+  `.reg` file is spelled `"[\\[]"`, because `.reg` strings use `\\` for one backslash.
+  `"Pattern"="a[\\[]b"` installs as `a[b`. (Copying the MSI form `[\[]` into a `.reg` file
+  does not work: the parser reads `\[` as an escaped `[`, and `a[[]b` is what msis emits.)
+
+The first two were measured on a real install while fixing #11. A leading `#` is a type
+marker in the same column; WiX escapes it for a value written this way, and msis doubles it
+for a preserved one, so `"Colour"="#FF0000"` installs as written either way (#11).
+
+**A preserved value** — `preserve="yes"`, and a type preservation covers — takes another
+route. It is written through a property, and Windows Installer inserts the property's content
+without a second formatting pass. Its brackets survive as written: `a[Foo]b` installs as
+`a[Foo]b` (measured, #11). By the same mechanism an escape would survive too, so do **not**
+write `[\[]` in a value that will be preserved: `[\[]` is what would land. That last case is
+inferred from the measured one rather than installed separately; `todo-testme.md` T8 is the
+procedure that would settle it.
+
+**A value that starts with `[`** is the intentional property reference from the previous
+section. It is never preserved and always formatted.
+
+msis warns at build time about a non-preserved string containing an unescaped `[...]` or a
+`[~]`, naming the value and the remedy. It does not rewrite the value: `[` legitimately means
+two different things, and only you know which. That decision is recorded as D4 in
+`docs/decisions.md`.
 
 ### Registry Value Types
 
@@ -353,7 +399,9 @@ Three value types are never preserved, each for a reason covered above: [QWORDs]
 written from your `.reg` file.
 
 A value whose `.reg` content starts with `[` is also written as-is, because it is an MSI
-Formatted expression such as `[INSTALLDIR]` that has to be resolved at install time.
+Formatted expression such as `[INSTALLDIR]` that has to be resolved at install time. What
+that means for brackets in preserved and non-preserved values is under
+[Brackets: literal or formatted?](#brackets-literal-or-formatted) above.
 
 ### Deleting Registry Keys
 

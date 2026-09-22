@@ -119,3 +119,52 @@ file and let the application write its own default on first run.
 
 **What would reopen this:** a second CA binary that is not opt-in, or evidence that MSI can carry
 the distinction after all.
+
+## D4 — A `.reg` string value is an MSI Formatted field, and msis does not transform it
+
+**Settled in:** [#14](https://github.com/gersonkurz/msis/issues/14), closed 2026-09-18 (`239dcd7`),
+which records the product owner's decision; the contract itself was documented and covered
+under [#38](https://github.com/gersonkurz/msis/issues/38).
+**Implemented by:** `internal/registry/registry.go` — `escapeXML(val.Value), val.Type, keyPathAttr`, `func (p *Processor) warnFormattedValues`
+
+The Registry table's `Value` column is a Formatted field, so a REG_SZ written from a `.reg`
+file is not written literally. Measured during the #11 probe: `a[Foo]b` installs as `ab`
+(the undefined property substitutes to nothing), and `a[~]b` installs as a `REG_MULTI_SZ` of
+`a` and `b` — the value **changes type**, and the install exits 0. A preserved value takes
+the other route, `[PS_RV_n]`, and its content is inserted without a second formatting pass:
+`a[Foo]b` installed as `a[Foo]b` in the same probe.
+
+What msis chose, faced with that: **emit the value verbatim (XML-escaped only) and warn.** The
+alternative — escaping brackets on the author's behalf — was rejected because `[` legitimately
+means two different things in a `.reg` string. `[INSTALLDIR]app.exe` is an install-time
+property reference, documented since msis-2.x and used by a large share of real packages;
+`a[Foo]b` may be a literal or may be a deliberate mid-string reference such as
+`Build [ProductVersion]`. Only the author knows which, and msis-2.x (the reference
+implementation) also wrote the value straight into the column
+(`msi-simplified/WxsItem/RegistryKey.cs`). Escaping only *mid-string* brackets would make the
+meaning of `[` depend on its position, and would break the deliberate mid-string form
+silently — the same class of harm in the other direction.
+
+So the contract is: a non-preserved string value is Formatted, and a literal bracket is the
+author's job (`[\[]`, spelled `[\\[]` in a `.reg` file). A preserved value is literal, and the
+escape must **not** be used there, because it would land verbatim. The build warns about a
+non-preserved string that contains an unescaped `[...]` or a `[~]`, and about nothing else: a
+value that starts with `[` is the documented reference form, and a warning that fires on it
+would train people to ignore the class.
+
+Documented for users in `docs/tutorial.md`, under *Brackets: literal or formatted?*, together
+with the `.reg` spelling trap (copying the MSI form `[\[]` into a `.reg` file yields `[[]`,
+because the parser reads `\[` as an escaped `[`). Emission is pinned by
+`TestFormattedContractValuesAreWrittenVerbatim` and
+`TestFormattedContractPreservedValuesBypassFormatting`; the warning's coverage by
+`TestWarnFormattedRegistryValues` and `TestWarnFormattedIgnoresEscapedBrackets`, all in
+`internal/registry/registry_test.go`.
+
+Related but separate: msis variables (`{{VAR}}`) are not expanded in `.reg` strings at build
+time either, where msis-2.x expanded them. That is a parity gap, not a decision, and is
+tracked as [#46](https://github.com/gersonkurz/msis/issues/46).
+
+**What would reopen this:** an authoring switch that declares a value literal — an attribute
+on `<registry>`, or a per-value marker — so that msis could escape on the author's say-so
+rather than guess; or evidence that no production package uses a mid-string reference
+deliberately.

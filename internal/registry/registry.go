@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -164,6 +165,21 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 // because it is a type marker rather than a property reference and is significant at
 // the start of a value too — "[~]a" would otherwise slip through the exemption while
 // silently installing as a multi-string.
+//
+// An MSI escape "[\c]" — a backslash and ONE character between brackets, which
+// Formatted resolves to that character — is the remedy this warning recommends, so
+// it is neutralised before the check: a value that reads "a[\[]b" has done what was
+// asked and installs as "a[b". Neutralised, not deleted: the escape is REPLACED by a
+// placeholder character, because deleting it would join its neighbours into a token
+// that is not there — "[INSTALLDIR][~[\x]]" minus its escape reads "[INSTALLDIR][~]"
+// and would be warned about as a multi-string, although Formatted resolves the inner
+// escape to "x" and no separator exists. The .reg spelling of that escape is "[\\[]", because a .reg
+// string uses "\\" for one backslash, and the remedy says so: an author who copies the
+// MSI form "[\[]" into a .reg file gets "a[[]b", because the parser reads "\[" as an
+// escaped "[" — and is then warned again, with the same advice, about the result.
+//
+// The contract this warning enforces the visible half of — a .reg string is an MSI
+// Formatted field and msis does not transform it — is docs/decisions.md D4.
 func (p *Processor) warnFormattedValues(key *RegistryKey, componentPreserved bool) {
 	for _, val := range key.Values {
 		if val.RemoveFlag || val.Type == "multiString" {
@@ -173,12 +189,13 @@ func (p *Processor) warnFormattedValues(key *RegistryKey, componentPreserved boo
 		if componentPreserved && preservable {
 			continue // written through a property; brackets survive
 		}
-		if !strings.ContainsAny(val.Value, "[]") {
+		unescaped := msiEscapedChar.ReplaceAllString(val.Value, escapePlaceholder)
+		if !strings.ContainsAny(unescaped, "[]") {
 			continue
 		}
 
-		multiSep := strings.Contains(val.Value, "[~]")
-		if !multiSep && strings.HasPrefix(val.Value, "[") {
+		multiSep := strings.Contains(unescaped, "[~]")
+		if !multiSep && strings.HasPrefix(unescaped, "[") {
 			continue
 		}
 
@@ -186,7 +203,7 @@ func (p *Processor) warnFormattedValues(key *RegistryKey, componentPreserved boo
 		if multiSep {
 			detail = "Windows Installer reads [~] as the REG_MULTI_SZ separator, so this will install as a multi-string"
 		}
-		remedy := "Escape a literal bracket as [\\[]."
+		remedy := `Escape a literal bracket as [\[], which in a .reg file is spelled [\\[].`
 		if !componentPreserved && preservable {
 			remedy += ` Setting preserve="yes" on the <registry> element also protects it, ` +
 				`because the value is then written through a property.`
@@ -198,6 +215,15 @@ func (p *Processor) warnFormattedValues(key *RegistryKey, componentPreserved boo
 		p.warnFormattedValues(sub, componentPreserved)
 	}
 }
+
+// msiEscapedChar matches the MSI Formatted escape "[\c]": a backslash and exactly one
+// character between brackets, which Windows Installer resolves to that character.
+var msiEscapedChar = regexp.MustCompile(`\[\\.\]`)
+
+// escapePlaceholder stands in for an escape during the warning check. It occupies the
+// escape's position so the text on either side stays apart, and is none of "[", "]" or
+// "~", so it can form no token of its own.
+const escapePlaceholder = "_"
 
 // displayValueName names a registry value for a diagnostic, including the unnamed
 // default value, which would otherwise print as an empty string.
@@ -821,7 +847,12 @@ func (p *Processor) generateRegistryValueXML(val *RegistryValue, key *RegistryKe
 		}
 		sb.WriteString(fmt.Sprintf("%s</RegistryValue>\n", indent))
 	} else {
-		// Simple value
+		// Simple value, written verbatim: XML-escaped and nothing else. The Registry
+		// table's Value column is an MSI Formatted field, so Windows Installer will
+		// substitute [Foo], split on [~] and resolve [\[] in whatever lands here. msis
+		// deliberately does not escape or rewrite on the author's behalf — "[" means
+		// two different things and only the author knows which (docs/decisions.md D4);
+		// warnFormattedValues reports the cases that will be reinterpreted.
 		sb.WriteString(fmt.Sprintf("%s<RegistryValue%s Value='%s' Type='%s'%s/>\n",
 			indent, nameAttr, escapeXML(val.Value), val.Type, keyPathAttr))
 	}

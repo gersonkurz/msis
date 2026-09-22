@@ -498,3 +498,57 @@ installing anything.
 Stop and reopen #3. Do not adjust the documentation to match — this is the failure mode that
 cost a customer their database once already.
 
+---
+
+## T8 — the `[\[]` escape in a `.reg` string: formatted when written directly, verbatim when preserved
+
+**Ticket:** [#38](https://github.com/gersonkurz/msis/issues/38); the contract is
+`docs/decisions.md` D4.
+
+### Why this is open
+
+The #11 probe measured the two things D4 rests on: a non-preserved `a[Foo]b` installs as
+`ab`, and a preserved `a[Foo]b` installs as `a[Foo]b` — the property's content is inserted
+without a second formatting pass. Two consequences follow from the same mechanism and are
+argued, not observed:
+
+1. a non-preserved `a[\[]b` installs as `a[b` (the escape is resolved);
+2. a preserved `a[\[]b` installs as `a[\[]b` (the escape lands verbatim) — the reason the
+   tutorial says not to escape in a value that will be preserved.
+
+Neither destroys anything, which is why they were not installed before documenting. But the
+tutorial gives both as fact-by-inference and says so; one run turns them into fact.
+
+### Setup
+
+`esc.reg` — in a `.reg` string `\\` is one backslash, so this is the MSI escape `[\[]`:
+
+```
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MsisEscapeProbe]
+"Escaped"="a[\\[]b"
+"MidRef"="a[Foo]b"
+```
+
+Two packages from the same file: one `<registry file="esc.reg"/>`, one with
+`preserve="yes"`. Build both; confirm the first emits `Value='a[\[]b'` and the second
+`<Property Id='PS_RV_00000' Value='a[\[]b' ...>` (the unit tests already pin this shape).
+Make sure `HKLM\SOFTWARE\MsisEscapeProbe` is absent, so the `.reg` default is what the
+preserved path writes.
+
+### Proof that closes this
+
+Install each **elevated**, read the key back (`reg query HKLM\SOFTWARE\MsisEscapeProbe`),
+uninstall between runs:
+
+| Package | `Escaped` | `MidRef` |
+|---|---|---|
+| direct | `a[b`, REG_SZ | `ab` (re-confirms #11) |
+| preserved | `a[\[]b`, REG_SZ | `a[Foo]b` (re-confirms #11) |
+
+If the direct row matches and the preserved row does not, the tutorial's "do not escape a
+preserved value" is wrong and D4's preserved-path paragraph needs rewriting — say what was
+observed. If the direct row does not match, the escape advice in the build warning is wrong,
+which is worse: fix `warnFormattedValues` and the tutorial together.
+

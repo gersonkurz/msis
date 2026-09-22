@@ -1256,3 +1256,140 @@ func TestWarnFormattedSkipsPreserved(t *testing.T) {
 		t.Errorf("a preserved value keeps its brackets, so must not warn, got: %v", w)
 	}
 }
+
+// TestFormattedContractValuesAreWrittenVerbatim pins the emission half of docs/decisions.md
+// D4 (#38): a non-preserved string value goes into RegistryValue/@Value exactly as the .reg
+// file has it — XML-escaped, and nothing else. Whatever Windows Installer then does with
+// its brackets (substitute [Foo], split on [~], resolve [\[]) is the documented contract;
+// msis neither escapes nor rewrites on the author's behalf. If this fails because emission
+// changed, D4 was reversed: rewrite the entry and say what changed.
+func TestFormattedContractValuesAreWrittenVerbatim(t *testing.T) {
+	// In a .reg string "\\" is one backslash, so "[\\[]" here is the MSI escape "[\[]".
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"MidRef"="a[Foo]b"
+"MultiSep"="a[~]b"
+"Escaped"="a[\\[]b"
+"Leading"="[INSTALLDIR]app.exe"
+"Quoted"="it's <a> & b"
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "v.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "v.reg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := proc.GenerateXML(components, false)
+
+	for _, want := range []string{
+		`Name='MidRef' Value='a[Foo]b' Type='string'`,
+		`Name='MultiSep' Value='a[~]b' Type='string'`,
+		`Name='Escaped' Value='a[\[]b' Type='string'`,
+		`Name='Leading' Value='[INSTALLDIR]app.exe' Type='string'`,
+		`Name='Quoted' Value='it&apos;s &lt;a&gt; &amp; b' Type='string'`,
+	} {
+		if !strings.Contains(xml, want) {
+			t.Errorf("expected the value written verbatim, %s, in:\n%s", want, xml)
+		}
+	}
+	if strings.Contains(xml, "PS_RV_") {
+		t.Errorf("a non-preserved component must not route values through properties:\n%s", xml)
+	}
+}
+
+// TestFormattedContractPreservedValuesBypassFormatting pins the other route in D4: a
+// preserved value is the PS_RV property's default, verbatim, and the RegistryValue is a
+// reference to that property. Windows Installer inserts the property's content without a
+// second formatting pass (measured in #11: a[Foo]b installed as a[Foo]b), so the brackets
+// in the default are what land — which is also why the [\[] escape must NOT be used in a
+// value that will be preserved. A value starting with "[" is excluded from preservation and
+// stays a formatted literal in the same component.
+func TestFormattedContractPreservedValuesBypassFormatting(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"MidRef"="a[Foo]b"
+"Leading"="[INSTALLDIR]app.exe"
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "p.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	components, err := proc.Process(ir.Registry{File: "p.reg", Preserve: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allIDs := proc.BuildAllPreservedIDs(components)
+	props := proc.GeneratePreservationXML(components, allIDs)
+	xml := proc.GenerateXMLWithPreservedIDs(components, false, allIDs)
+
+	if !strings.Contains(props, `<Property Id='PS_RV_00000' Value='a[Foo]b' Secure='yes'>`) {
+		t.Errorf("the preserved default must hold the .reg value verbatim, got:\n%s", props)
+	}
+	if !strings.Contains(xml, `Name='MidRef' Value='[PS_RV_00000]' Type='string'`) {
+		t.Errorf("the preserved value must be written through its property, got:\n%s", xml)
+	}
+	if !strings.Contains(xml, `Name='Leading' Value='[INSTALLDIR]app.exe' Type='string'`) {
+		t.Errorf("a leading-[ value is a property reference and stays literal, got:\n%s", xml)
+	}
+	if strings.Contains(props, "INSTALLDIR") {
+		t.Errorf("a leading-[ value must not be preserved, got:\n%s", props)
+	}
+}
+
+// TestWarnFormattedIgnoresEscapedBrackets: the escape the warning recommends must satisfy
+// it. "a[\[]b" — spelled "[\\[]" in the .reg file — installs as "a[b" and is no hazard;
+// "a[\[]b[Foo]" still is, because of the unescaped reference. And the remedy must name the
+// .reg spelling: an author who copies the MSI form "[\[]" into a .reg file gets "a[[]b",
+// because the parser reads "\[" as an escaped "[", and is then warned about the result.
+func TestWarnFormattedIgnoresEscapedBrackets(t *testing.T) {
+	content := `Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\MyApp]
+"Escaped"="a[\\[]b"
+"EscapedClose"="a[\\]]b"
+"HalfEscaped"="a[\\[]b[Foo]"
+"Wrong"="a[\[]b"
+"Nested"="[INSTALLDIR][~[\\x]]"
+"Joined"="a[~[\\x]]b"
+`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "e.reg"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	proc := NewProcessor(tmpDir, "")
+	if _, err := proc.Process(ir.Registry{File: "e.reg"}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(proc.Warnings(), "\n")
+
+	// The names are quoted in the message, so `"Escaped"` does not match "HalfEscaped".
+	if strings.Contains(joined, `"Escaped"`) || strings.Contains(joined, `"EscapedClose"`) {
+		t.Errorf("a properly escaped bracket must not warn, got: %s", joined)
+	}
+	if !strings.Contains(joined, `"HalfEscaped"`) {
+		t.Errorf("an unescaped reference next to an escaped bracket must still warn, got: %s", joined)
+	}
+	if !strings.Contains(joined, `"Wrong"`) || !strings.Contains(joined, `a[[]b`) {
+		t.Errorf("the MSI spelling copied into a .reg file yields a[[]b and must warn, got: %s", joined)
+	}
+	if !strings.Contains(joined, `[\\[]`) {
+		t.Errorf("the remedy must give the .reg spelling of the escape, got: %s", joined)
+	}
+	// Round-1 review finding: DELETING an escape joins its neighbours. "[INSTALLDIR][~[\x]]"
+	// minus its escape reads "[INSTALLDIR][~]" and was warned about as a multi-string,
+	// although Formatted resolves the inner escape to "x" and no separator exists. The
+	// escape is replaced by a placeholder instead, so the leading-reference exemption
+	// still applies to Nested, and nothing in this file is a REG_MULTI_SZ hazard.
+	if strings.Contains(joined, `"Nested"`) {
+		t.Errorf("an escape inside a leading reference must not manufacture a warning, got: %s", joined)
+	}
+	if strings.Contains(joined, "REG_MULTI_SZ") {
+		t.Errorf("no value here contains a real [~], so none may warn as a multi-string, got: %s", joined)
+	}
+}
