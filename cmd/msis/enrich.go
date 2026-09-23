@@ -133,13 +133,23 @@ func recordStandaloneRuntimes(rec *buildrecord.Record, reqs []ir.Requirement, ar
 // so guessing one would miss the others and mislabel the one it found; and a prerequisite the
 // script supplied itself has no cache entry at all, which is exactly the signal that it was
 // not downloaded.
+//
+// verified is the generator's account of which supplied sources it actually verified against
+// their sha256= (#50). The record is told THAT, not whether the attribute exists: a digest the
+// script carries but msis never checked - because the build was interrupted, or a future
+// caller recorded without ensuring - must not be published as "script-digest". Round-1 review
+// caught the attribute-presence shortcut.
 func recordPrerequisites(rec *buildrecord.Record, prereqs []ir.Prerequisite,
-	cached map[string]string) {
+	cached map[string]string, verified map[string]bool) {
 
 	for _, p := range prereqs {
 		// A source the script named: no download happened, so no download is claimed.
 		if p.Source != "" {
-			rec.AddPrerequisiteFromSource(p.Type, p.Version, p.Source)
+			digest := ""
+			if verified[p.Source] {
+				digest = p.SHA256
+			}
+			rec.AddPrerequisiteFromSource(p.Type, p.Version, p.Source, digest)
 			continue
 		}
 
@@ -282,7 +292,7 @@ func autoBundlePrereqs(reqs []ir.Requirement) ([]ir.Prerequisite, error) {
 // recordBundleSources is the explicit <bundle> contribution: the installers it chains, by the
 // source each was built from. A bundle artifact holds the packaged bytes and nothing about
 // where they came from, so this is the only place the association exists.
-func recordBundleSources(rec *buildrecord.Record, b *ir.Bundle, cached map[string]string) {
+func recordBundleSources(rec *buildrecord.Record, b *ir.Bundle, cached map[string]string, verified map[string]bool) {
 	if b == nil {
 		return
 	}
@@ -301,5 +311,5 @@ func recordBundleSources(rec *buildrecord.Record, b *ir.Bundle, cached map[strin
 	}
 	// Its prerequisites ship inside the bundle, so they are carried - the same category as
 	// an auto-bundle's, and a different one from a /STANDALONE launch condition.
-	recordPrerequisites(rec, b.Prerequisites, cached)
+	recordPrerequisites(rec, b.Prerequisites, cached, verified)
 }

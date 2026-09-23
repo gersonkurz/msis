@@ -288,17 +288,18 @@ const (
 	// glance which facts came from the artifact and which from the build that produced it -
 	// the two have different evidentiary weight and a document that mixed them silently
 	// would be claiming more than it can show.
-	propBuildPath       = "msis:build.path"
-	propBuildScript     = "msis:build.script"
-	propBuildTool       = "msis:build.tool"
-	propBuildSource     = "msis:build.source"
-	propBuildSourceRoot = "msis:build.sourceRoot"
-	propBuildUnresolved = "msis:build.unresolved"
-	propBuildCoverage   = "msis:build.coverage"
-	propPrereqType      = "msis:prerequisite.type"
-	propPrereqArch      = "msis:prerequisite.arch"
-	propPrereqCache     = "msis:prerequisite.cache"
-	propLaunchCondition = "msis:launchCondition"
+	propBuildPath          = "msis:build.path"
+	propBuildScript        = "msis:build.script"
+	propBuildTool          = "msis:build.tool"
+	propBuildSource        = "msis:build.source"
+	propBuildSourceRoot    = "msis:build.sourceRoot"
+	propBuildUnresolved    = "msis:build.unresolved"
+	propBuildCoverage      = "msis:build.coverage"
+	propPrereqType         = "msis:prerequisite.type"
+	propPrereqArch         = "msis:prerequisite.arch"
+	propPrereqCache        = "msis:prerequisite.cache"
+	propPrereqVerification = "msis:prerequisite.verification"
+	propLaunchCondition    = "msis:launchCondition"
 
 	// Composition of supplied documents (#36). propSuppliedFrom marks a component msis did
 	// not observe but received, which is both its provenance and the reason it may carry no

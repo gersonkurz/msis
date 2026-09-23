@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/ir"
@@ -150,6 +151,7 @@ type xmlPrerequisite struct {
 	Type    string `xml:"type,attr"`
 	Version string `xml:"version,attr"`
 	Source  string `xml:"source,attr"`
+	SHA256  string `xml:"sha256,attr"`
 }
 
 type xmlBundleMSI struct {
@@ -221,6 +223,29 @@ type xmlRequires struct {
 	Type    string `xml:"type,attr"`
 	Version string `xml:"version,attr"`
 	Source  string `xml:"source,attr"`
+	SHA256  string `xml:"sha256,attr"`
+}
+
+// sha256Hex is what a sha256= attribute must be once trimmed and lower-cased.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// checkSuppliedDigest validates a sha256= attribute on <requires> or <prerequisite> (#50) and
+// returns it normalised to lowercase. It belongs to a SUPPLIED source: a download msis performs
+// is pinned by msis itself (D5), so a digest without a source has nothing to apply to and is
+// refused rather than ignored - an attribute that is silently dropped is one the author
+// believes is protecting them.
+func checkSuppliedDigest(element, source, digest string) (string, error) {
+	if digest == "" {
+		return "", nil
+	}
+	if source == "" {
+		return "", fmt.Errorf("<%s> sha256 applies to a supplied source; a download msis performs is pinned by msis itself (see docs/prerequisites.md)", element)
+	}
+	norm := strings.ToLower(strings.TrimSpace(digest))
+	if !sha256Hex.MatchString(norm) {
+		return "", fmt.Errorf("<%s> sha256 must be 64 hexadecimal characters, got %q", element, digest)
+	}
+	return norm, nil
 }
 
 // UnmarshalXML for xmlSet - validates attributes
@@ -462,6 +487,8 @@ func (r *xmlRequires) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 			r.Version = attr.Value
 		case "source":
 			r.Source = attr.Value
+		case "sha256":
+			r.SHA256 = attr.Value
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <requires>", attr.Name.Local)
 		}
@@ -472,6 +499,11 @@ func (r *xmlRequires) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error
 	if r.Version == "" && r.Source == "" {
 		return fmt.Errorf("<requires> requires 'version' or 'source' attribute")
 	}
+	digest, err := checkSuppliedDigest("requires", r.Source, r.SHA256)
+	if err != nil {
+		return err
+	}
+	r.SHA256 = digest
 	return d.Skip()
 }
 
@@ -512,6 +544,11 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				if prereq.Version == "" && prereq.Source == "" {
 					return fmt.Errorf("<prerequisite> requires 'version' or 'source' attribute")
 				}
+				digest, err := checkSuppliedDigest("prerequisite", prereq.Source, prereq.SHA256)
+				if err != nil {
+					return err
+				}
+				prereq.SHA256 = digest
 				b.Prerequisites = append(b.Prerequisites, prereq)
 			case "msi":
 				var msi xmlBundleMSI
@@ -821,6 +858,7 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 			Type:    r.Type,
 			Version: r.Version,
 			Source:  r.Source,
+			SHA256:  r.SHA256,
 		})
 	}
 
@@ -864,6 +902,7 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 				Type:    p.Type,
 				Version: p.Version,
 				Source:  p.Source,
+				SHA256:  p.SHA256,
 			})
 		}
 

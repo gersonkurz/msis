@@ -204,10 +204,25 @@ For offline builds or custom installers, specify a `source` attribute:
 
 When `source` is specified:
 - No automatic download occurs
-- The specified file is used directly
-- You are responsible for providing the correct installer. msis does **not** verify it — it has
-  no digest to check a file of yours against — so check the download yourself (Microsoft's
-  installers carry an Authenticode signature; `Get-AuthenticodeSignature` in PowerShell shows it)
+- The specified file is used directly — the copy WiX will package, resolved the same way WiX
+  resolves it (the build directory first, then the `.msis` directory)
+- You are responsible for providing the correct installer, and you can have msis hold you to
+  it: add `sha256=` with the file's digest, and msis hashes the file before it is chained and
+  refuses the build on a mismatch, in the same words a pinned download uses. Without `sha256=`
+  the file is chained **unverified**, and the build says so in a warning — msis has no digest
+  of its own to check a file of yours against.
+
+```xml
+<requires type="vcredist" version="2015" source=".\redist\vc_redist.x64.exe"
+          sha256="6afae68a783f11292149175844aed0e2ce3f247bc0250f6cb18c931295b3f399"/>
+```
+
+Take the digest from a download you have checked yourself (Microsoft's installers carry an
+Authenticode signature; `Get-AuthenticodeSignature` in PowerShell shows it), for example with
+`Get-FileHash -Algorithm SHA256`. Either case works. `sha256=` is only meaningful with
+`source=`; on a download msis performs it is refused, because that download is pinned by msis
+already. The SBOM records which of the three cases a prerequisite was
+(`msis:prerequisite.verification`: `pinned-digest`, `script-digest` or `unverified`).
 
 ## Detection Logic
 

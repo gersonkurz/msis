@@ -31,6 +31,10 @@ type Requirement struct {
 	Type    string // vcredist, netfx
 	Version string // 2022, 4.8, etc.
 	Source  string // optional override path for offline/custom scenarios
+	// SHA256 is the digest the supplied Source must have, lowercase hex, or "" when the
+	// script gave none. A download msis performs is pinned by msis itself (D5); this is the
+	// author's pin for a file they supplied (#50).
+	SHA256 string
 }
 
 // Set represents a variable definition: <set name="..." value="..."/>
@@ -152,6 +156,7 @@ type Prerequisite struct {
 	Type    string // vcredist, netfx
 	Version string // 2022, 4.8, etc.
 	Source  string // optional override path
+	SHA256  string // digest the supplied Source must have, lowercase hex; "" when none given (#50)
 }
 
 // BundleMSI represents the main MSI package(s) in a bundle.

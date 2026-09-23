@@ -474,23 +474,30 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 	// Generate bundle chain
 	gen := bundle.NewAutoBundleGenerator(vars, workDir, msiPath, prereqs)
+	// A supplied <requires source=> is verified against the file WiX will bind (#50): the
+	// record's bind paths are WiX's, so the same lookup serves both.
+	gen.ResolveSource = rec.Locate
 
-	// Enable caching - download prerequisites if needed
+	// Enable caching - download prerequisites if needed. A cache that cannot be created is a
+	// warning, not a reason to skip the prerequisite step: EnsurePrerequisites also verifies
+	// supplied sources (#50), and that must run whether or not there is a cache to download
+	// into (round-1 review found it did not).
 	cache, err := prereqcache.NewCache()
 	if err != nil {
 		fmt.Printf("  %s: could not initialize prerequisite cache: %v\n", cli.Warning("Warning"), err)
 		fmt.Printf("  %s\n", cli.Info("Prerequisites will be expected in local 'prerequisites' folder"))
 	} else {
 		gen.SetCache(cache)
-
-		// Ensure all prerequisites are cached (download if needed)
-		fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
-		progress := func(msg string) {
-			fmt.Printf("    %s\n", cli.Info(msg))
-		}
-		if err := gen.EnsurePrerequisites(progress); err != nil {
-			return fmt.Errorf("ensuring prerequisites: %w", err)
-		}
+	}
+	fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
+	progress := func(msg string) {
+		fmt.Printf("    %s\n", cli.Info(msg))
+	}
+	if err := gen.EnsurePrerequisites(progress); err != nil {
+		return fmt.Errorf("ensuring prerequisites: %w", err)
+	}
+	for _, w := range gen.Warnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
 	}
 
 	bundleOutput, err := gen.Generate()
@@ -502,7 +509,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	// prerequisites are resolved after the MSI has already been built, so nothing earlier in
 	// the run could have recorded them. The cache lookup is read-only: whatever downloading
 	// was going to happen has already happened above.
-	recordPrerequisites(rec, prereqs, gen.CachedPaths)
+	recordPrerequisites(rec, prereqs, gen.CachedPaths, gen.VerifiedSources)
 	rec.AddChained("MsiPackage", msiPath)
 
 	fmt.Printf("  Auto-bundle: %s prerequisites + MSI\n", cli.Number(fmt.Sprintf("%d", len(prereqs))))
@@ -628,8 +635,13 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	rec := newBuildRecord(buildrecord.PathBundle, filename,
 		buildBindPaths(filepath.Dir(bundleWxsPath(bundleBaseName(filename, vars))),
 			workDir, customTemplates, templateFolder))
+	// A supplied <prerequisite source=> is verified against the file WiX will bind (#50): the
+	// record's bind paths are WiX's, so the same lookup serves both.
+	gen.ResolveSource = rec.Locate
 
-	// Enable caching if building (download prerequisites if needed)
+	// Enable caching if building (download prerequisites if needed). As in processAutoBundle,
+	// a cache that cannot be created does not skip the prerequisite step: supplied sources are
+	// verified there (#50), cache or no cache.
 	if args.build && len(setup.Bundle.Prerequisites) > 0 {
 		cache, err := prereqcache.NewCache()
 		if err != nil {
@@ -637,22 +649,23 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 			fmt.Printf("  %s\n", cli.Info("Prerequisites will be expected in local 'prerequisites' folder"))
 		} else {
 			gen.SetCache(cache)
-
-			// Ensure all prerequisites are cached (download if needed)
-			fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
-			progress := func(msg string) {
-				fmt.Printf("    %s\n", cli.Info(msg))
-			}
-			if err := gen.EnsurePrerequisites(progress); err != nil {
-				return fmt.Errorf("ensuring prerequisites: %w", err)
-			}
 		}
+		fmt.Printf("  %s\n", cli.Info("Checking prerequisites..."))
+		progress := func(msg string) {
+			fmt.Printf("    %s\n", cli.Info(msg))
+		}
+		if err := gen.EnsurePrerequisites(progress); err != nil {
+			return fmt.Errorf("ensuring prerequisites: %w", err)
+		}
+	}
+	for _, w := range gen.Warnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
 	}
 
 	// AFTER resolution, not before: CachedPaths is empty until EnsurePrerequisites has run,
 	// and recording first left every downloaded prerequisite with no architecture, no cache
 	// entry and no download URL - the provenance #34 exists to publish.
-	recordBundleSources(rec, setup.Bundle, gen.CachedPaths)
+	recordBundleSources(rec, setup.Bundle, gen.CachedPaths, gen.VerifiedSources)
 
 	bundleOutput, err := gen.Generate()
 	if err != nil {

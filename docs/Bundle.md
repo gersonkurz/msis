@@ -133,10 +133,15 @@ Override the folder with `PREREQUISITES_FOLDER`:
 
 Override the default source path for a specific prerequisite:
 ```xml
-<prerequisite type="vcredist" version="2022" source="C:\installers\vcredist.exe"/>
+<prerequisite type="vcredist" version="2022" source="C:\installers\vcredist.exe"
+              sha256="cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"/>
 ```
 
-When a custom source is provided, only a single ExePackage is emitted (you handle architecture selection).
+When a custom source is provided, only a single ExePackage is emitted (you handle architecture
+selection). A download msis performs is pinned and verified by msis (D5); a file you supply is
+verified only if you give its `sha256=` — then msis hashes the copy WiX will package and refuses
+the build on a mismatch. Without it the file is chained unverified, with a build warning. See
+[Custom/Offline Source](prerequisites.md#customoffline-source).
 
 ## MSI Packages
 

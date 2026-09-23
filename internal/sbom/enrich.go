@@ -180,6 +180,12 @@ func enrichPrerequisites(doc *Document, rec *buildrecord.Record) {
 		if p.Arch != "" {
 			c.Properties = append(c.Properties, Property{propPrereqArch, p.Arch})
 		}
+		// What the bytes were checked against before being chained (#50): a pin msis
+		// carries, the script's own sha256=, or nothing. The artifact cannot say this; only
+		// the build can, and a reader deciding how much to trust the chained installer needs it.
+		if p.Verification != "" {
+			c.Properties = append(c.Properties, Property{propPrereqVerification, p.Verification})
+		}
 	}
 }
 

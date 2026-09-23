@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,6 +31,22 @@ type Generator struct {
 	// CachedPaths maps "type/version/arch" to cached file paths.
 	// Populated by EnsurePrerequisites().
 	CachedPaths map[string]string
+
+	// ResolveSource locates a prerequisite the script supplied (<... source=.../>) the way
+	// WiX will bind it: through the build's bind paths in order. main sets it from the build
+	// record, so the file msis verifies is the file WiX packages. Nil resolves relative to
+	// WorkDir, the .msis directory, which is where a relative source has always been looked
+	// for by anyone reading the script.
+	ResolveSource func(source string) (path string, ok bool)
+
+	// Warnings gathers build-time diagnostics from EnsurePrerequisites for main to print -
+	// today, a supplied prerequisite without a sha256= to verify it against (#50).
+	Warnings []string
+
+	// VerifiedSources records, by the source as authored, every supplied prerequisite whose
+	// sha256= was checked and matched. The build record reads this rather than the attribute,
+	// so "script-digest" in the SBOM means the check RAN, not that the script carried a digest.
+	VerifiedSources map[string]bool
 }
 
 // NewGenerator creates a new bundle generator.
@@ -45,6 +62,7 @@ func NewGenerator(setup *ir.Setup, vars variables.Dictionary, workDir string) *G
 		WorkDir:             workDir,
 		PrerequisitesFolder: prereqFolder,
 		CachedPaths:         make(map[string]string),
+		VerifiedSources:     make(map[string]bool),
 	}
 }
 
@@ -134,9 +152,17 @@ func (g *Generator) EnsurePrerequisites(progress func(msg string)) error {
 
 // ensurePrerequisite ensures a single prerequisite is available.
 func (g *Generator) ensurePrerequisite(prereq ir.Prerequisite, platform string, progress func(msg string)) error {
-	// Custom source - no caching needed
+	// A source the script supplied: nothing to download, but the file is verified against
+	// the script's sha256= when there is one, and its absence is reported when there is not.
 	if prereq.Source != "" {
-		return nil
+		verified, warning, err := verifySupplied(prereq, g.ResolveSource, g.WorkDir, progress)
+		if warning != "" {
+			g.Warnings = append(g.Warnings, warning)
+		}
+		if verified {
+			g.VerifiedSources[prereq.Source] = true
+		}
+		return err
 	}
 
 	// No cache configured - expect files in PrerequisitesFolder
@@ -190,6 +216,60 @@ func (g *Generator) ensurePrerequisite(prereq ir.Prerequisite, platform string, 
 	}
 
 	return nil
+}
+
+// verifySupplied is the one path a script-supplied prerequisite takes before it is chained
+// (#50). Every download msis performs is pinned and verified (D5); a file the author supplied
+// was the one thing chained unverified. With a sha256= attribute the file is hashed and a
+// mismatch refuses the build, in the same words a pinned download uses. Without one the file
+// is used as before, and a warning says so - once per prerequisite - so the gap is visible
+// rather than silent.
+//
+// The file is located the way WiX will bind it (resolve, from the build's bind paths); a
+// digest computed on any other file would be a false assurance. Nil resolve means relative to
+// workDir, the .msis directory.
+//
+// verified is true only when a digest was present AND matched - what the build record is told,
+// so that the SBOM's "script-digest" means the check ran.
+func verifySupplied(prereq ir.Prerequisite, resolve func(string) (string, bool), workDir string, progress func(msg string)) (verified bool, warning string, err error) {
+	name := prereq.Type
+	if prereq.Version != "" {
+		name += " " + prereq.Version
+	}
+	if prereq.SHA256 == "" {
+		return false, fmt.Sprintf("prerequisite %s is supplied from %q without a sha256= attribute, so msis chains it unverified; "+
+			"add sha256=\"<digest>\" to have the file checked before it is packaged (docs/prerequisites.md, Custom/Offline Source)",
+			name, prereq.Source), nil
+	}
+
+	path, ok := locateSupplied(prereq.Source, resolve, workDir)
+	if !ok {
+		return false, "", fmt.Errorf("prerequisite %s: supplied source %q was not found, so it cannot be verified against its sha256=", name, prereq.Source)
+	}
+	if err := prereqcache.VerifyDigest(path, prereq.SHA256); err != nil {
+		return false, "", fmt.Errorf("prerequisite %s: supplied source %s does not match the sha256= in the script: %w. "+
+			"Either the file is not the one the script was written for, or the attribute is stale; msis does not chain a file it cannot verify",
+			name, path, err)
+	}
+	if progress != nil {
+		progress(fmt.Sprintf("Verified: %s (SHA-256 matches the script's sha256=)", filepath.Base(path)))
+	}
+	return true, "", nil
+}
+
+// locateSupplied finds a supplied source on disk: an absolute path as it is, a relative one
+// through resolve when main provided it, otherwise beside the .msis.
+func locateSupplied(source string, resolve func(string) (string, bool), workDir string) (string, bool) {
+	if filepath.IsAbs(source) {
+		_, err := os.Stat(source)
+		return source, err == nil
+	}
+	if resolve != nil {
+		return resolve(source)
+	}
+	path := filepath.Join(workDir, source)
+	_, err := os.Stat(path)
+	return path, err == nil
 }
 
 // GeneratedBundle holds the generated bundle XML fragments.
@@ -543,6 +623,22 @@ type AutoBundleGenerator struct {
 	// CachedPaths maps "type/version/arch" to cached file paths.
 	// Populated by EnsurePrerequisites().
 	CachedPaths map[string]string
+
+	// ResolveSource locates a prerequisite the script supplied (<... source=.../>) the way
+	// WiX will bind it: through the build's bind paths in order. main sets it from the build
+	// record, so the file msis verifies is the file WiX packages. Nil resolves relative to
+	// WorkDir, the .msis directory, which is where a relative source has always been looked
+	// for by anyone reading the script.
+	ResolveSource func(source string) (path string, ok bool)
+
+	// Warnings gathers build-time diagnostics from EnsurePrerequisites for main to print -
+	// today, a supplied prerequisite without a sha256= to verify it against (#50).
+	Warnings []string
+
+	// VerifiedSources records, by the source as authored, every supplied prerequisite whose
+	// sha256= was checked and matched. The build record reads this rather than the attribute,
+	// so "script-digest" in the SBOM means the check RAN, not that the script carried a digest.
+	VerifiedSources map[string]bool
 }
 
 // NewAutoBundleGenerator creates a generator for auto-bundling.
@@ -559,6 +655,7 @@ func NewAutoBundleGenerator(vars variables.Dictionary, workDir, msiPath string, 
 		Requirements:        requirements,
 		PrerequisitesFolder: prereqFolder,
 		CachedPaths:         make(map[string]string),
+		VerifiedSources:     make(map[string]bool),
 	}
 }
 
@@ -587,9 +684,17 @@ func (g *AutoBundleGenerator) EnsurePrerequisites(progress func(msg string)) err
 
 // ensurePrerequisite ensures a single prerequisite is available for auto-bundling.
 func (g *AutoBundleGenerator) ensurePrerequisite(prereq ir.Prerequisite, platform string, progress func(msg string)) error {
-	// Custom source - no caching needed
+	// A source the script supplied: nothing to download, but the file is verified against
+	// the script's sha256= when there is one, and its absence is reported when there is not.
 	if prereq.Source != "" {
-		return nil
+		verified, warning, err := verifySupplied(prereq, g.ResolveSource, g.WorkDir, progress)
+		if warning != "" {
+			g.Warnings = append(g.Warnings, warning)
+		}
+		if verified {
+			g.VerifiedSources[prereq.Source] = true
+		}
+		return err
 	}
 
 	// No cache configured - expect files in PrerequisitesFolder
@@ -700,6 +805,7 @@ func RequirementsToPrerequisites(requirements []ir.Requirement) ([]ir.Prerequisi
 			Type:    req.Type,
 			Version: version,
 			Source:  req.Source,
+			SHA256:  req.SHA256,
 		}
 	}
 	return prereqs, nil

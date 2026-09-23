@@ -117,7 +117,21 @@ type Prerequisite struct {
 	Source      string // an explicit <prerequisite source=>, relative to the .msis
 	Root        string // WHICH bind path that Source resolved in; see BindPath.Name
 	SHA256      string
+
+	// Verification says what the bytes were checked against before being chained (#50):
+	// VerifiedByPin for a download msis pinned (D5), VerifiedByScript for a supplied source
+	// whose sha256= matched, Unverified for a supplied source with no digest to check. A
+	// consumer reading the SBOM needs the distinction: the first two are evidence, the
+	// third is a file somebody put there.
+	Verification string
 }
+
+// Verification values.
+const (
+	VerifiedByPin    = "pinned-digest"
+	VerifiedByScript = "script-digest"
+	Unverified       = "unverified"
+)
 
 // Chained is an installer the bundle runs.
 type Chained struct {
@@ -228,6 +242,38 @@ func (r *Record) resolve(rel string) (root, sum string, ok bool) {
 	return "", "", false
 }
 
+// Locate returns the file a relative source resolves to, by the same bind-path order resolve
+// uses - which is WiX's order, so the file found here is the file WiX will package. An absolute
+// source is returned as it is when it exists. The bundle generators verify a supplied
+// prerequisite's sha256= against this path (#50); a digest computed on any other file would be
+// a false assurance.
+func (r *Record) Locate(source string) (string, bool) {
+	if filepath.IsAbs(source) {
+		_, err := os.Stat(source)
+		return source, err == nil
+	}
+	rel := filepath.FromSlash(source)
+	for _, bp := range r.bindPaths {
+		if bp.Dir == "" {
+			continue
+		}
+		if p := filepath.Join(bp.Dir, rel); fileExists(p) {
+			return p, true
+		}
+	}
+	if len(r.bindPaths) == 0 {
+		if p := filepath.Join(r.scriptDir, rel); fileExists(p) {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
 // AddTemplateBinary resolves a file the TEMPLATE names, through WiX's bind paths in order, and
 // records the one that would actually be used.
 //
@@ -266,8 +312,15 @@ func (r *Record) AddTemplateBinary(rel string) {
 // chained installer: WiX makes no distinction, so neither can the record. A prerequisite
 // shadowed by a copy in the WXS directory is packaged from THERE, and hashing the script
 // directory's copy would leave the one that shipped unattributed.
-func (r *Record) AddPrerequisiteFromSource(typ, version, source string) {
-	p := Prerequisite{Type: typ, Version: version, Carried: true}
+//
+// digest is the script's sha256= for the source, or "" when it gave none: it says whether the
+// bytes were verified before being chained (#50), which is a fact about the build the artifact
+// cannot carry. The recorded SHA256 stays the hash of what is actually on disk either way.
+func (r *Record) AddPrerequisiteFromSource(typ, version, source, digest string) {
+	p := Prerequisite{Type: typ, Version: version, Carried: true, Verification: Unverified}
+	if digest != "" {
+		p.Verification = VerifiedByScript
+	}
 
 	if filepath.IsAbs(source) {
 		p.Source = r.relative(source)
@@ -301,11 +354,12 @@ func (r *Record) AddPrerequisiteFromSource(typ, version, source string) {
 // architecture's digest to another, or look for an entry that is not there.
 func (r *Record) AddPrerequisiteFromCache(typ, version, arch, cachePath, url string) {
 	p := Prerequisite{
-		Type:        typ,
-		Version:     version,
-		Arch:        arch,
-		Carried:     true,
-		DownloadURL: url,
+		Type:         typ,
+		Version:      version,
+		Arch:         arch,
+		Carried:      true,
+		DownloadURL:  url,
+		Verification: VerifiedByPin, // a cached file is one EnsurePrerequisite verified against its pin (D5)
 	}
 	p.CachePath, p.SHA256 = r.cacheRef(cachePath)
 	if p.SHA256 == "" {

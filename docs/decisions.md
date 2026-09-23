@@ -228,10 +228,16 @@ The temporary file is created exclusively, per download (`os.CreateTemp`), becau
 own bytes could publish the other's unchecked ones — found in review, executed by
 `TestConcurrentDownloadsUseSeparateTemporaryFiles`.
 
-**What would reopen this:** Microsoft publishing a signed digest manifest msis could fetch; a
+The one unverified path this left — a file the script supplies with `source=` — closed under
+[#50](https://github.com/gersonkurz/msis/issues/50): an optional `sha256=` on `<requires>` and
+`<prerequisite>` has the file hashed (the copy WiX will bind, located through the build's bind
+paths) and a mismatch refuses the build in the same words a pinned download uses; a supplied
+source without one is chained as before, with a build warning, and the SBOM records which of
+the three cases each prerequisite was (`msis:prerequisite.verification`).
+
+**What would reopen this:** Microsoft publishing a signed digest manifest msis could fetch; or a
 requirement to follow the latest redistributable automatically (then option 2 or 3, with the
-reproducibility cost stated); or a `sha256=` attribute on `<requires source=...>` so that a
-supplied file can be verified too.
+reproducibility cost stated).
 
 ## D6 — A relative `BUILD_TARGET` resolves against the process working directory, once
 

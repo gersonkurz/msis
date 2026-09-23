@@ -387,6 +387,14 @@ func downloadInto(url string, out *os.File, progress func(msg string)) error {
 	return nil
 }
 
+// VerifyDigest checks a file against an expected SHA-256 and returns nil when they agree. It is
+// the same check the pinned downloads pass through, exported so a prerequisite the SCRIPT
+// supplied with a sha256= attribute (#50) is held to the same rule and the same wording:
+// "expected <digest>, got <digest>".
+func VerifyDigest(filePath, expectedHash string) error {
+	return verifyHash(filePath, expectedHash)
+}
+
 // verifyHash checks a file against its expected SHA-256, comparing case-insensitively so
 // a pin copied from a URL path (upper case) and one from sha256sum (lower case) both work.
 func verifyHash(filePath, expectedHash string) error {

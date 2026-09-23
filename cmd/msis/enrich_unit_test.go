@@ -52,7 +52,7 @@ func TestEveryCachedArchitectureIsRecorded(t *testing.T) {
 	}
 
 	rec := buildrecord.New(buildrecord.PathAutoBundle, script, nil)
-	recordPrerequisites(rec, []ir.Prerequisite{{Type: "vcredist", Version: "2022"}}, cached)
+	recordPrerequisites(rec, []ir.Prerequisite{{Type: "vcredist", Version: "2022"}}, cached, nil)
 	rec.Sort()
 
 	if len(rec.Prereqs) != 3 {
@@ -107,7 +107,7 @@ func TestAScriptSuppliedPrerequisiteClaimsNoDownload(t *testing.T) {
 	cached := map[string]string{"vcredist/2022/x64": filepath.Join(dir, "stub.exe")}
 	recordPrerequisites(rec, []ir.Prerequisite{
 		{Type: "vcredist", Version: "2022", Source: "stub.exe"},
-	}, cached)
+	}, cached, nil)
 
 	if len(rec.Prereqs) != 1 {
 		t.Fatalf("%+v", rec.Prereqs)
@@ -138,7 +138,7 @@ func TestAnUnresolvedPrerequisiteIsRecorded(t *testing.T) {
 	}
 
 	rec := buildrecord.New(buildrecord.PathBundle, script, nil)
-	recordPrerequisites(rec, []ir.Prerequisite{{Type: "netfx", Version: "4.8"}}, nil)
+	recordPrerequisites(rec, []ir.Prerequisite{{Type: "netfx", Version: "4.8"}}, nil, nil)
 
 	if len(rec.Prereqs) != 1 {
 		t.Fatalf("a prerequisite with nothing resolved was dropped: %+v", rec.Prereqs)
@@ -163,7 +163,7 @@ func TestEachArtifactSeesOnlyItsOwnPart(t *testing.T) {
 	rec := buildrecord.New(buildrecord.PathAutoBundle, script, nil)
 	rec.AddFile("FILE_ID00000", "a.txt")
 	rec.AddChained("MsiPackage", "a.txt")
-	rec.AddPrerequisiteFromSource("vcredist", "2022", "a.txt")
+	rec.AddPrerequisiteFromSource("vcredist", "2022", "a.txt", "")
 	rec.AddRuntime("netfx", "4.8", "cond")
 	rec.AddTool("msis", "test")
 

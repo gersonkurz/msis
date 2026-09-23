@@ -343,6 +343,7 @@ the two have different evidentiary weight.
 | `msis:prerequisite.type` | a bundled runtime: `vcredist`, `netfx` |
 | `msis:prerequisite.arch` | which architecture of it — a bundle carries several, each its own file |
 | `msis:prerequisite.cache` | which cache entry it came from, symbolically (`prerequisite-cache:vcredist/2022/…`), never the machine path |
+| `msis:prerequisite.verification` | what the bytes were checked against before being chained: `pinned-digest` (a download msis pins, D5), `script-digest` (a supplied `source=` whose `sha256=` matched, #50) or `unverified` (a supplied `source=` with no digest — a file somebody put there) |
 | `msis:launchCondition` | for `/STANDALONE`: the condition that detects a runtime nobody ships |
 
 **Composed from a supplied SBOM** — see [Tutorial 13](tutorial.md) for the `<sbom>` element.
