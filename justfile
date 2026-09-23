@@ -374,6 +374,11 @@ repin:
 repin:
     go build -o {{bootstrap_dir}}/repin ./tools/repin && ./{{bootstrap_dir}}/repin
 
+# The [windows] packaging lines run msis from bootstrap/ as `Set-Location …; & .\msis.exe …;
+# exit $LASTEXITCODE`. Each recipe line is its own PowerShell process, so the directory change
+# dies with it and needs no Pop-Location - and the explicit exit is what makes a failed package
+# stop the release: the earlier `try { … } finally { Pop-Location }` form exited 0 whatever msis
+# returned, so `release` announced success and `release-all` carried on after a failure (#53).
 # Build release MSI package (x64 only)
 [unix]
 release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64
@@ -388,7 +393,7 @@ release: require-clean-tree repin-check clean-bootstrap build-hooks build-window
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     @echo "Building x64 MSI package..."
-    Push-Location {{bootstrap_dir}}; try { .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis } finally { Pop-Location }
+    Set-Location {{bootstrap_dir}}; & .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis; exit $LASTEXITCODE
     @echo "Release build complete: {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi"
 
 # Build release for x86, x64, and arm64, then create bundle
@@ -415,15 +420,15 @@ release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-al
 release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
-    Push-Location {{bootstrap_dir}}; try { .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis } finally { Pop-Location }
+    Set-Location {{bootstrap_dir}}; & .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis; exit $LASTEXITCODE
     @echo "=== Building x86 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x86.exe {{bootstrap_dir}}\msis.exe
-    Push-Location {{bootstrap_dir}}; try { .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal-x86\template.wxs /SET:PLATFORM=x86 setup.msis } finally { Pop-Location }
+    Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal-x86\template.wxs /SET:PLATFORM=x86 setup.msis; exit $LASTEXITCODE
     @echo "=== Building ARM64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-arm64.exe {{bootstrap_dir}}\msis.exe
-    Push-Location {{bootstrap_dir}}; try { .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal\template.wxs /SET:PLATFORM=arm64 setup.msis } finally { Pop-Location }
+    Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal\template.wxs /SET:PLATFORM=arm64 setup.msis; exit $LASTEXITCODE
     @echo "=== Building Bundle ==="
-    Push-Location {{bootstrap_dir}}; try { .\{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis } finally { Pop-Location }
+    Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis; exit $LASTEXITCODE
     @echo "=== All release builds complete ==="
     @echo "  - {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi"
     @echo "  - {{bootstrap_dir}}\dist\msis-{{version}}-x86.msi"
