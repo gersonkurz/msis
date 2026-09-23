@@ -1738,8 +1738,26 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 // generated user feature id, and so output stays diffable.
 const packageItemsFeatureID = "MSIS_PACKAGE_ITEMS"
 
+// hasInstallDir reports whether the package will declare an INSTALLDIR directory: the
+// tree exists only when some item placed a component under it (files, set-env, a
+// service, ADD_TO_PATH, create-folder, remove-on-uninstall). Call it once processing is
+// complete - Generate does, after every item and the remove-on-uninstall components.
+func (c *Context) hasInstallDir() bool {
+	_, ok := c.DirectoryTrees["INSTALLDIR"]
+	return ok
+}
+
 func (c *Context) generateAllFeatureXML() string {
 	var sb strings.Builder
+
+	// The install-directory dialog lets the user choose where INSTALLDIR goes; with
+	// nothing installed there, its SetTargetPath names a directory the package never
+	// declares. Say so at build time rather than leave it to the install (#54).
+	if c.Variables.GetBool("INSTALL_DIR_DIALOG") && !c.hasInstallDir() {
+		c.warn("INSTALL_DIR_DIALOG is set, but nothing in this package installs under INSTALLDIR, " +
+			"so there is no install folder to choose and the dialog points at a directory the " +
+			"package does not declare; remove INSTALL_DIR_DIALOG")
+	}
 
 	for i := range c.Setup.Features {
 		c.generateFeatureXML(&c.Setup.Features[i], &sb, 2, "", i)
@@ -1823,8 +1841,17 @@ func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, d
 
 	// Root feature gets ConfigurableDirectory so CustomizeDlg's Browse button
 	// is enabled. Sub-features inherit INSTALLDIR and must not override.
+	//
+	// Only when an INSTALLDIR directory is actually emitted, though (#54). The directory
+	// exists only if some item placed a component under it; registry components live
+	// outside the directory tree, so a package whose features hold only <registry> items
+	// had a ConfigurableDirectory naming a directory that was never declared, and WiX
+	// refused the build: "WIX0094: The identifier 'Directory:INSTALLDIR' could not be
+	// found". Such a package has no install folder for a user to choose, so there is
+	// nothing to make configurable. msis-2.x emitted the attribute on every feature
+	// unconditionally (Feature.cs), so it would have failed the same way.
 	configurable := ""
-	if parentIndexPath == "" {
+	if parentIndexPath == "" && c.hasInstallDir() {
 		configurable = " ConfigurableDirectory='INSTALLDIR'"
 	}
 
