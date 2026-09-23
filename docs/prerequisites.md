@@ -164,8 +164,10 @@ just repin         # for each moved pin: download, hash, check the signature, pr
 ```
 
 `repin-check` exits 0 when every pin is current, 1 when an alias now serves a different file or
-a pinned URL no longer answers, and 2 when a pin could not be checked at all — so it can run on a
-schedule, and it should run before every release. `repin` gathers, for each moved pin, exactly
+a pinned URL no longer answers, and 2 when a pin could not be checked at all. **It gates every
+release**: `just release` and `just release-all` run it first and stop on 1 or 2, so a release
+cannot ship a stale pin by oversight — and a release build therefore needs the network. It can
+also run on a schedule. `repin` gathers, for each moved pin, exactly
 the evidence the original pins were taken with: the SHA-256 of the downloaded bytes, the
 Authenticode status and signer (must be Valid, Microsoft Corporation), the file version, and for
 the Visual Studio CDN the hash segment in the URL path — and prints the replacement entry in the

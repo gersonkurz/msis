@@ -200,7 +200,9 @@ platform msis builds on. The cost is staleness: a newer redistributable reaches 
 an msis release that re-pins, or through `<requires source=...>`, which remains unverified because
 msis has no digest for a file the author supplied. Re-pinning is a routine, not a rediscovery
 (#49): each pin carries the mutable `Alias` it was resolved from, `just repin-check` resolves
-every alias and exits non-zero on drift (run before a release, or on a schedule), and
+every alias and exits non-zero on drift — and gates `just release` and `just release-all`, by
+the product owner's decision of 2026-09-23, so a release cannot ship a stale pin by oversight
+at the price of needing the network — and
 `just repin` gathers the same evidence the original pins were taken with and prints the
 replacement entry — `tools/repin`, documented in `docs/prerequisites.md` under *Re-pinning*.
 

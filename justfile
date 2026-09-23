@@ -333,9 +333,10 @@ sbom:
 
 # The prerequisite pins (internal/prereqcache, decisions D5) are version-specific URLs plus
 # SHA-256; a newer redistributable reaches bundles only when a release re-pins (#49). Both
-# recipes need the network and are NOT part of `just check`. Run repin-check before a release,
-# or on a schedule; its exit status is 0 when every pin is current, 1 on drift, 2 when a pin
-# could not be checked.
+# recipes need the network and are NOT part of `just check`. repin-check GATES `release` and
+# `release-all` (product owner's decision, 2026-09-23): a release stops when a pin has moved
+# (exit 1) or could not be checked (exit 2), so a release build needs the network and cannot
+# ship a stale pin by oversight. Its exit status is 0 when every pin is current.
 #
 # The tool is BUILT and then run, not `go run`: `go run` reports any non-zero child status as
 # 1, and a PowerShell recipe reports 1 too unless it ends with `exit $LASTEXITCODE` - either
@@ -360,7 +361,7 @@ repin:
 
 # Build release MSI package (x64 only)
 [unix]
-release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     @echo "Building x64 MSI package..."
@@ -368,7 +369,7 @@ release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
     @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 [windows]
-release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     @echo "Building x64 MSI package..."
@@ -377,7 +378,7 @@ release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: require-clean-tree clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cd {{bootstrap_dir}} && ./msis.exe {{msis_flags}} --template=../templates/minimal/template.wxs setup.msis
@@ -396,7 +397,7 @@ release-all: require-clean-tree clean-bootstrap build-hooks build-all sbom-captu
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: require-clean-tree clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Push-Location {{bootstrap_dir}}; try { .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis } finally { Pop-Location }
