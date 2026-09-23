@@ -217,6 +217,21 @@ vet-tools:
 test-tools:
     go -C tools/sbom-index test -count=1 ./...
 
+# Go's race detector needs cgo, and cgo on Windows needs a gcc-compatible toolchain (mingw-w64) -
+# the Visual Studio compiler will not do. This project does not require that toolchain
+# (decisions D9, #51): the recipe runs the root-module suite under -race when gcc is on PATH
+# and otherwise stops, non-zero, saying what to install. The nested tools/sbom-index module is
+# not included (pure Go, covered by test-tools). It is NOT part of `just check` or the Verify
+# chain; a concurrency claim in review is settled by a coordinated test.
+# Run the tests under the race detector (optional; needs mingw-w64 gcc on PATH)
+[windows]
+test-race:
+    if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) { Write-Host "test-race: no gcc on PATH. The race detector needs cgo, and cgo on Windows needs mingw-w64 (e.g. winget install BrechtSanders.WinLibs.POSIX.UCRT); the Visual Studio compiler does not work for it. Optional in this project - see docs/decisions.md D9."; exit 1 }; $env:CGO_ENABLED = '1'; go test -race -count=1 -p=1 ./...; exit $LASTEXITCODE
+
+[unix]
+test-race:
+    command -v gcc >/dev/null || { echo "test-race: no gcc on PATH; the race detector needs cgo. Optional in this project - see docs/decisions.md D9."; exit 1; }; CGO_ENABLED=1 go test -race -count=1 -p=1 ./...
+
 # Build the SBOM index over a corpus of CycloneDX documents (see tools/sbom-index/README.md).
 #
 # The corpus is made absolute - the tool runs inside its own module directory, so a path

@@ -358,3 +358,34 @@ against the built binary: `{{PRODUCT_VERSION}}` → `1.2.3`, `$$PRODUCT_VERSION$
 **What would reopen this:** a user needing `{{VAR}}` in a value name or key path (then the
 third option, with the same undefined-stays-literal rule), or evidence that a production `.reg`
 carries a literal `{{` that the warning does not make obvious enough.
+
+## D9 — The race detector is optional; a concurrency claim is settled by a coordinated test
+
+**Settled in:** [#51](https://github.com/gersonkurz/msis/issues/51), 2026-09-23, product owner's
+decision between three options.
+**Implemented by:** `justfile` — `test-race:`, `mingw-w64`
+
+`go test -race` needs cgo, and cgo on Windows needs a gcc-compatible toolchain — mingw-w64; the
+Visual Studio compiler that builds the hook DLL will not do, which the issue got wrong when it
+suggested the developer shell would suffice. This Go installation has `CGO_ENABLED=0` and no
+gcc anywhere on the machine (checked 2026-09-23: nothing on PATH, no MSYS2, MinGW or TDM
+install; `CGO_ENABLED=1 go test -race` fails with `C compiler "gcc" not found`).
+
+Three options were weighed: make mingw-w64 a required developer toolchain and add `-race` to
+`just check` and Verify; record that the detector is out of reach and add nothing; or the middle
+— chosen — an optional `just test-race` that runs the root-module suite under `-race` when gcc
+is on PATH and otherwise stops, non-zero, saying what to install, plus this entry (the nested
+`tools/sbom-index` module is not included; it is pure Go and `test-tools` covers it). A second toolchain
+on every contributor's machine and CI runner, for a project whose concurrency surface is a
+handful of goroutines in `internal/prereqcache` and the tools, was judged more cost than
+insurance; adding nothing would have left the next reviewer to rediscover the limitation.
+
+What stands in for the detector: **a coordinated test** — one that makes the interleaving happen
+by construction (a channel barrier, a server that holds requests) rather than hoping the
+scheduler produces it. `TestConcurrentDownloadsUseSeparateTemporaryFiles` (#30) is the model. A
+review finding "needs `-race`" is answered by such a test, or by running `just test-race` on a
+machine that has gcc; it is not answered by a timing-based test, and it is not a deferred blocker.
+
+**What would reopen this:** a data race that a coordinated test could not have caught and the
+detector would have; or a CI runner with gcc, at which point `test-race` can join the gate there
+without being required of developer machines.

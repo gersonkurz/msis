@@ -31,6 +31,7 @@ just check              # fmt-check + vet + test  (run before committing)
 just coverage           # coverage profile + Cobertura XML
 just release-all        # Full dogfood: build x64/x86/arm64 MSIs + universal bundle from bootstrap/
 just repin-check        # Network: have Microsoft's aliases moved past the prerequisite pins? (D5, #49) Gates release/release-all.
+just test-race          # Optional: the root-module suite under -race (not tools/sbom-index); needs mingw-w64 gcc on PATH, stops non-zero otherwise (D9, #51)
 ```
 
 Run a single test (use `gotestsum` indirection only when you need the reports):
@@ -214,7 +215,10 @@ Loop parameters:
   the root module's graph. `just vet` already chains `vet-tools` and `vet-cross`, the
   latter being `GOOS=linux go vet ./...`: the build fixtures are `//go:build windows`
   because they drive the real `wix` CLI, so a helper defined among them compiles nowhere
-  else and no Windows run notices.)
+  else and no Windows run notices. The race detector is NOT part of Verify: it needs cgo and
+  therefore mingw-w64 gcc, which this project does not require of a machine — decisions D9.
+  `just test-race` runs it where gcc exists; a concurrency claim in review is settled by a
+  coordinated test, not by a "needs `-race`" deferred blocker.)
 - Yardstick docs: this file (architecture, WiX 6/7 conventions, directory roots,
   the MSI-vs-bundle variable table); `docs/decisions.md` for the questions that were
   settled deliberately and are not reopened without new evidence; the reference
