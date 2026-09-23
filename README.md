@@ -142,6 +142,9 @@ msis-3.x is largely compatible with msis-2.x scripts:
 | WiX Version | WiX 3.x/4.x | WiX 6 or 7 (auto-detected) |
 | Default Architecture | x86 | x64 |
 | Bundle Engine | Custom C++ | WiX Burn |
+| VC++ runtime | Merge modules (`INCLUDE_VCREDIST`) | `<requires type="vcredist">` + auto-bundling — no merge-module maintenance |
+| Component GUIDs | Random per build | Deterministic (SHA-256 of the path) — reproducible, diffable output |
+| `DLL_CUSTOM` path | Bare filename under `<templates>/x86/` | Resolved through WiX's bind paths as written — name it `x64\Your.CA.dll` (or `x86\`) for a DLL staged beside the templates; see [templates.md](docs/templates.md#dll_custom--a-second-custom-action-dll-and-how-it-differs-from-dll_entry) |
 
 **Migration steps:**
 1. Install WiX + extensions: `msis /SETUP-WIX`

@@ -144,6 +144,20 @@ The **reference** DLL (`msi-simplica.dll`) implements only the two cleanup actio
 `ListAllKnownProperties` diagnostic). The six lifecycle hooks are the **extension surface**: ship
 your own DLL via `DLL_ENTRY` to run custom logic at install/upgrade/uninstall, without forking MSIS.
 
+## Not the same thing: `DLL_CUSTOM`
+
+A second variable also names a custom-action DLL, and it is a separate mechanism from the hook
+ABI above. `DLL_CUSTOM` adds a `<Binary>` of your own plus four `Return="check"` actions —
+`BeforeInstall`, `AfterInstall`, `BeforeUninstall`, `AfterUninstall` (export all four; each one that
+is scheduled must exist) — that run immediate, as the installing user; a failing or missing
+scheduled entry point fails the install,
+where an unimplemented *lifecycle* hook is ignored (the two cleanup actions above are
+`Return="check"` too). Both may be set at once — and in the regular `x64`/`x86` templates the
+`AfterUninstallAction` schedule sits inside the `USE_INSTALLER_HOOKS` block, so with `DLL_CUSTOM`
+alone only three of the four run; the `x86` silent template schedules all four. Path resolution,
+scheduling and the msis-2.x difference are in
+[Templates & Customization](templates.md#dll_custom--a-second-custom-action-dll-and-how-it-differs-from-dll_entry).
+
 ## See also
 
 - [Templates & Customization](templates.md#uninstall-behavior-and-installer-hooks) — variable reference in template context

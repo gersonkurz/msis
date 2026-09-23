@@ -291,6 +291,69 @@ the user sees, and the MSI variables only if the MSIs are also distributed stand
 
 See [Bundle.md](Bundle.md) for the bundle-side variables.
 
+## Permissions
+
+msis writes permissions on the folders it creates and the registry keys it writes, and three
+variables change what it writes. All three are booleans in msis's usual sense: `True`, `Yes`, `On`
+or `1` (any case) enable, anything else — including absent — leaves the default. Their semantics
+are those of msis-2.x (`BuildContext.cs`: `SetFilePermissions`, `RestrictFilePermissions`,
+`SetRegistryPermissions`).
+
+Folders and registry keys use **different mechanisms**, and the difference matters on a machine
+where the object already exists. For folders msis emits WiX's `util:PermissionEx`, which adds or
+updates the entry for one named trustee within whatever ACL the folder has; every other entry —
+inherited, or present on a folder that existed before the install — stays. For registry keys msis
+emits the core `PermissionEx Sddl="…"`, which Windows Installer applies through its
+`MsiLockPermissionsEx` table as a security descriptor; msis makes no promise that entries already
+on an existing key survive it. Neither is a way to harden an existing installation.
+
+| Variable | Default | Effect when enabled |
+|----------|---------|---------------------|
+| `DISABLE_FILE_PERMISSIONS` | off | msis adds no entry to the folders it creates; a newly created folder has only what it inherits |
+| `RESTRICT_FILE_PERMISSIONS` | off | The entry msis adds for `Users` grants read and execute instead of full control |
+| `DISABLE_REGISTRY_PERMISSIONS` | off | msis adds no `PermissionEx` to the registry keys written from `.reg` files; `sddl=` attributes are ignored |
+
+### Folders: `DISABLE_FILE_PERMISSIONS` and `RESTRICT_FILE_PERMISSIONS`
+
+For every **named** directory a build creates — under `INSTALLDIR`, `APPDATADIR` and the other
+roots alike — msis emits a `CreateFolder` component carrying
+`<util:PermissionEx User='Users' Domain='[MachineName]' …/>`: one entry for the local `Users`
+group, added to the folder's ACL. By default that entry is `GenericAll='yes'` — full control for
+local users of the folder tree the product installs into, which is what a product that writes
+its own data under `APPDATADIR` needs and what msis-2.x always did.
+
+- `RESTRICT_FILE_PERMISSIONS=True` makes the `Users` entry `GenericRead='yes' Read='yes'
+  GenericExecute='yes'` instead. It restricts **that entry**: whether a given user can write to
+  the folder still depends on every other entry on it (an inherited grant to `Authenticated
+  Users` under `ProgramData`, say). Use it for a product that never writes into its own folders
+  at run time, and check the resulting ACL if the restriction matters.
+- `DISABLE_FILE_PERMISSIONS=True` emits no permission component at all: msis adds nothing. A
+  folder the install **creates** then has only the entries it inherits from its parent —
+  under `Program Files` that is writable by administrators only. A folder that **already
+  existed** keeps whatever ACL it had. Use it when the machine's policy, not the installer, is
+  to decide.
+
+Setting both: `DISABLE_FILE_PERMISSIONS` wins, because there is no entry left to restrict.
+
+### Registry keys: `DISABLE_REGISTRY_PERMISSIONS`
+
+Every registry key written from a `<registry file="…">` carries a `PermissionEx` with an SDDL —
+the element's own `sddl="…"` attribute, or msis's default
+`O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)`
+(full access for SYSTEM, built-in users, authenticated users, the local administrator and the
+local service, inherited by subkeys). Unlike the folder entry this is the core `PermissionEx`,
+applied by Windows Installer as the key's security descriptor (`MsiLockPermissionsEx`); on a key
+that already exists with customer-specific permissions, expect the supplied or default SDDL to
+be what the key ends up with — do not rely on its other entries surviving.
+`DISABLE_REGISTRY_PERMISSIONS=True` emits none, and any `sddl=` attributes are ignored: a key the
+install **creates** then has what it inherits from its parent, and msis does not touch the
+security of a key that **already existed**.
+
+```xml
+<set name="RESTRICT_FILE_PERMISSIONS" value="True"/>
+<set name="DISABLE_REGISTRY_PERMISSIONS" value="True"/>
+```
+
 ## Uninstall behavior and installer hooks
 
 > For the full picture — the rationale (a real data-loss incident), the native DLL, and how to
@@ -361,6 +424,46 @@ cleanup is inactive. Paths may reference MSI properties such as `[APPDATADIR]`.
      value="[APPDATADIR]DATABASE\proakt.db;[APPDATADIR]CONFIG\local.ini"/>
 ```
 
+### `DLL_CUSTOM` — a second custom-action DLL, and how it differs from `DLL_ENTRY`
+
+Two variables name a DLL, and they are not the same mechanism:
+
+| | `DLL_ENTRY` (with `USE_INSTALLER_HOOKS=True`) | `DLL_CUSTOM` |
+|---|---|---|
+| What it is | The **hook DLL** — the reference `msi-simplica.dll` or a drop-in replacement implementing its ABI | **Your own** custom-action DLL, independent of the hook ABI |
+| Enabled by | `USE_INSTALLER_HOOKS=True` (`DLL_ENTRY` names the file) | Setting `DLL_CUSTOM` at all |
+| Entry points | The **six lifecycle hooks** (`Before/After Install/Upgrade/Uninstall`), any subset; plus the **two cleanup actions** when their variables enable them (see [Installer Hooks](installer-hooks.md#hook-abi-extension-contract)) | Up to four: `BeforeInstall`, `AfterInstall`, `BeforeUninstall`, `AfterUninstall` — each one the template schedules must exist; export all four (see the quirk below) |
+| Failure of an entry point | Lifecycle hooks: `Return="ignore"`, the install continues, a missing entry point is ignored. Cleanup actions (`RemoveAllFoldersOnUninstall`, `RemoveRegistryTreeOnUninstall`): `Return="check"` — a replacement DLL that enables them must implement them | `Return="check"`: the install **fails** — including when a scheduled entry point is missing |
+| Where it runs | Lifecycle hooks: `Execute="commit"`, `Impersonate="no"`. Folder cleanup: immediate. Registry cleanup: deferred, `Impersonate="no"` | Immediate, as the installing user: `BeforeInstallAction` after `CostFinalize` (`NOT Installed AND NOT PATCH`), `AfterInstallAction` after `InstallFinalize` (`NOT Installed`), `BeforeUninstallAction` after `CostFinalize` and `AfterUninstallAction` after `InstallFinalize` (both `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`) |
+| Existence checked by msis | Yes, before the WiX build, across the bind paths | No — WiX fails the build if the file is not found |
+| Both at once | Allowed: two binaries, separate actions | — but see the scheduling quirk below |
+
+**A quirk of the regular templates, documented rather than changed here:** in `x64/template.wxs`
+and `x86/template.wxs` the `<Custom Action="AfterUninstallAction">` schedule sits *inside* the
+`{{#if USE_INSTALLER_HOOKS}}` block, so with `DLL_CUSTOM` alone only **three** of the four actions
+run — `AfterUninstall` is defined but never scheduled. Set `USE_INSTALLER_HOOKS=True` as well to
+get all four, or use the `x86` silent template, which schedules it unconditionally. Each entry
+point that is **invoked** must exist, because every scheduled action is `Return="check"`; an
+unscheduled one is never looked up. Exporting all four is recommended, so the same DLL works in
+every template configuration.
+
+```xml
+<set name="DLL_CUSTOM" value="x64\MyProduct.CA.dll"/>
+```
+
+The value goes into `<Binary SourceFile="…">` as written and WiX resolves it through the build's
+bind paths in order — the build directory, the `.msis` directory, the custom-templates folder,
+the template folder — so a DLL staged beside your templates is named by its path under that
+folder (`x64\MyProduct.CA.dll`), and one beside the script by its bare name. This differs from
+msis-2.x, which always looked for a bare filename under `<templates>/x86/`; a script carrying
+`value="MyProduct.CA.dll"` from that era needs the `x64\` or `x86\` prefix, or the file moved
+beside the script. Write the DLL for the architecture the package targets (`PLATFORM`).
+
+The call sites exist in the regular `x64` and `x86` templates and the `x86` silent template.
+The `minimal` templates carry neither `DLL_CUSTOM` nor the hook call sites — they are msis's own
+self-packaging templates — so a custom `/TEMPLATE` derived from them needs the `{{#if DLL_CUSTOM}}`
+blocks copied in from `templates/x64/template.wxs`.
+
 ## Custom Templates Folder
 
 The `custom/` folder (in templates or `%LOCALAPPDATA%\msis\custom`) is for user overrides. It's searched first, so files here take precedence.
@@ -414,6 +517,11 @@ Templates use Handlebars syntax. Key variables available:
 ### UI Options (if set)
 - `{{LICENSE_FILE}}` - Path to RTF license file (enables license dialog)
 - `{{INSTALL_DIR_DIALOG}}` - Set to `true` to enable install directory dialog
+
+### Permissions and custom-action DLLs (if set)
+- `{{DLL_CUSTOM}}` - Path to your own custom-action DLL; gates the `BeforeInstallAction` … `AfterUninstallAction` blocks (see [`DLL_CUSTOM`](#dll_custom--a-second-custom-action-dll-and-how-it-differs-from-dll_entry))
+- `{{DLL_ENTRY}}`, `{{HOOK_DLL_DIR}}` - The hook DLL and its arch folder, used when `{{USE_INSTALLER_HOOKS}}` is set
+- `DISABLE_FILE_PERMISSIONS`, `RESTRICT_FILE_PERMISSIONS`, `DISABLE_REGISTRY_PERMISSIONS` - Consumed by the generator, not the template: they shape the `{{{INSTALLDIR_FILES}}}`-style fragments and `{{{REGISTRY_ENTRIES}}}` (see [Permissions](#permissions))
 
 ## Creating Custom Templates
 
