@@ -152,6 +152,36 @@ one. Microsoft publishes no separate digest list for these files, so this is the
 download, on the date recorded in the source, signed by that signer. A test in msis holds the
 table to these rules.
 
+### Re-pinning
+
+A pin ages when Microsoft ships a newer build of the same redistributable at its mutable link.
+msis carries that link beside every pin (the `Alias` field — `aka.ms/vs/17/release/...`, the .NET
+`fwlink`s), and two `just` recipes turn it into a routine:
+
+```bash
+just repin-check   # resolve every alias, compare with the pin; no downloads
+just repin         # for each moved pin: download, hash, check the signature, print the entry
+```
+
+`repin-check` exits 0 when every pin is current, 1 when an alias now serves a different file or
+a pinned URL no longer answers, and 2 when a pin could not be checked at all — so it can run on a
+schedule, and it should run before every release. `repin` gathers, for each moved pin, exactly
+the evidence the original pins were taken with: the SHA-256 of the downloaded bytes, the
+Authenticode status and signer (must be Valid, Microsoft Corporation), the file version, and for
+the Visual Studio CDN the hash segment in the URL path — and prints the replacement entry in the
+table's own form. Paste it over the old one in `internal/prereqcache/cache.go`, update the date
+in the `DownloadURLs` comment and the "Pinned installer" columns above, and run the Verify
+chain: `TestEveryDownloadIsPinned` holds the table to its rules. A file that fails any of the
+checks is not offered as a pin; find out why before touching the table.
+
+Neither recipe is part of `just check`: both need the network, and a build must not. Use the
+recipes (or the built executable, `bootstrap\repin.exe`) when the exit status matters: they
+build the tool and run it directly, because `go run` reports every non-zero status as 1 and
+would lose the difference between "a pin has moved" and "a pin could not be checked". When the
+pinned URL itself has stopped answering, the report says so — builds that need that
+prerequisite fail today — and, if the alias has moved on, the replacement is verified all the
+same.
+
 ### View Cached Prerequisites
 
 ```bash

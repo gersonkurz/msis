@@ -198,7 +198,11 @@ prerequisite bytes a function of the msis release: reproducible across machines,
 the SBOM (#34) records as the payload's digest. It needs no Windows API, so it verifies on every
 platform msis builds on. The cost is staleness: a newer redistributable reaches bundles through
 an msis release that re-pins, or through `<requires source=...>`, which remains unverified because
-msis has no digest for a file the author supplied.
+msis has no digest for a file the author supplied. Re-pinning is a routine, not a rediscovery
+(#49): each pin carries the mutable `Alias` it was resolved from, `just repin-check` resolves
+every alias and exits non-zero on drift (run before a release, or on a schedule), and
+`just repin` gathers the same evidence the original pins were taken with and prints the
+replacement entry — `tools/repin`, documented in `docs/prerequisites.md` under *Re-pinning*.
 
 Where the digests came from, since Microsoft publishes no digest list for these files: each of
 the eight was downloaded over TLS from the pinned URL on 2026-09-22, hashed, and its Authenticode

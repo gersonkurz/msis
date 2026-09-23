@@ -272,6 +272,17 @@ func TestEveryDownloadIsPinned(t *testing.T) {
 				if strings.Contains(e.URL, "aka.ms") || strings.Contains(e.URL, "fwlink") {
 					t.Errorf("%s: URL is a mutable alias, which a pinned digest disagrees with as soon as Microsoft ships a new file: %s", name, e.URL)
 				}
+				// The alias is the other half of the pin (#49): the mutable link the URL was
+				// resolved from, which `just repin-check` follows to see whether Microsoft has
+				// moved on. It must be one, and must not be the pin itself.
+				switch {
+				case e.Alias == "":
+					t.Errorf("%s: no Alias; re-pinning cannot tell where to look for a newer build", name)
+				case !strings.HasPrefix(e.Alias, "https://aka.ms/") && !strings.HasPrefix(e.Alias, "https://go.microsoft.com/fwlink/"):
+					t.Errorf("%s: Alias is not an aka.ms or fwlink address: %s", name, e.Alias)
+				case e.Alias == e.URL:
+					t.Errorf("%s: Alias equals the pinned URL, so it cannot reveal a move", name)
+				}
 			}
 		}
 	}

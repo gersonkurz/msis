@@ -36,6 +36,12 @@ type PrerequisiteURL struct {
 	// taken. Informational — it is what a mismatch message can name so the reader knows
 	// which release msis expected.
 	FileVersion string
+
+	// Alias is the mutable Microsoft link the pin was resolved FROM — an aka.ms or fwlink
+	// address that serves the newest build. msis never downloads from it (D5); it is what
+	// `just repin-check` resolves to see whether Microsoft has moved on since this pin
+	// was taken (#49).
+	Alias string
 }
 
 // DownloadURLs contains the prerequisites msis can download, each pinned to a
@@ -70,6 +76,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "vc_redist.x64.exe",
 				SHA256:      "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
 				FileVersion: "14.44.35211.0",
+				Alias:       "https://aka.ms/vs/17/release/vc_redist.x64.exe",
 			},
 			"x86": {
 				Type: "vcredist", Version: "2022", Arch: "x86",
@@ -77,6 +84,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "vc_redist.x86.exe",
 				SHA256:      "0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64",
 				FileVersion: "14.44.35211.0",
+				Alias:       "https://aka.ms/vs/17/release/vc_redist.x86.exe",
 			},
 			"arm64": {
 				Type: "vcredist", Version: "2022", Arch: "arm64",
@@ -84,6 +92,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "vc_redist.arm64.exe",
 				SHA256:      "5139e1440c3a20b92153a4db561c069a0175aaf76c276c3e5b6f56099edcf4b0",
 				FileVersion: "14.44.35211.0",
+				Alias:       "https://aka.ms/vs/17/release/vc_redist.arm64.exe",
 			},
 		},
 		"2019": {
@@ -93,6 +102,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "vc_redist.x64.exe",
 				SHA256:      "6afae68a783f11292149175844aed0e2ce3f247bc0250f6cb18c931295b3f399",
 				FileVersion: "14.29.30157.0",
+				Alias:       "https://aka.ms/vs/16/release/vc_redist.x64.exe",
 			},
 			"x86": {
 				Type: "vcredist", Version: "2019", Arch: "x86",
@@ -100,6 +110,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "vc_redist.x86.exe",
 				SHA256:      "38c9437e6e9ef1db2671b3f0c879febec08521bd2c23231199f626b69ae1c65e",
 				FileVersion: "14.29.30157.0",
+				Alias:       "https://aka.ms/vs/16/release/vc_redist.x86.exe",
 			},
 		},
 	},
@@ -111,6 +122,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "ndp481-x86-x64-allos-enu.exe",
 				SHA256:      "c0ca2e0c9cd18a24a0a77369a13fae2c2c4e8bc83355dd24e5ddc00f9d791fe3",
 				FileVersion: "4.8.09195.10",
+				Alias:       "https://go.microsoft.com/fwlink/?linkid=2203305",
 			},
 		},
 		"4.8": {
@@ -120,6 +132,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "ndp48-x86-x64-allos-enu.exe",
 				SHA256:      "0a3a390c47e639d0f7fc65b21195fee6b7f65b066f80f70c60fab191d14b7e40",
 				FileVersion: "4.8.04115.00",
+				Alias:       "https://go.microsoft.com/fwlink/?linkid=2088631",
 			},
 		},
 		"4.7.2": {
@@ -129,6 +142,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 				FileName:    "ndp472-kb4054530-x86-x64-allos-enu.exe",
 				SHA256:      "84ea476eb3a03ab878c14b160495f071dd29f9e5d031e713623ee8635638355f",
 				FileVersion: "4.7.03081.00",
+				Alias:       "https://go.microsoft.com/fwlink/?LinkId=863265",
 			},
 		},
 	},

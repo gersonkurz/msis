@@ -30,6 +30,7 @@ just test               # gotestsum: writes msis-test.log + msis-junit.xml
 just check              # fmt-check + vet + test  (run before committing)
 just coverage           # coverage profile + Cobertura XML
 just release-all        # Full dogfood: build x64/x86/arm64 MSIs + universal bundle from bootstrap/
+just repin-check        # Network: have Microsoft's aliases moved past the prerequisite pins? (D5, #49; run before a release)
 ```
 
 Run a single test (use `gotestsum` indirection only when you need the reports):

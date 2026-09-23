@@ -331,6 +331,33 @@ sbom-seal:
 sbom:
     go run ./tools/sbom -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
 
+# The prerequisite pins (internal/prereqcache, decisions D5) are version-specific URLs plus
+# SHA-256; a newer redistributable reaches bundles only when a release re-pins (#49). Both
+# recipes need the network and are NOT part of `just check`. Run repin-check before a release,
+# or on a schedule; its exit status is 0 when every pin is current, 1 on drift, 2 when a pin
+# could not be checked.
+#
+# The tool is BUILT and then run, not `go run`: `go run` reports any non-zero child status as
+# 1, and a PowerShell recipe reports 1 too unless it ends with `exit $LASTEXITCODE` - either
+# would collapse the 1/2 distinction a scheduled caller relies on.
+# Resolve every pin's alias and report whether Microsoft has moved on (no downloads)
+[windows]
+repin-check:
+    go build -o {{bootstrap_dir}}\repin.exe ./tools/repin; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & .\{{bootstrap_dir}}\repin.exe -check; exit $LASTEXITCODE
+
+[unix]
+repin-check:
+    go build -o {{bootstrap_dir}}/repin ./tools/repin && ./{{bootstrap_dir}}/repin -check
+
+# Download, hash and signature-check what each moved alias serves, and print the replacement table entries
+[windows]
+repin:
+    go build -o {{bootstrap_dir}}\repin.exe ./tools/repin; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & .\{{bootstrap_dir}}\repin.exe; exit $LASTEXITCODE
+
+[unix]
+repin:
+    go build -o {{bootstrap_dir}}/repin ./tools/repin && ./{{bootstrap_dir}}/repin
+
 # Build release MSI package (x64 only)
 [unix]
 release: require-clean-tree clean-bootstrap build-hooks build-windows-x64
