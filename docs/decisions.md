@@ -147,7 +147,8 @@ silently — the same class of harm in the other direction.
 
 So the contract is: a non-preserved string value is Formatted, and a literal bracket is the
 author's job (`[\[]`, spelled `[\\[]` in a `.reg` file). A preserved value is literal, and the
-escape must **not** be used there, because it would land verbatim. The build warns about a
+escape must **not** be used there, because it would land verbatim. Both halves were installed
+and observed in `todo-testme.md` T8 (#48): `a[\[]b` directly → `a[b`, preserved → `a[\[]b`. The build warns about a
 non-preserved string that contains an unescaped `[...]` or a `[~]`, and about nothing else: a
 value that starts with `[` is the documented reference form, and a warning that fires on it
 would train people to ignore the class.

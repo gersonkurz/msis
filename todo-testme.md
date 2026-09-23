@@ -500,7 +500,7 @@ cost a customer their database once already.
 
 ---
 
-## T8 — the `[\[]` escape in a `.reg` string: formatted when written directly, verbatim when preserved
+## T8 — the `[\[]` escape in a `.reg` string: formatted when written directly, verbatim when preserved: DONE 2026-09-23
 
 **Ticket:** [#38](https://github.com/gersonkurz/msis/issues/38); the contract is
 `docs/decisions.md` D4.
@@ -551,4 +551,105 @@ If the direct row matches and the preserved row does not, the tutorial's "do not
 preserved value" is wrong and D4's preserved-path paragraph needs rewriting — say what was
 observed. If the direct row does not match, the escape advice in the build warning is wrong,
 which is worse: fix `warnFormattedValues` and the tutorial together.
+
+### What was observed (2026-09-23, #48)
+
+Windows 11 (10.0.26200), elevated shell, WiX 6.0.2, msis built from `d5cd37a`. Key absent
+beforehand. Each package installed silently (`msiexec /i … /qn /l*v`), the key read back with
+`Get-Item HKLM:\SOFTWARE\MsisEscapeProbe`, then uninstalled; all four `msiexec` runs exited 0,
+and afterwards the key and the install folder were both gone.
+
+| Package | `Escaped` | `MidRef` |
+|---|---|---|
+| direct | `a[b`, String | `ab` |
+| preserved | `a[\[]b`, String | `a[Foo]b` |
+
+**Both rows match the prediction.** The escape is resolved when the value is written directly
+into the Registry table, and lands verbatim when it goes through a preserved `PS_RV_n`
+property; `MidRef` re-confirms #11 on both paths. The verbose log of the direct install shows
+the same thing at the operation level: `RegAddValue(Name=Escaped,Value=a[b)` and
+`RegAddValue(Name=MidRef,Value=ab)`. The tutorial and D4 now state both as observed.
+
+The emitted shapes were as the Setup section says: direct `Value='a[\[]b'`; preserved
+`<Property Id='PS_RV_00000' Value='a[\[]b' …>` with the value written as `[PS_RV_00000]`.
+
+### Two probe-setup traps, recorded so the next probe avoids them
+
+- **A package whose only content is a `<registry>` item does not build**: WiX fails with
+  `WIX0094: The identifier 'Directory:INSTALLDIR' could not be found` — the feature carries
+  `ConfigurableDirectory='INSTALLDIR'`, but no directory is emitted when there are no files.
+  Filed as [#54](https://github.com/gersonkurz/msis/issues/54); the probe packages carry one
+  small payload file to get past it.
+- **Without `<set name="INSTALLDIR" …/>` the payload installs straight into
+  `C:\Program Files\`**, and msis's folder-permission component then tries to change the ACL
+  of `C:\Program Files\` itself: `Error 25521. Failed to set security descriptor on object
+  C:\Program Files\` (access denied), install rolled back, 1603. Set `INSTALLDIR`. Filed as
+  [#55](https://github.com/gersonkurz/msis/issues/55).
+
+### Rerunning it
+
+The exact files used, in one directory. Write `esc.reg` with an editor or a file tool, not a
+shell heredoc — the `\\` must survive — and check it shows `"Escaped"="a[\\[]b"`. `readme.txt`
+is any small file.
+
+`esc.reg`: as in *Setup* above.
+
+`direct.msis` (`preserved.msis` is identical except the product name, the last hex digit of
+the upgrade code, `BUILD_TARGET` and `preserve="yes"` on the `<registry>` element):
+
+```xml
+<setup>
+  <set name="PRODUCT_NAME" value="MSIS T8 Direct"/>
+  <set name="PRODUCT_VERSION" value="1.0.0"/>
+  <set name="MANUFACTURER" value="msis probe"/>
+  <set name="UPGRADE_CODE" value="{5A1D7E30-8C24-4F9B-A3E6-1B2C4D5E8F01}"/>
+  <set name="PLATFORM" value="x64"/>
+  <set name="INSTALLDIR" value="MsisT8Probe"/>
+  <set name="BUILD_TARGET" value="direct.msi"/>
+  <feature name="Main">
+    <files source="readme.txt" target="[INSTALLDIR]"/>
+    <registry file="esc.reg"/>
+  </feature>
+</setup>
+```
+
+Build both with `msis /BUILD /RETAINWXS direct.msis` and `… preserved.msis` from that
+directory, then run `run-t8.ps1` from an **elevated** PowerShell
+(`powershell -ExecutionPolicy Bypass -File run-t8.ps1`):
+
+```powershell
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
+$key = 'HKLM:\SOFTWARE\MsisEscapeProbe'
+
+function Invoke-Msi($verb, $msi, $log) {
+    $p = Start-Process -FilePath msiexec.exe -ArgumentList @($verb, "`"$PSScriptRoot\$msi`"", '/qn', '/l*v', "`"$PSScriptRoot\$log`"") -Wait -PassThru
+    Write-Output ("msiexec {0} {1} -> exit {2}" -f $verb, $msi, $p.ExitCode)
+}
+
+function Show-Key($label) {
+    if (Test-Path $key) {
+        $k = Get-Item $key
+        foreach ($name in 'Escaped', 'MidRef') {
+            Write-Output ("{0}: {1} = {2} ({3})" -f $label, $name, $k.GetValue($name), $k.GetValueKind($name))
+        }
+    } else {
+        Write-Output ("{0}: key {1} is ABSENT" -f $label, $key)
+    }
+}
+
+if (Test-Path $key) { throw "precondition: $key exists; remove it first" }
+
+foreach ($pkg in 'direct', 'preserved') {
+    Write-Output "=== $pkg ==="
+    Invoke-Msi '/i' "$pkg.msi" "$pkg-install.log"
+    Show-Key "$pkg after install"
+    Invoke-Msi '/x' "$pkg.msi" "$pkg-uninstall.log"
+    Show-Key "$pkg after uninstall"
+}
+Write-Output ("install dir present afterwards: {0}" -f (Test-Path 'C:\Program Files\MsisT8Probe'))
+```
+
+The expected output is the table above, with every msiexec exit 0 and the key absent after each
+uninstall.
 

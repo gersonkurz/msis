@@ -287,17 +287,17 @@ you wrote it. msis escapes it for XML and changes nothing else. Windows Installe
   `"Pattern"="a[\\[]b"` installs as `a[b`. (Copying the MSI form `[\[]` into a `.reg` file
   does not work: the parser reads `\[` as an escaped `[`, and `a[[]b` is what msis emits.)
 
-The first two were measured on a real install while fixing #11. A leading `#` is a type
+All three were measured on a real install: the first two while fixing #11, the escape in
+`todo-testme.md` T8 (#48). A leading `#` is a type
 marker in the same column; WiX escapes it for a value written this way, and msis doubles it
 for a preserved one, so `"Colour"="#FF0000"` installs as written either way (#11).
 
 **A preserved value** — `preserve="yes"`, and a type preservation covers — takes another
 route. It is written through a property, and Windows Installer inserts the property's content
 without a second formatting pass. Its brackets survive as written: `a[Foo]b` installs as
-`a[Foo]b` (measured, #11). By the same mechanism an escape would survive too, so do **not**
-write `[\[]` in a value that will be preserved: `[\[]` is what would land. That last case is
-inferred from the measured one rather than installed separately; `todo-testme.md` T8 is the
-procedure that would settle it.
+`a[Foo]b` (measured, #11). An escape survives the same way, so do **not** write `[\[]` in a
+value that will be preserved: `"a[\\[]b"` in a preserved `.reg` file installs as `a[\[]b`,
+escape and all (measured, `todo-testme.md` T8).
 
 **A value that starts with `[`** is the intentional property reference from the previous
 section. It is never preserved and always formatted.
