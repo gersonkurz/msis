@@ -448,3 +448,28 @@ which is BSI §5.2.2's "the completeness of this enumeration MUST be clearly ind
 
 **What would reopen this:** a BSI or CycloneDX revision that requires every component to have a
 graph entry even when its dependencies are unknown, with a defined way to mark that entry unknown.
+
+## D12 — msis's own components carry BSI's licence pair as two `license.id` entries, not two expressions
+
+**Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24, from reading BSI
+TR-03183-2 v2.1.0 §3.2.8 and Table 9/11 against the vendored CycloneDX 1.6 schema.
+**Implemented by:** `tools/sbom/licences.go` — `func licensed(id string) []licenseChoice`
+
+BSI distinguishes the *original* licence (assigned by the component's creator) from the
+*distribution* licence (under which the licensee may use it). It maps the first to a CycloneDX
+licence with `acknowledgement: declared`, and the second to one with `acknowledgement: concluded`,
+each written as an `expression`. CycloneDX 1.6's `licenseChoice` holds **either** a list of
+`license` objects **or** a tuple of exactly one `expression`, so two expressions on one
+component are invalid. msis therefore uses the list form: `{license: {id, acknowledgement:
+declared}}` and `{license: {id, acknowledgement: concluded}}`. For a single SPDX id, `license.id`
+states what an expression would.
+
+Both entries have the same id for every component msis describes today. Nothing downstream
+chose among licences, which is the case BSI names where they differ (Qt's GPL or commercial
+choice). A licence that genuinely needs an SPDX expression (`MIT OR Apache-2.0`, `WITH` an
+exception) cannot be expressed this way next to a second entry. The reviewed-text classifier
+refuses dual texts today, so such a component stops the release rather than being flattened.
+
+**What would reopen this:** a CycloneDX version that allows several expressions, each with its
+acknowledgement; or a dependency whose licence is an expression, at which point the list form
+no longer suffices and one of the two statements has to go.

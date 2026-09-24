@@ -97,14 +97,14 @@ func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, erro
 		return nil, err
 	}
 	parts := moduleComponents(info)
-	licensed(parts, byPath)
+	attachLicences(parts, byPath)
 	goVersion := strings.TrimPrefix(info.GoVersion, "go")
 	parts = append(parts, component{
 		Type:     "library",
 		Name:     "stdlib",
 		Version:  goVersion,
 		PURL:     "pkg:golang/stdlib@" + goVersion,
-		Licenses: concluded(std),
+		Licenses: licensed(std),
 	})
 	for i := range parts {
 		parts[i].BOMRef = parts[i].PURL
@@ -116,7 +116,7 @@ func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, erro
 		Version:    version,
 		PURL:       "pkg:golang/github.com/gersonkurz/msis@v" + version,
 		Hashes:     []hash{{Alg: "SHA-256", Content: sum}},
-		Licenses:   concluded(own),
+		Licenses:   licensed(own),
 		Components: parts,
 	}
 	return newComponentDoc(root, "complete"), nil
@@ -142,7 +142,7 @@ func hookDoc(version, path, own string) (*componentDoc, error) {
 		PURL:        "pkg:generic/msi-simplica@" + version,
 		Description: "Native installer-hook DLL built from native/msi-simplica; the statically linked MSVC runtime is not listed",
 		Hashes:      []hash{{Alg: "SHA-256", Content: sum}},
-		Licenses:    concluded(own),
+		Licenses:    licensed(own),
 		Components:  parts,
 	}
 	return newComponentDoc(root, "incomplete"), nil

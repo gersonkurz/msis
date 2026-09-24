@@ -153,7 +153,8 @@ func TestNugetLicencesMatchTheNuspec(t *testing.T) {
 			t.Errorf("%s %s: the .nuspec declares no licence expression", c.Name, c.Version)
 			continue
 		}
-		if len(c.Licenses) != 1 || c.Licenses[0].License.ID != string(m[1]) ||
+		// The declared entry is the package's own declaration (decisions D12).
+		if len(c.Licenses) == 0 || c.Licenses[0].License.ID != string(m[1]) ||
 			c.Licenses[0].License.Acknowledgement != "declared" {
 			t.Errorf("%s: licence %+v, but the .nuspec declares %s", c.Name, c.Licenses, m[1])
 		}

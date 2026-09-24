@@ -21,8 +21,10 @@ import (
 // prevent. The NuGet libraries are the exception: their licence is DECLARED by the package, and
 // sits next to their pinned version in nativeComponents.
 //
-// The ids are CONCLUDED, not declared: the module author wrote a licence text, and msis
-// identified it. Identification is a comparison of the WHOLE text against a reviewed canonical
+// The module author wrote a licence text, and msis identifies which licence it is. That text
+// is the component's original licence, and with no downstream choice also its distribution
+// licence, so the identified id is emitted as both, declared and concluded (decisions D12).
+// Identification is a comparison of the WHOLE text against a reviewed canonical
 // text (licences/*.txt), not a search for phrases: a phrase search accepts BSD-4-Clause as
 // BSD-3-Clause, and an MIT text with an added restriction as MIT. Only the parts named in the
 // templates may vary - the notice above the terms (title, copyright lines), the organisation in
@@ -44,12 +46,20 @@ type licenseChoice struct {
 	License license `json:"license"`
 }
 
-func concluded(id string) []licenseChoice {
-	return []licenseChoice{{License: license{ID: id, Acknowledgement: "concluded"}}}
-}
-
-func declared(id string) []licenseChoice {
-	return []licenseChoice{{License: license{ID: id, Acknowledgement: "declared"}}}
+// licensed returns both licences BSI TR-03183-2 v2.1.0 §3.2.8 asks for, as CycloneDX 1.6 can hold
+// them (decisions D12): the ORIGINAL licence - what the component's creator assigned, its
+// licence file or its package's declaration - marked declared; and the DISTRIBUTION licence -
+// under which the licensee may use it - marked concluded. For a component under one licence
+// with no choice made downstream, the two are the same id.
+//
+// BSI's mapping writes each as an `expression`, but CycloneDX 1.6 allows exactly one expression
+// per component, so both cannot be expressions. The list form carries two entries, and for a
+// single SPDX id `license.id` states the same thing an expression would.
+func licensed(id string) []licenseChoice {
+	return []licenseChoice{
+		{License: license{ID: id, Acknowledgement: "declared"}},
+		{License: license{ID: id, Acknowledgement: "concluded"}},
+	}
 }
 
 //go:embed licences/MIT.txt
@@ -256,11 +266,11 @@ func ownLicense(env goEnv) (string, error) {
 	return classifyFile(filepath.Join(filepath.Dir(env.GoMod), "LICENSE"))
 }
 
-// licensed attaches the concluded licence to each module component by its name (the module path).
-func licensed(comps []component, byPath map[string]string) {
+// attachLicences gives each module component its licences, by its name (the module path).
+func attachLicences(comps []component, byPath map[string]string) {
 	for i := range comps {
 		if id, ok := byPath[comps[i].Name]; ok {
-			comps[i].Licenses = concluded(id)
+			comps[i].Licenses = licensed(id)
 		}
 	}
 }

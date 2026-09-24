@@ -46,7 +46,7 @@ var nativeComponents = []component{
 		Version:     "5.0.2",
 		PURL:        "pkg:nuget/WixToolset.WcaUtil@5.0.2",
 		Description: "WiX custom-action utility library, linked into msi-simplica.dll",
-		Licenses:    declared("MS-RL"),
+		Licenses:    licensed("MS-RL"),
 	},
 	{
 		Type:        "library",
@@ -54,7 +54,7 @@ var nativeComponents = []component{
 		Version:     "5.0.2",
 		PURL:        "pkg:nuget/WixToolset.DUtil@5.0.2",
 		Description: "WiX base utility library, linked into msi-simplica.dll",
-		Licenses:    declared("MS-RL"),
+		Licenses:    licensed("MS-RL"),
 	},
 }
 
@@ -240,7 +240,7 @@ func build(version, dist, binDir string) (*bom, error) {
 	if err != nil {
 		return nil, err
 	}
-	licensed(mods, byPath)
+	attachLicences(mods, byPath)
 	own, err := ownLicense(env)
 	if err != nil {
 		return nil, err
@@ -279,7 +279,7 @@ func build(version, dist, binDir string) (*bom, error) {
 		Version:     version,
 		PURL:        "pkg:generic/msi-simplica@" + version,
 		Description: "Native installer-hook DLL (x86/x64/arm64) built from native/msi-simplica and shipped inside every MSI, where it runs as a custom action",
-		Licenses:    concluded(own),
+		Licenses:    licensed(own),
 	})
 	components = append(components, nativeComponents...)
 
@@ -297,7 +297,7 @@ func build(version, dist, binDir string) (*bom, error) {
 				Version:     version,
 				PURL:        "pkg:golang/github.com/gersonkurz/msis@v" + version,
 				Description: "Windows installer generator: .msis scripts to MSI packages via WiX",
-				Licenses:    concluded(own),
+				Licenses:    licensed(own),
 			},
 			Tools: []tool{{
 				Name:    "msis tools/sbom",

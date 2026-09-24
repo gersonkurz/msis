@@ -297,11 +297,15 @@ rather than a graph with edges, and assembly references are not package-level pr
 any of them added, none may produce a purl unless identity is actually determined. Today the
 route to what is inside a payload file is a supplied SBOM — msis's own release supplies one for
 `msis.exe`, built from its `buildinfo` by `tools/sbom`. Those component documents also carry
-licences: each linked Go module's and the standard library's are *concluded* from the licence
-text in the module cache and GOROOT, compared **in full** with a reviewed licence text
-(`tools/sbom/licences`, which may differ only in the notice above the terms — title and
-copyright lines — and in the organisation a BSD clause names), and any other text or difference stops the release rather than being guessed; the WiX libraries' are the ones their
-packages *declare* (`MS-RL`). A payload file's licence is never guessed, only carried when supplied.
+licences, as the pair BSI TR-03183-2 asks for ([decisions D12](decisions.md)): the *original*
+licence, marked `declared`, and the *distribution* licence, marked `concluded`, which are the same
+id for a component under one licence. Each linked Go module's and the standard library's licence
+is identified from the licence text in the module cache and GOROOT. The text is compared **in
+full** with a reviewed licence text (`tools/sbom/licences`, which may differ only in the notice
+above the terms, i.e. title and copyright lines, and in the organisation a BSD clause names), and
+any other text or difference stops the release rather than being guessed. The WiX libraries'
+licence is the one their packages declare (`MS-RL`). A payload file's licence is never guessed,
+only carried when supplied.
 
 A supplied SBOM is different — its author determined the identity, and their purls come across
 untouched.
