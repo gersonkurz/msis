@@ -551,12 +551,16 @@ func sortDocument(d *Document) {
 		sort.Strings(d.Compositions[i].Dependencies)
 	}
 	sort.Slice(d.Compositions, func(i, j int) bool {
-		if d.Compositions[i].Aggregate != d.Compositions[j].Aggregate {
-			return d.Compositions[i].Aggregate < d.Compositions[j].Aggregate
-		}
-		return strings.Join(d.Compositions[i].Assemblies, ",") <
-			strings.Join(d.Compositions[j].Assemblies, ",")
+		return compositionKey(d.Compositions[i]) < compositionKey(d.Compositions[j])
 	})
+}
+
+// compositionKey orders compositions by aggregate, then assemblies, then dependencies. The
+// dependencies are part of the key because many compositions name no assemblies at all: without
+// them two such compositions tie, and their order would be whatever order they were built in
+// rather than a defined one (#60). The conformance package checks the same key.
+func compositionKey(c Composition) string {
+	return c.Aggregate + "\x00" + strings.Join(c.Assemblies, ",") + "\x00" + strings.Join(c.Dependencies, ",")
 }
 
 func sortProperties(p []Property) {

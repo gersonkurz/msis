@@ -371,11 +371,60 @@ func Check(data []byte, want Expected) []error {
 	}
 
 	// --- ordering -----------------------------------------------------------------------------
-	// #29 D6: sorted, not merely stable, so a diff between two documents is a release review.
+	// #29 D6: sorted by the keys the emitters define (sbom.sortDocument), not merely stable, so
+	// a diff between two documents is a release review. The other half of D6 - byte-identical
+	// across runs except timestamp and serial - cannot be seen in ONE document; the emitter
+	// tests check it by building twice and comparing sbom.CanonicalForDiff (#60).
 	if !sort.SliceIsSorted(doc.Components, func(i, j int) bool {
 		return doc.Components[i].BOMRef < doc.Components[j].BOMRef
 	}) {
 		fail("components are not sorted by bom-ref")
+	}
+	if !sort.SliceIsSorted(doc.Dependencies, func(i, j int) bool {
+		return doc.Dependencies[i].Ref < doc.Dependencies[j].Ref
+	}) {
+		fail("dependencies are not sorted by ref")
+	}
+	for _, d := range doc.Dependencies {
+		if !sort.StringsAreSorted(d.DependsOn) || !sort.StringsAreSorted(d.Provides) {
+			fail("the dependsOn or provides of %q are not sorted", d.Ref)
+		}
+	}
+	keys := make([]string, len(doc.Compositions))
+	for i, c := range doc.Compositions {
+		if !sort.StringsAreSorted(c.Assemblies) || !sort.StringsAreSorted(c.Dependencies) {
+			fail("a %s composition lists its members out of order", c.Aggregate)
+		}
+		keys[i] = c.Aggregate + "\x00" + strings.Join(c.Assemblies, ",") + "\x00" +
+			strings.Join(c.Dependencies, ",")
+	}
+	if !sort.StringsAreSorted(keys) {
+		fail("compositions are not sorted by aggregate, then assemblies, then dependencies")
+	}
+	if !propertiesSorted(doc.Metadata.Properties) {
+		fail("metadata.properties are not sorted by name, then value")
+	}
+	if !propertiesSorted(doc.Metadata.Component.Properties) {
+		fail("the subject's properties are not sorted by name, then value")
+	}
+	for _, t := range doc.Metadata.Tools.Components {
+		if !propertiesSorted(t.Properties) {
+			fail("the properties of tool %q are not sorted by name, then value", t.Name)
+		}
+	}
+	for _, c := range doc.Components {
+		// A supplied component is emitted verbatim, in its author's order (#36).
+		if c.suppliedFrom() != "" {
+			continue
+		}
+		if !propertiesSorted(c.Properties) {
+			fail("the properties of %q are not sorted by name, then value", c.BOMRef)
+		}
+		if !sort.SliceIsSorted(c.ExternalReferences, func(i, j int) bool {
+			return c.ExternalReferences[i].URL < c.ExternalReferences[j].URL
+		}) {
+			fail("the externalReferences of %q are not sorted by url", c.BOMRef)
+		}
 	}
 
 	return problems
@@ -540,6 +589,15 @@ func hasSHA256(hashes []hash) bool {
 	return false
 }
 
+func propertiesSorted(p []property) bool {
+	return sort.SliceIsSorted(p, func(i, j int) bool {
+		if p[i].Name != p[j].Name {
+			return p[i].Name < p[j].Name
+		}
+		return p[i].Value < p[j].Value
+	})
+}
+
 // statedUnknown reports whether the component declares the NTIA element as unknown.
 func statedUnknown(c component, element string) bool {
 	for _, p := range c.Properties {
@@ -569,8 +627,9 @@ type document struct {
 		Tools     struct {
 			Components []component `json:"components"`
 		} `json:"tools"`
-		Component component `json:"component"`
-		Supplier  *struct {
+		Component  component  `json:"component"`
+		Properties []property `json:"properties"`
+		Supplier   *struct {
 			Name string `json:"name"`
 		} `json:"supplier"`
 	} `json:"metadata"`
@@ -578,6 +637,7 @@ type document struct {
 	Dependencies []struct {
 		Ref       string   `json:"ref"`
 		DependsOn []string `json:"dependsOn"`
+		Provides  []string `json:"provides"`
 	} `json:"dependencies"`
 	Compositions []struct {
 		Aggregate    string   `json:"aggregate"`
@@ -593,6 +653,10 @@ type component struct {
 	PURL       string     `json:"purl"`
 	Hashes     []hash     `json:"hashes"`
 	Properties []property `json:"properties"`
+
+	ExternalReferences []struct {
+		URL string `json:"url"`
+	} `json:"externalReferences"`
 
 	// CycloneDX lets a component nest components, and a supplied document may well do so.
 	// A nested one carries its own bom-ref and can be the target of a dependency, so every

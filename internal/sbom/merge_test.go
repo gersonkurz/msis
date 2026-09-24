@@ -163,14 +163,15 @@ func TestTheFileIsOnlyCompleteWhenTheSupplierSaysSo(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc, data := mergedDoc(t, forF1(suppliedDoc(tc.block, "")))
+			in := forF1(suppliedDoc(tc.block, ""))
+			doc, data := mergedDoc(t, in)
 
 			// Each of the four states has to produce a document that still conforms -
 			// including the one where narrowing the file's marking rewrites the blanket
 			// declaration the artifact-only document gave every payload component.
 			for _, p := range conformance.Check(data, conformance.Expected{
 				PayloadNames:           []string{"a.dll", "b.dll"},
-				IdentifiedComponents:   identifiedRefs(doc),
+				IdentifiedComponents:   identifiedRefs(doc, in),
 				SuppliedComponentNames: suppliedNames,
 			}) {
 				t.Errorf("conformance: %v", p)
@@ -208,8 +209,9 @@ func TestTheFileIsOnlyCompleteWhenTheSupplierSaysSo(t *testing.T) {
 // A component known to depend on nothing is a THIRD state, distinct from unknown, and a merge
 // that turned it into either of the others would corrupt a valid graph (#29).
 func TestAKnownEmptyGraphSurvivesTheMerge(t *testing.T) {
-	doc, data := mergedDoc(t, forF1(suppliedDoc(
-		compositionsBlock(`{"aggregate": "complete", "dependencies": ["pkg:golang/example.com/right@4.5.6"]}`), "")))
+	in := forF1(suppliedDoc(
+		compositionsBlock(`{"aggregate": "complete", "dependencies": ["pkg:golang/example.com/right@4.5.6"]}`), ""))
+	doc, data := mergedDoc(t, in)
 
 	right := refWithName(doc, "right")
 	on, ok := dependsOnOf(doc, right)
@@ -223,23 +225,79 @@ func TestAKnownEmptyGraphSurvivesTheMerge(t *testing.T) {
 	// And the document still conforms: an empty dependsOn is only admissible beside a
 	// declaration that the graph is fully known, which is what the supplier gave.
 	for _, p := range conformance.Check(data, conformance.Expected{
-		IdentifiedComponents:   identifiedRefs(doc),
+		IdentifiedComponents:   identifiedRefs(doc, in),
 		SuppliedComponentNames: suppliedNames,
 	}) {
 		t.Errorf("conformance: %v", p)
 	}
 }
 
-// identifiedRefs lists the refs that legitimately carry a purl: the supplier determined the
-// identity of its own components, which is exactly what a supplied document is for.
-func identifiedRefs(doc *Document) []string {
-	var out []string
-	for _, c := range doc.Components {
-		if c.raw != nil && c.raw.str("purl") != "" {
-			out = append(out, c.BOMRef)
+// identifiedRefs lists the refs that legitimately carry a purl, component by component: an
+// output component is identified only when the SUPPLIED component it was imported from - the
+// one with the same bom-ref before namespacing - asserted exactly that purl. The evidence is
+// the input, not the output (#60): reading purls back out of the document under test would
+// excuse a purl the merge invented, and matching against "any purl the input mentions" would
+// excuse one copied onto the wrong component.
+func identifiedRefs(doc *Document, inputs ...Supplied) []string {
+	asserted := map[string]string{} // the ref the merge must give it -> the purl its author gave
+	for _, in := range inputs {
+		var v any
+		if err := json.Unmarshal(in.Data, &v); err != nil {
+			panic(err)
+		}
+		prefix := namespaceFor(doc) + "/supplied/" + encodeRefPart(in.Source) + "/"
+		walkComponents(v, func(c map[string]any) {
+			ref, _ := c["bom-ref"].(string)
+			if purl, _ := c["purl"].(string); ref != "" && purl != "" {
+				asserted[prefix+encodeRefPart(ref)] = purl
+			}
+		})
+	}
+	data, err := Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		panic(err)
+	}
+	var refs []string
+	walkComponents(v, func(c map[string]any) {
+		ref, _ := c["bom-ref"].(string)
+		if purl, _ := c["purl"].(string); purl != "" && asserted[ref] == purl {
+			refs = append(refs, ref)
+		}
+	})
+	return refs
+}
+
+// walkComponents calls fn for every object that sits in a "components" array or is a
+// "component", at any depth - the same set the conformance check inspects.
+func walkComponents(v any, fn func(map[string]any)) {
+	switch n := v.(type) {
+	case map[string]any:
+		for k, child := range n {
+			switch k {
+			case "components":
+				if list, ok := child.([]any); ok {
+					for _, item := range list {
+						if c, ok := item.(map[string]any); ok {
+							fn(c)
+						}
+					}
+				}
+			case "component":
+				if c, ok := child.(map[string]any); ok {
+					fn(c)
+				}
+			}
+			walkComponents(child, fn)
+		}
+	case []any:
+		for _, child := range n {
+			walkComponents(child, fn)
 		}
 	}
-	return out
 }
 
 // --- what the merge must not do ------------------------------------------------------------
@@ -295,7 +353,8 @@ func TestAnImportedComponentIsEmittedVerbatim(t *testing.T) {
 // That is addressing, not identity: the purl above is untouched, while the ref that only ever
 // meant "this component, in that file" is qualified by which file it came from.
 func TestImportedRefsAreNamespacedAndRelationshipsFollow(t *testing.T) {
-	doc, data := mergedDoc(t, forF1(suppliedDoc("", "")))
+	in := forF1(suppliedDoc("", ""))
+	doc, data := mergedDoc(t, in)
 
 	left := refWithName(doc, "left")
 	if !strings.Contains(left, "/supplied/app.cdx.json/") {
@@ -312,7 +371,7 @@ func TestImportedRefsAreNamespacedAndRelationshipsFollow(t *testing.T) {
 		t.Fatalf("the payload file does not depend on what the supplied document describes: %v", on)
 	}
 	for _, p := range conformance.Check(data, conformance.Expected{
-		IdentifiedComponents:   identifiedRefs(doc),
+		IdentifiedComponents:   identifiedRefs(doc, in),
 		SuppliedComponentNames: suppliedNames,
 	}) {
 		t.Errorf("conformance: %v", p)
@@ -344,7 +403,8 @@ func TestNestedSuppliedComponentsAreNamespacedToo(t *testing.T) {
 		`"purl": "pkg:golang/example.com/right@4.5.6",
       "components": [{"type": "library", "bom-ref": "vendored", "name": "vendored"}]`, 1)
 
-	doc, data := mergedDoc(t, forF1([]byte(nested)))
+	in := forF1([]byte(nested))
+	doc, data := mergedDoc(t, in)
 
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -365,7 +425,7 @@ func TestNestedSuppliedComponentsAreNamespacedToo(t *testing.T) {
 	}
 
 	for _, p := range conformance.Check(data, conformance.Expected{
-		IdentifiedComponents:   identifiedRefs(doc),
+		IdentifiedComponents:   identifiedRefs(doc, in),
 		SuppliedComponentNames: append(append([]string{}, suppliedNames...), "vendored"),
 	}) {
 		t.Errorf("conformance: %v", p)
@@ -589,7 +649,7 @@ func TestOneDocumentForTwoFilesIsImportedOnce(t *testing.T) {
 	}
 
 	for _, p := range conformance.Check(data, conformance.Expected{
-		IdentifiedComponents:   identifiedRefs(doc),
+		IdentifiedComponents:   identifiedRefs(doc, first, second),
 		SuppliedComponentNames: suppliedNames,
 	}) {
 		t.Errorf("conformance: %v", p)
@@ -756,7 +816,7 @@ func TestABOMLinkIsNotTreatedAsALocalReference(t *testing.T) {
 		t.Error("the BOM-Link did not survive")
 	}
 	for _, p := range conformance.Check(data, conformance.Expected{
-		IdentifiedComponents:   identifiedRefs(doc),
+		IdentifiedComponents:   identifiedRefs(doc, forF1(supplied)),
 		SuppliedComponentNames: []string{"a.dll", "left"},
 	}) {
 		t.Errorf("conformance: %v", p)

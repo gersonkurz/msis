@@ -290,11 +290,13 @@ bad match in front of an auditor discredits the whole document. So msis emits a 
 identity was actually determined — which, for bytes read out of a package, is essentially never.
 Everything else is a file component with its hash, explicitly marked unknown.
 
-PE version resources, `debug/buildinfo` and .NET assembly references can narrow this, and each is
-**evidence, not provenance**: a version resource is optional in the format, `buildinfo` yields
-the modules that contributed to a Go build rather than a graph with edges, and assembly
-references are not package-level provenance. None of them may produce a purl unless identity is
-actually determined.
+msis does **not** read PE version resources, `debug/buildinfo` or .NET assembly references out of
+payload files. Each could narrow this, and each would be **evidence, not provenance**: a version
+resource is optional in the format, `buildinfo` yields the modules that contributed to a Go build
+rather than a graph with edges, and assembly references are not package-level provenance. Were
+any of them added, none may produce a purl unless identity is actually determined. Today the
+route to what is inside a payload file is a supplied SBOM — msis's own release supplies one for
+`msis.exe`, built from its `buildinfo` by `tools/sbom`.
 
 A supplied SBOM is different — its author determined the identity, and their purls come across
 untouched.
@@ -405,8 +407,9 @@ drifts:
 
 - no purl unless identity was determined
 - SHA-256 on every payload component, with narrow, *declared* exceptions
-- sorted by defined keys, and byte-identical across runs except `metadata.timestamp` and
-  `serialNumber`
+- sorted by defined keys: components by `bom-ref`, dependencies by `ref` with their members
+  sorted, compositions by aggregate, then assemblies, then dependencies, and msis's own
+  properties and external references (a supplied component keeps its author's order)
 - NTIA fields present or explicitly unknown (`msis:ntia.unknown` on the subject)
 - `metadata.tools` names msis with the SHA-256 of the binary that ran; if msis cannot hash
   itself, no document is written
@@ -426,6 +429,12 @@ document with itself.
 `metadata.timestamp` and `serialNumber` differ between two runs over identical inputs. Everything
 else is byte-identical, which is what makes a diff between two documents a release review.
 `sbom.CanonicalForDiff` removes exactly those two.
+
+This is the one rule the conformance package cannot enforce, because it is a property of two
+documents, not of one. Each emitter's own tests build twice and compare the canonical forms:
+`TestOnlyTimestampAndSerialVary` and `TestDeterministicUnderVariedMapOrder` for an MSI,
+`TestTwoBundleDocumentsDifferOnlyInTimestampAndSerial` for a bundle, `TestEnrichmentStaysDeterministic`,
+`TestMergingStaysDeterministic` and, for the VEX sidecar, `TestEvaluationIsDeterministic`.
 
 That holds with the emitter and any referenced child documents fixed — regenerating a child
 changes a parent's link inputs, which is why the retention rule above exists.

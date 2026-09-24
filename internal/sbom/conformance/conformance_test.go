@@ -106,8 +106,8 @@ func TestStatedUnknownNTIAElementsAreAccepted(t *testing.T) {
 	c := m["component"].(map[string]any)
 	delete(c, "version")
 	c["properties"] = []any{
-		map[string]any{"name": "msis:ntia.unknown", "value": "version: the bundle records no Version"},
 		map[string]any{"name": "msis:ntia.unknown", "value": "supplier: the bundle records no Publisher"},
+		map[string]any{"name": "msis:ntia.unknown", "value": "version: the bundle records no Version"},
 	}
 	if problems := check(t, d, Expected{PayloadNames: []string{"a.dll"}}); len(problems) != 0 {
 		t.Errorf("stated unknowns were rejected: %v", problems)
@@ -373,6 +373,60 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			mustSay: "BOM-Link",
 		},
 		{
+			name: "dependencies out of order (#60)",
+			mutate: func(d map[string]any) {
+				d["dependencies"] = []any{
+					map[string]any{"ref": "ns/product", "dependsOn": []any{"ns/file/a"}},
+					map[string]any{"ref": "ns/file/a", "dependsOn": []any{}},
+				}
+			},
+			mustSay: "dependencies are not sorted",
+		},
+		{
+			name: "a dependsOn out of order",
+			mutate: func(d map[string]any) {
+				d["components"] = append(d["components"].([]any), payload("ns/file/b", "b.dll", "c"))
+				d["dependencies"] = []any{
+					map[string]any{"ref": "ns/product", "dependsOn": []any{"ns/file/b", "ns/file/a"}},
+				}
+			},
+			mustSay: "dependsOn or provides",
+		},
+		{
+			name: "compositions that tie on assemblies, out of order by dependencies",
+			mutate: func(d map[string]any) {
+				d["compositions"] = []any{
+					map[string]any{"aggregate": "incomplete", "assemblies": []any{"ns/product"}},
+					map[string]any{"aggregate": "unknown", "dependencies": []any{"ns/product"}},
+					map[string]any{"aggregate": "unknown", "dependencies": []any{"ns/file/a"}},
+					map[string]any{"aggregate": "unknown", "assemblies": []any{"ns/file/a"}},
+				}
+			},
+			mustSay: "compositions are not sorted",
+		},
+		{
+			name: "a tool's properties out of order",
+			mutate: func(d map[string]any) {
+				tools := d["metadata"].(map[string]any)["tools"].(map[string]any)["components"].([]any)
+				tools[0].(map[string]any)["properties"] = []any{
+					map[string]any{"name": "z", "value": "1"},
+					map[string]any{"name": "a", "value": "1"},
+				}
+			},
+			mustSay: "tool",
+		},
+		{
+			name: "a component's properties out of order",
+			mutate: func(d map[string]any) {
+				c := d["components"].([]any)[0].(map[string]any)
+				c["properties"] = []any{
+					map[string]any{"name": "msis:role", "value": "payload"},
+					map[string]any{"name": "msis:installTarget", "value": "[INSTALLDIR]a.dll"},
+				}
+			},
+			mustSay: "properties of",
+		},
+		{
 			name: "components out of order",
 			mutate: func(d map[string]any) {
 				first := map[string]any{
@@ -615,13 +669,13 @@ func TestTheVendoredSchemaIsComplete(t *testing.T) {
 func TestKnownEmptyDependenciesAreAccepted(t *testing.T) {
 	d := good()
 	d["dependencies"] = []any{
-		map[string]any{"ref": "ns/product", "dependsOn": []any{"ns/file/a"}},
 		map[string]any{"ref": "ns/file/a", "dependsOn": []any{}},
+		map[string]any{"ref": "ns/product", "dependsOn": []any{"ns/file/a"}},
 	}
 	d["compositions"] = []any{
+		map[string]any{"aggregate": "complete", "dependencies": []any{"ns/file/a"}},
 		map[string]any{"aggregate": "incomplete", "assemblies": []any{"ns/product"}},
 		map[string]any{"aggregate": "unknown", "assemblies": []any{"ns/file/a"}},
-		map[string]any{"aggregate": "complete", "dependencies": []any{"ns/file/a"}},
 	}
 	if problems := check(t, d, Expected{}); len(problems) != 0 {
 		t.Errorf("a component with a genuinely empty, fully known dependency graph was "+
@@ -637,9 +691,9 @@ func TestAProperlyDeclaredUnhashableComponentIsAccepted(t *testing.T) {
 	c := d["components"].([]any)[0].(map[string]any)
 	c["hashes"] = []any{map[string]any{"alg": "SHA-512", "content": strings.Repeat("b", 128)}}
 	c["properties"] = []any{
-		map[string]any{"name": "msis:role", "value": "payload"},
 		map[string]any{"name": "msis:payload.unavailable",
 			"value": "the engine downloads it at install time"},
+		map[string]any{"name": "msis:role", "value": "payload"},
 	}
 
 	want := Expected{UnhashableComponents: []string{"ns/file/a"}}
