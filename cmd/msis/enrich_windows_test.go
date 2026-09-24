@@ -455,7 +455,13 @@ func TestAutoBundleRecordsItsPrerequisitesAndLinksTheMSI(t *testing.T) {
 	write(t, filepath.Join(dir, "app.txt"), "the application\n")
 	write(t, filepath.Join(dir, "stub-vcredist.exe"), "stands in for the VC++ redistributable\n")
 	script := scriptFor(t, dir, "app.msi", autoBundleScript)
-	buildWithSBOM(t, script, &cliArgs{})
+	out := capture(t, func() error { buildWithSBOM(t, script, &cliArgs{}); return nil })
+
+	// The terminal says what was linked, as `/SBOM` on a bundle does - it used to stay silent on
+	// the /BUILD path, leaving the link visible only in the JSON.
+	if !strings.Contains(out, "Linked:") {
+		t.Errorf("the build did not report the BOM-Link to the MSI's document:\n%s", out)
+	}
 
 	msi := filepath.Join(dir, "app.msi")
 	exe := filepath.Join(dir, "app.exe")

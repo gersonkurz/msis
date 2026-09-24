@@ -55,6 +55,22 @@ func runSBOM(path string) error {
 	return nil
 }
 
+// printBOMLinks prints one line per chained package saying whether its own document was linked.
+// A link that was NOT made is the thing a reader needs to act on, so it is not left to the JSON.
+// Both `/SBOM` on a bundle and `/BUILD /SBOM` print it; a document without chain packages - an
+// MSI's - prints nothing.
+func printBOMLinks(doc *sbom.Document) {
+	for _, c := range doc.Components {
+		linked, why := sbom.BOMLink(c)
+		switch {
+		case linked != "":
+			fmt.Printf("  %s %s -> %s\n", cli.Success("Linked:"), c.Name, linked)
+		case why != "":
+			fmt.Printf("  %s %s: %s\n", cli.Info("No link:"), c.Name, why)
+		}
+	}
+}
+
 // warnNTIAUnknown says in the terminal which NTIA minimum element the artifact does not record,
 // as the document states it (#59) - a gap a reader should hear about, not only find in the JSON.
 func warnNTIAUnknown(doc *sbom.Document) {
@@ -104,18 +120,7 @@ func runBundleSBOM(path string) error {
 		fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 	}
 	warnNTIAUnknown(doc)
-
-	// One line per chained package saying whether its own document was linked. A link that
-	// was NOT made is the thing a reader needs to act on, so it is not left to the JSON.
-	for _, c := range doc.Components {
-		linked, why := sbom.BOMLink(c)
-		switch {
-		case linked != "":
-			fmt.Printf("  %s %s -> %s\n", cli.Success("Linked:"), c.Name, linked)
-		case why != "":
-			fmt.Printf("  %s %s: %s\n", cli.Info("No link:"), c.Name, why)
-		}
-	}
+	printBOMLinks(doc)
 
 	// Every payload, not just a chain package's: a bundle-level payload the engine expects
 	// beside the installer has no digest either, and the terminal is where someone notices.
