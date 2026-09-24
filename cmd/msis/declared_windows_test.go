@@ -47,7 +47,8 @@ func declaredFixture(t *testing.T, components string) (dir, script string) {
 // component (D16) - where BSI TR-03183-2 looks - with each field's provenance stated.
 func TestADeclaredComponentReachesTheSBOM(t *testing.T) {
 	dir, script := declaredFixture(t, `<component for="[INSTALLDIR]notes.txt" name="libnotes" version="2.3.1"
-    creator="notes@foo.example" license="Apache-2.0 OR MIT" purl="pkg:generic/libnotes@2.3.1"/>`)
+    creator="notes@foo.example" license="Apache-2.0 OR MIT" purl="pkg:generic/libnotes@2.3.1"
+    source="https://github.com/foo/libnotes/tree/v2.3.1"/>`)
 	buildWithSBOM(t, script, &cliArgs{})
 
 	_, raw := readDoc(t, filepath.Join(dir, "declared.msi"))
@@ -60,6 +61,10 @@ func TestADeclaredComponentReachesTheSBOM(t *testing.T) {
 				Expression      string `json:"expression"`
 				Acknowledgement string `json:"acknowledgement"`
 			} `json:"licenses"`
+			ExternalReferences []struct {
+				Type string `json:"type"`
+				URL  string `json:"url"`
+			} `json:"externalReferences"`
 			Manufacturer struct {
 				Contact []struct {
 					Email string `json:"email"`
@@ -97,7 +102,11 @@ func TestADeclaredComponentReachesTheSBOM(t *testing.T) {
 		if prop["msis:declared.by"] != `setup.msis <component for="[INSTALLDIR]notes.txt">` {
 			t.Errorf("msis:declared.by = %q, want it to name the script's <component>", prop["msis:declared.by"])
 		}
-		if prop["msis:declared.fields"] != "creator,license,name,purl,version" {
+		if len(c.ExternalReferences) != 1 || c.ExternalReferences[0].Type != "source-distribution" ||
+			c.ExternalReferences[0].URL != "https://github.com/foo/libnotes/tree/v2.3.1" {
+			t.Errorf("source %+v, want the declared source code URI (#68)", c.ExternalReferences)
+		}
+		if prop["msis:declared.fields"] != "creator,license,name,purl,source,version" {
 			t.Errorf("msis:declared.fields = %q", prop["msis:declared.fields"])
 		}
 		if prop["msis:installTarget"] == "" || prop["msis:msi.fileKey"] == "" {

@@ -14,13 +14,15 @@ func TestGateMeasuresAndCompares(t *testing.T) {
 		{"name": "msis", "version": "1", "licenses": [{"license": {"id": "MIT"}}],
 		 "manufacturer": {"url": ["https://x.example"]},
 		 "hashes": [{"alg": "SHA-256", "content": "00"}, {"alg": "SHA-512", "content": "00"}],
-		 "components": [{"name": "lib", "version": "2"}]}
+		 "externalReferences": [{"type": "source-distribution", "url": "https://x.example/src"}],
+		 "components": [{"name": "lib", "version": "2", "externalReferences": [{"type": "vcs", "url": "https://x.example/src"}]}]}
 	]}`
 	got, err := measure([]byte(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := coverage{NoLicence: 2, NoCreator: 2, NoVersion: 1, NoSHA512: 1, NoFilename: 1}
+	// lib's vcs reference is not BSI's source-distribution (Table 11): it counts as no source.
+	want := coverage{NoLicence: 2, NoCreator: 2, NoVersion: 1, NoSHA512: 1, NoFilename: 1, NoSource: 2}
 	if got != want {
 		t.Fatalf("measure = %+v, want %+v", got, want)
 	}
@@ -47,6 +49,7 @@ func TestGateMeasuresTheArtifact(t *testing.T) {
 	doc := func(hashes string) string {
 		return `{"metadata": {"component": {"name": "a.msi", "version": "1",
 			"licenses": [{"license": {"id": "MIT"}}], "manufacturer": {"url": ["https://x.example"]},
+			"externalReferences": [{"type": "source-distribution", "url": "https://x.example/src"}],
 			"hashes": [` + hashes + `]}}, "components": []}`
 	}
 	full, err := measure([]byte(doc(`{"alg": "SHA-256", "content": "00"}, {"alg": "SHA-512", "content": "00"}`)))

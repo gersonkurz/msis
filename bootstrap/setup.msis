@@ -49,16 +49,16 @@
        may be described once only, so the folders holding a hook DLL (described above) are
        declared file by file. No version: these files have none of their own, and /BUILD /SBOM
        gives them their modification date (decisions D15). -->
-  <component for="[LOCALAPPDATADIR]templates\" recursive="no" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]templates\minimal\" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]templates\minimal-x86\" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]templates\x64\template.wxs" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]templates\x86\template.wxs" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]templates\x86\template-silent.wxs" creator="https://github.com/gersonkurz/msis" license="MIT"/>
-  <component for="[LOCALAPPDATADIR]custom\" creator="https://github.com/gersonkurz/msis" license="MIT"/>
+  <component for="[LOCALAPPDATADIR]templates\" recursive="no" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]templates\minimal\" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]templates\minimal-x86\" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]templates\x64\template.wxs" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]templates\x86\template.wxs" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]templates\x86\template-silent.wxs" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
+  <component for="[LOCALAPPDATADIR]custom\" creator="https://github.com/gersonkurz/msis" license="MIT" source="https://github.com/gersonkurz/msis"/>
   <!-- The WiX UI localisation files are WiX's: "Copyright (c) .NET Foundation and contributors ...
        Licensed under the Microsoft Reciprocal License", as each file's header says. -->
-  <component for="[LOCALAPPDATADIR]templates\wixlib\" creator="https://wixtoolset.org" license="MS-RL"/>
+  <component for="[LOCALAPPDATADIR]templates\wixlib\" creator="https://wixtoolset.org" license="MS-RL" source="https://github.com/wixtoolset/wix"/>
 
   <!-- Main feature -->
   <feature name="MSIS">

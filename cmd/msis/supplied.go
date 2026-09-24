@@ -195,6 +195,7 @@ func declarationFor(d ir.DeclaredComponent, element, target, fileID string) sbom
 	return sbom.Declaration{
 		Source: element, Target: target, FileID: fileID,
 		Name: d.Name, Version: d.Version, Creator: d.Creator, License: d.License, PURL: d.PURL, CPE: d.CPE,
+		SourceCode: d.SourceCode,
 	}
 }
 

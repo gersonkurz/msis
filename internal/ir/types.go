@@ -43,6 +43,10 @@ type DeclaredComponent struct {
 	License string // an SPDX licence expression
 	PURL    string
 	CPE     string
+	// SourceCode is the URL of the file's source code (#68): BSI TR-03183-2 v2.1.0 §5.2.3's
+	// source code URI - the version in its repository where the author can name it, else the
+	// repository itself.
+	SourceCode string
 
 	// Recursive applies a folder declaration to files in subfolders too (#65). Only meaningful
 	// for a folder target; true unless the script says recursive="no".

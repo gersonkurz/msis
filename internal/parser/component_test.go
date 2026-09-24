@@ -16,13 +16,14 @@ func setupWith(element string) []byte {
 func TestParseDeclaredComponent(t *testing.T) {
 	s, err := ParseBytes(setupWith(`<component for="[INSTALLDIR]libfoo.dll" name="libfoo" version="2.3.1"
 		creator="https://foo.example" license="Apache-2.0 OR MIT" purl="pkg:nuget/Foo@2.3.1"
-		cpe="cpe:2.3:a:foo:libfoo:2.3.1:*:*:*:*:*:*:*"/>`))
+		cpe="cpe:2.3:a:foo:libfoo:2.3.1:*:*:*:*:*:*:*" source="https://github.com/foo/libfoo"/>`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []ir.DeclaredComponent{{
 		For: "[INSTALLDIR]libfoo.dll", Name: "libfoo", Version: "2.3.1", Creator: "https://foo.example",
 		License: "Apache-2.0 OR MIT", PURL: "pkg:nuget/Foo@2.3.1", CPE: "cpe:2.3:a:foo:libfoo:2.3.1:*:*:*:*:*:*:*",
+		SourceCode: "https://github.com/foo/libfoo",
 	}}
 	if !reflect.DeepEqual(s.Components, want) {
 		t.Errorf("components %+v, want %+v", s.Components, want)
@@ -40,6 +41,7 @@ func TestAMalformedDeclarationIsRefused(t *testing.T) {
 		`<component for="[INSTALLDIR]a.dll" license="MIT and some more"/>`: "license",
 		`<component for="[INSTALLDIR]a.dll" purl="nuget:Foo"/>`:            "purl",
 		`<component for="[INSTALLDIR]a.dll" cpe="foo:libfoo"/>`:            "cpe",
+		`<component for="[INSTALLDIR]a.dll" source="src\libfoo"/>`:         "not an absolute http(s) URL",
 	} {
 		_, err := ParseBytes(setupWith(element))
 		if err == nil || !strings.Contains(err.Error(), mustSay) {

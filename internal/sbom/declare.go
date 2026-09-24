@@ -20,6 +20,7 @@ type Declaration struct {
 	FileID string // the WiX File id: an exact join, not a name
 
 	Name, Version, Creator, License, PURL, CPE string
+	SourceCode                                 string // a URL: BSI §5.2.3's source code URI (#68)
 }
 
 // OneDescriptionPerFile refuses two descriptions of one file - two <sbom>s, two <component>s, a
@@ -128,6 +129,10 @@ func applyDeclarations(doc *Document, declared []Declaration) error {
 		if d.CPE != "" {
 			c.CPE = d.CPE
 			fields = append(fields, "cpe")
+		}
+		if d.SourceCode != "" {
+			c.ExternalReferences = append(c.ExternalReferences, sourceReference(d.SourceCode))
+			fields = append(fields, "source")
 		}
 		if d.PURL != "" || d.CPE != "" {
 			// The identity is no longer undetermined: the script states it.

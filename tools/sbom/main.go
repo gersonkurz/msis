@@ -43,22 +43,24 @@ var arches = []string{"x64", "x86", "arm64"}
 // TestNugetLicencesMatchTheNuspec checks it where the NuGet cache is present.
 var nativeComponents = []component{
 	{
-		Type:         "library",
-		Name:         "WixToolset.WcaUtil",
-		Version:      "5.0.2",
-		PURL:         "pkg:nuget/WixToolset.WcaUtil@5.0.2",
-		Description:  "WiX custom-action utility library, linked into msi-simplica.dll",
-		Licenses:     licensed("MS-RL"),
-		Manufacturer: wixCreator,
+		Type:               "library",
+		Name:               "WixToolset.WcaUtil",
+		Version:            "5.0.2",
+		PURL:               "pkg:nuget/WixToolset.WcaUtil@5.0.2",
+		Description:        "WiX custom-action utility library, linked into msi-simplica.dll",
+		Licenses:           licensed("MS-RL"),
+		Manufacturer:       wixCreator,
+		ExternalReferences: sourceCode(wixRepository),
 	},
 	{
-		Type:         "library",
-		Name:         "WixToolset.DUtil",
-		Version:      "5.0.2",
-		PURL:         "pkg:nuget/WixToolset.DUtil@5.0.2",
-		Description:  "WiX base utility library, linked into msi-simplica.dll",
-		Licenses:     licensed("MS-RL"),
-		Manufacturer: wixCreator,
+		Type:               "library",
+		Name:               "WixToolset.DUtil",
+		Version:            "5.0.2",
+		PURL:               "pkg:nuget/WixToolset.DUtil@5.0.2",
+		Description:        "WiX base utility library, linked into msi-simplica.dll",
+		Licenses:           licensed("MS-RL"),
+		Manufacturer:       wixCreator,
+		ExternalReferences: sourceCode(wixRepository),
 	},
 }
 
@@ -67,6 +69,24 @@ type creator struct {
 	Name string   `json:"name,omitempty"`
 	URL  []string `json:"url,omitempty"`
 }
+
+type externalRef struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+// sourceCode is BSI Table 11's mapping of the source code URI; the repository itself, as
+// §5.2.3 allows when no version in it is named.
+func sourceCode(url string) []externalRef {
+	return []externalRef{{Type: "source-distribution", URL: url}}
+}
+
+// msisRepository is where msis's source code is published.
+const msisRepository = "https://github.com/gersonkurz/msis"
+
+// wixRepository is what both WiX NuGet packages declare as their <repository url>;
+// TestNugetLicencesMatchTheNuspec checks it.
+const wixRepository = "https://github.com/wixtoolset/wix"
 
 // msisCreator is msis's own repository: the creator of msis.exe and msi-simplica.dll.
 var msisCreator = &creator{URL: []string{"https://github.com/gersonkurz/msis"}}
@@ -95,6 +115,11 @@ type component struct {
 	// is declared - a NuGet package's authors and projectUrl, msis's own repository - never
 	// derived from a name.
 	Manufacturer *creator `json:"manufacturer,omitempty"`
+
+	// ExternalReferences carries the source code (BSI TR-03183-2 v2.1.0 §5.2.3, #68) where it
+	// is a fact: msis's own repository, and the repository a NuGet package declares. A Go
+	// module's is not derived from its path.
+	ExternalReferences []externalRef `json:"externalReferences,omitempty"`
 
 	// Components nests what is linked INTO this one; only the component documents use it.
 	Components []component `json:"components,omitempty"`

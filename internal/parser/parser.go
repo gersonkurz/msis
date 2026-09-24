@@ -202,7 +202,7 @@ func (s *xmlSBOM) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 // xmlComponent represents facts declared about one payload file (#64):
-// <component for="[INSTALLDIR]libfoo.dll" name= version= creator= license= purl= cpe=/>
+// <component for="[INSTALLDIR]libfoo.dll" name= version= creator= license= purl= cpe= source=/>
 type xmlComponent struct {
 	ir.DeclaredComponent
 }
@@ -229,6 +229,8 @@ func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) erro
 			c.PURL = v
 		case "cpe":
 			c.CPE = v
+		case "source":
+			c.SourceCode = v
 		case "recursive":
 			recursive = v
 		default:
@@ -257,7 +259,7 @@ func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) erro
 	if c.For == "" {
 		return fmt.Errorf("<component> requires a for attribute naming the file it describes")
 	}
-	if c.Name == "" && c.Version == "" && c.Creator == "" && c.License == "" && c.PURL == "" && c.CPE == "" {
+	if c.Name == "" && c.Version == "" && c.Creator == "" && c.License == "" && c.PURL == "" && c.CPE == "" && c.SourceCode == "" {
 		return fmt.Errorf("<component for=%q> declares nothing", c.For)
 	}
 	if c.Creator != "" && !contact.IsEmail(c.Creator) && !contact.IsURL(c.Creator) {
@@ -273,6 +275,10 @@ func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) erro
 	}
 	if c.CPE != "" && !strings.HasPrefix(c.CPE, "cpe:2.3:") && !strings.HasPrefix(c.CPE, "cpe:/") {
 		return fmt.Errorf("<component for=%q>: cpe %q is neither a CPE 2.3 formatted string nor a CPE 2.2 URI", c.For, c.CPE)
+	}
+	if c.SourceCode != "" && !contact.IsURL(c.SourceCode) {
+		return fmt.Errorf("<component for=%q>: source %q is not an absolute http(s) URL; it names where the "+
+			"file's source code is published, e.g. its repository, not a path on this machine", c.For, c.SourceCode)
 	}
 	return d.Skip()
 }

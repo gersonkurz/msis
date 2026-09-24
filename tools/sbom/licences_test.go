@@ -165,6 +165,12 @@ func TestNugetLicencesMatchTheNuspec(t *testing.T) {
 			len(c.Manufacturer.URL) != 1 || c.Manufacturer.URL[0] != string(project[1]) {
 			t.Errorf("%s: creator %+v, but the .nuspec declares %q / %q", c.Name, c.Manufacturer, authors, project)
 		}
+		// And so is the source code (#68): the repository the package names.
+		repo := regexp.MustCompile(`<repository [^>]*url="([^"]+)"`).FindSubmatch(data)
+		if repo == nil || len(c.ExternalReferences) != 1 || c.ExternalReferences[0].URL != string(repo[1]) ||
+			c.ExternalReferences[0].Type != "source-distribution" {
+			t.Errorf("%s: source %+v, but the .nuspec declares %q", c.Name, c.ExternalReferences, repo)
+		}
 		checked++
 	}
 	if checked == 0 {

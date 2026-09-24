@@ -320,6 +320,13 @@
     <xs:attribute name="cpe" type="xs:string" use="optional">
       <xs:annotation><xs:documentation>CPE 2.3 formatted string or CPE 2.2 URI.</xs:documentation></xs:annotation>
     </xs:attribute>
+    <xs:attribute name="source" type="xs:anyURI" use="optional">
+      <xs:annotation><xs:documentation>
+        Absolute http(s) URL of the file's source code: the version in its repository where it
+        can be named, else the repository itself (BSI TR-03183-2 v2.1.0 section 5.2.3). Emitted as
+        an externalReference of type source-distribution.
+      </xs:documentation></xs:annotation>
+    </xs:attribute>
   </xs:complexType>
 
   <!-- Top-level vex element: the VEX document annotating this product's SBOM (#37) -->

@@ -39,6 +39,9 @@ func TestAStreamMatchingAnExtensionFileIsAttributed(t *testing.T) {
 	if !reflect.DeepEqual(c.Licenses, []LicenseChoice{{Expression: "LicenseRef-scancode-os-maintenance-fee-eula", Acknowledgement: "concluded"}}) {
 		t.Errorf("licences %+v, want ScanCode's id as the one concluded expression BSI §6.1 allows", c.Licenses)
 	}
+	if !reflect.DeepEqual(c.ExternalReferences, []ExternalReference{{Type: "source-distribution", URL: "https://github.com/wixtoolset/wix"}}) {
+		t.Errorf("source %+v, want the repository the package declares (#68)", c.ExternalReferences)
+	}
 	if got := propertyValueOf(c.Properties, propBuildExtension); got != "WixToolset.Util.wixext 7.0.0, wix-ir/utilca.dll-1" {
 		t.Errorf("%s = %q", propBuildExtension, got)
 	}
@@ -56,7 +59,8 @@ func TestAStreamWithOtherBytesIsNotAttributed(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := componentByRef(doc, refWithName(doc, stream.Name))
-	if c.Version != "" || c.Manufacturer != nil || c.Licenses != nil || propertyValueOf(c.Properties, propBuildExtension) != "" {
+	if c.Version != "" || c.Manufacturer != nil || c.Licenses != nil || c.ExternalReferences != nil ||
+		propertyValueOf(c.Properties, propBuildExtension) != "" {
 		t.Errorf("a stream the extension does not carry was attributed: %+v", c)
 	}
 }

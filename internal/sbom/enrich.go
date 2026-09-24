@@ -195,6 +195,9 @@ func enrichExtensionFiles(doc *Document, rec *buildrecord.Record) {
 		c.Version = e.Version
 		c.Manufacturer = creatorEntity(e.Authors, e.Repository, "")
 		c.Licenses = licencesOf(e.License)
+		// The repository the package declares is its source code (#68): BSI §5.2.3 accepts
+		// the repository itself where a version in it cannot be named.
+		c.ExternalReferences = append(c.ExternalReferences, sourceReference(e.Repository))
 		c.Properties = withoutProperty(c.Properties, propIdentityUnknown)
 		c.Properties = append(c.Properties,
 			Property{propIdentityUnknown, "the file " + from + ", matched by SHA-256"},

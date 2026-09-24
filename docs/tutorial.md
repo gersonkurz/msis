@@ -977,6 +977,7 @@ least one fact is required:
 | `creator` | an email address, or a URL when there is none (BSI TR-03183-2's "component creator") |
 | `license` | an SPDX licence expression: `MIT`, `Apache-2.0 OR MIT`, `GPL-3.0-only WITH Classpath-exception-2.0` |
 | `purl`, `cpe` | identifiers a vulnerability database can match. **Give one only if you are sure:** a wrong one produces false matches and hides real ones |
+| `source` | where the file's source code is published, as an absolute URL: the version in its repository if you can name it (`https://github.com/foo/libfoo/tree/v2.3.1`), else the repository itself (BSI TR-03183-2's "source code URI") |
 
 **A whole folder.** A target ending in a separator declares the same facts for every file
 installed under it, recursively unless `recursive="no"`:

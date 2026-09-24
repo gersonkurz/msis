@@ -371,7 +371,7 @@ the two have different evidentiary weight.
 |---|---|
 | `msis:supplied.from` | which document contributed this component. It is also what admits a component with no digest: msis never held those bytes, so there was never a hash to drop |
 | `msis:supplied.document` | per merged document, on the metadata: what the merge did, and what it did **not** establish |
-| `msis:declared.by`, `msis:declared.fields` | this file's component carries facts the script declared in a `<component>` (D16): which element, and which fields - name, version, creator, licence, purl, cpe. Everything else on the component is what msis read |
+| `msis:declared.by`, `msis:declared.fields` | this file's component carries facts the script declared in a `<component>` (D16): which element, and which fields - name, version, creator, licence, purl, cpe, source. Everything else on the component is what msis read |
 | `msis:supplied.ref` | msis assigned this component's `bom-ref` because its author gave it none. An address is not identity; nothing else about it was invented |
 
 **VEX assessments** — see [Tutorial 14](tutorial.md) for the `<vex>` element. The first three are
@@ -475,6 +475,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
 | Component creator, version, licence: payload files | when the script declares them, for one file or a whole folder: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), on the file's own component (D16); never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
 | Component creator, version, licence: WiX's Binary-table streams | ✓ under `/BUILD /SBOM`, for a stream whose bytes are a file of the WiX extension the build loaded (the WixUI bitmaps and icons, the Util custom-action DLL): what that package declares, pinned in `internal/wix` and checked against nuget.org before a release. The licence is ScanCode's `LicenseRef-scancode-os-maintenance-fee-eula`, as §6.1 prescribes for a licence with no SPDX id (D18). A stream that only has WiX's name is not attributed |
+| Source code URI (§5.2.3) | ✓ where it is a fact, as `externalReferences[{type: "source-distribution"}]`, BSI Table 11's mapping: a `<component source=>` declaration; a WiX stream's package repository (D18); msis's own components, its repository, and the WiX NuGet libraries, the repository their `.nuspec` names. A Go module gets none: its repository would be inferred from its module path |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
 | Data licence of the document | not a BSI field; `SBOM_DATA_LICENSE` grants one when the script sets it (D14). msis's own releases use CC0-1.0 |
 | Signature of the document (§5.4, optional) | not produced; the integrity of a release's documents comes from the release itself (D17) |

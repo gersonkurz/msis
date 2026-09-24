@@ -260,14 +260,24 @@ func (c Component) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(c))
 }
 
-// ExternalReference points at something outside the document. msis emits exactly one kind, a
-// BOM-Link of type "bom", and carries the subject digest with it: a link identifies a document,
-// and the digest is what proves that document describes the bytes this one carries.
+// ExternalReference points at something outside the document. msis emits three kinds:
+//   - "bom", a BOM-Link, carrying the subject digest: a link identifies a document, and the
+//     digest is what proves that document describes the bytes this one carries;
+//   - "distribution", where a payload the engine downloads is fetched from (D10);
+//   - "source-distribution", the component's source code (#68), which is how BSI TR-03183-2
+//     v2.1.0 Table 11 maps §5.2.3's source code URI - stated only where it is a fact.
 type ExternalReference struct {
 	Type    string `json:"type"`
 	URL     string `json:"url"`
 	Comment string `json:"comment,omitempty"`
 	Hashes  []Hash `json:"hashes,omitempty"`
+}
+
+// refSourceCode is BSI TR-03183-2 v2.1.0 Table 11's type for the source code URI.
+const refSourceCode = "source-distribution"
+
+func sourceReference(url string) ExternalReference {
+	return ExternalReference{Type: refSourceCode, URL: url}
 }
 
 type Hash struct {

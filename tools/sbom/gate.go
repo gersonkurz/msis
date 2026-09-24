@@ -33,6 +33,7 @@ type coverage struct {
 	NoVersion  int `json:"noVersion"`
 	NoSHA512   int `json:"noSHA512"`
 	NoFilename int `json:"noFilename"`
+	NoSource   int `json:"noSource"` // no source-distribution reference: BSI §5.2.3, Table 11 (#68)
 }
 
 type baseline struct {
@@ -44,10 +45,10 @@ type baseline struct {
 // after "msis-<version>-". Measured on the 3.0.6 release inputs, 2026-09-24. Lower a maximum or
 // raise a minimum when a change improves a document; the gate says when that is due.
 var gateBaselines = map[string]baseline{
-	"x64.msi":   {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
-	"x86.msi":   {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
-	"arm64.msi": {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
-	"setup.exe": {coverage{NoLicence: 10, NoCreator: 9, NoVersion: 6}, 6.75},
+	"x64.msi":   {coverage{NoLicence: 5, NoCreator: 11, NoSource: 12}, 7.47},
+	"x86.msi":   {coverage{NoLicence: 5, NoCreator: 11, NoSource: 12}, 7.47},
+	"arm64.msi": {coverage{NoLicence: 5, NoCreator: 11, NoSource: 12}, 7.47},
+	"setup.exe": {coverage{NoLicence: 10, NoCreator: 9, NoVersion: 6, NoSource: 10}, 6.75},
 }
 
 type gateComponent struct {
@@ -63,7 +64,11 @@ type gateComponent struct {
 	Supplier     *gateEntity   `json:"supplier"`
 	Authors      []gateContact `json:"authors"`
 	Hashes       []hash        `json:"hashes"`
-	Properties   []struct {
+	ExternalRefs []struct {
+		Type string `json:"type"`
+		URL  string `json:"url"`
+	} `json:"externalReferences"`
+	Properties []struct {
 		Name string `json:"name"`
 	} `json:"properties"`
 	Components []gateComponent `json:"components"`
@@ -118,6 +123,15 @@ func (c gateComponent) hasCreator() bool {
 	return false
 }
 
+func (c gateComponent) hasSource() bool {
+	for _, r := range c.ExternalRefs {
+		if r.Type == "source-distribution" && r.URL != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (c gateComponent) hasLicence() bool {
 	for _, l := range c.Licenses {
 		if l.Expression != "" || (l.License != nil && (l.License.ID != "" || l.License.Name != "")) {
@@ -166,6 +180,9 @@ func measure(data []byte) (coverage, error) {
 			if c.has("msis:msi.fileKey") && !c.has("bsi:component:filename") {
 				cov.NoFilename++
 			}
+			if !c.hasSource() {
+				cov.NoSource++
+			}
 			walk(c.Components)
 		}
 	}
@@ -203,6 +220,7 @@ func compare(got coverage, score float64, want baseline) (failures, notes []stri
 	check("components without a version", got.NoVersion, want.NoVersion)
 	check("hashed components without SHA-512", got.NoSHA512, want.NoSHA512)
 	check("payload files without bsi:component:filename", got.NoFilename, want.NoFilename)
+	check("components without a source code URI", got.NoSource, want.NoSource)
 	if score < want.BSI {
 		failures = append(failures, fmt.Sprintf("sbomqs BSI v2.1 score %.2f, the baseline requires %.2f", score, want.BSI))
 	}

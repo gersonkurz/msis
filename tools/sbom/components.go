@@ -114,15 +114,16 @@ func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, erro
 		parts[i].BOMRef = parts[i].PURL
 	}
 	root := component{
-		Type:         "application",
-		BOMRef:       "msis",
-		Name:         "msis",
-		Version:      version,
-		PURL:         "pkg:golang/github.com/gersonkurz/msis@v" + version,
-		Hashes:       sums,
-		Licenses:     licensed(own),
-		Manufacturer: msisCreator,
-		Components:   parts,
+		Type:               "application",
+		BOMRef:             "msis",
+		Name:               "msis",
+		Version:            version,
+		PURL:               "pkg:golang/github.com/gersonkurz/msis@v" + version,
+		Hashes:             sums,
+		Licenses:           licensed(own),
+		Manufacturer:       msisCreator,
+		ExternalReferences: sourceCode(msisRepository),
+		Components:         parts,
 	}
 	return newComponentDoc(root, "complete"), nil
 }
@@ -151,16 +152,17 @@ func hookDoc(version, path, own string) (*componentDoc, error) {
 		parts[i].BOMRef = parts[i].PURL
 	}
 	root := component{
-		Type:         "library",
-		BOMRef:       "msi-simplica",
-		Name:         "msi-simplica",
-		Version:      version,
-		PURL:         "pkg:generic/msi-simplica@" + version,
-		Description:  "Native installer-hook DLL built from native/msi-simplica; the statically linked MSVC runtime is not listed",
-		Hashes:       sums,
-		Licenses:     licensed(own),
-		Manufacturer: msisCreator,
-		Components:   parts,
+		Type:               "library",
+		BOMRef:             "msi-simplica",
+		Name:               "msi-simplica",
+		Version:            version,
+		PURL:               "pkg:generic/msi-simplica@" + version,
+		Description:        "Native installer-hook DLL built from native/msi-simplica; the statically linked MSVC runtime is not listed",
+		Hashes:             sums,
+		Licenses:           licensed(own),
+		Manufacturer:       msisCreator,
+		ExternalReferences: sourceCode(msisRepository),
+		Components:         parts,
 	}
 	return newComponentDoc(root, "incomplete"), nil
 }

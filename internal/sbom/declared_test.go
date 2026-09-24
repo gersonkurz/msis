@@ -114,6 +114,24 @@ func TestADeclaredLicenceOutsideTheSPDXListIsAnExpression(t *testing.T) {
 	}
 }
 
+// #68: a declared source is BSI §5.2.3's source code URI, mapped as BSI Table 11 maps it - an
+// externalReference of type source-distribution on the file's own component.
+func TestADeclaredSourceIsTheSourceCodeURI(t *testing.T) {
+	doc, err := FromPackage(syntheticPackage(), Options{MsisVersion: "test",
+		Declared: []Declaration{declaration(Declaration{SourceCode: "https://github.com/foo/libfoo"})}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := componentByRef(doc, refWithName(doc, "a.dll"))
+	if !reflect.DeepEqual(c.ExternalReferences, []ExternalReference{{Type: "source-distribution", URL: "https://github.com/foo/libfoo"}}) {
+		t.Errorf("external references %+v", c.ExternalReferences)
+	}
+	if got := propertyValueOf(c.Properties, propDeclaredFields); got != "source" {
+		t.Errorf("%s = %q", propDeclaredFields, got)
+	}
+	conforms(t, doc, conformance.Expected{})
+}
+
 // D13 on the file itself: a declared version that contradicts the recorded one refuses; a
 // matching one keeps the recorded version; and a declared version REPLACES the build's date
 // fallback (D15), which was msis's, not the package's.
