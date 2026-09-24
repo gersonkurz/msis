@@ -220,15 +220,16 @@ func evaluate(statement sbom.Vulnerability, known map[string]component, release 
 	// A statement that WARNS - exploitable, in_triage - is left exactly as it is. Neutralising
 	// it would be weakening a warning because its scope lapsed, which is the same mistake in
 	// the other direction and a worse one.
-	if state := statement.AnalysisState(); suppresses(state) {
+	if state := statement.AnalysisState(); Suppresses(state) {
 		statement.SetProperty(sbom.PropPreviousState, state)
 		statement.SetAnalysisState("in_triage")
 	}
 	return statement, false, nil
 }
 
-// suppresses reports whether a state tells a reader there is nothing to act on.
-func suppresses(state string) bool {
+// Suppresses reports whether a state tells a reader there is nothing to act on. /SCAN uses the
+// same rule to decide which findings a statement answers (#69).
+func Suppresses(state string) bool {
 	switch state {
 	case "not_affected", "false_positive", "resolved", "resolved_with_pedigree":
 		return true

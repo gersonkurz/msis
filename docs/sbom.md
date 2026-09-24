@@ -518,6 +518,54 @@ VEX sidecars — "which releases are affected, minus what we have already assess
 
 ---
 
+## `/SCAN`: vulnerability scanning
+
+msis does not scan anything itself. `/SCAN` runs **grype**, if it is on `PATH` (msis never
+downloads it), on the documents msis wrote, and says what the result covers ([decisions D19](decisions.md)):
+
+```
+msis /BUILD /SBOM /SCAN setup.msis       scan every document this build wrote
+msis /SBOM /SCAN app.msi app-setup.exe   describe these installers, then scan the documents
+msis /SCAN app.msi.cdx.json              scan documents that already exist
+```
+
+```
+  Scan: app.msi.grype.json (grype, 1 finding(s), 0 answered by VEX)
+    High     GO-2026-5970 (CVE-2026-56852)  golang.org/x/text v0.20.0  fixed in 0.39.0
+  Not scanned: 27 of 45 components carry neither a purl nor a CPE, so no scanner can match them
+  VEX: no VEX document beside it
+```
+
+- **grype's report is kept verbatim**, as `<artifact>.grype.json` beside the document. A
+  previous report is kept, not overwritten, as `<artifact>.<its timestamp>.grype.json`: the
+  vulnerability database changes daily, so an earlier scan is evidence. The report names the
+  local grype database path, which grype always records. msis's own release therefore keeps its
+  reports in `bootstrap/scan/`, not in `dist/`.
+- **What could not be scanned is always stated.** Scanners match on purl and CPE. A payload
+  file msis could not identify has neither (D4), so "no findings" over components nobody could
+  match is not a clean result. `<component purl= cpe=>` and `<sbom>` are how a script makes its
+  files scannable.
+- **BOM-Links are not followed by grype.** A bundle's document names its installers' documents
+  rather than repeating them. A linked document scanned in the same run counts as covered; any
+  other link is named, so a bundle does not read as clean because its contents were never looked
+  at.
+- **VEX answers findings, but only msis's evaluated VEX.** A finding is marked "answered by
+  VEX" when the VEX sidecar beside the document has a statement that meets all of these:
+  - it was evaluated against this very document: its subject's BOM-Link names this serial and
+    version;
+  - it is about that finding's id, or its CVE alias, for that component;
+  - it is still in a state that says there is nothing to act on (`not_affected`,
+    `false_positive`, `resolved`).
+
+  A statement whose conditions lapsed was already moved to `in_triage` by the VEX evaluation
+  (Tutorial 14), and answers nothing.
+- **A finding never fails the run.** Only a missing or failing grype, or a report msis cannot
+  keep, is an error. A CVE published tomorrow must not stop a build that has not changed. msis's
+  own `just release` scans as a report, never a gate, and a machine without grype still releases,
+  saying it was not scanned.
+
+---
+
 ## See also
 
 - **[Tutorial 13](tutorial.md)** — `<sbom>`: composing a component SBOM your build system

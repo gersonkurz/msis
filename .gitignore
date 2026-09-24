@@ -15,6 +15,7 @@ native/**/bin/
 native/**/obj/
 
 bootstrap/dist/
+bootstrap/scan/
 
 # Generated installer files
 *.msi

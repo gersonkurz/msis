@@ -219,7 +219,7 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 // subject digest before making it, so a bundle written first would simply record that no
 // document was there - correct, but less useful than doing it the other way round.
 func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied, declared []sbom.Declaration,
-	statements *vex.Source) error {
+	statements *vex.Source, scan bool) error {
 
 	// The VEX annotates ONE document: the inventory of what is installed. Where a build
 	// produces both an MSI and the bundle wrapping it, that is the MSI - its components are
@@ -274,7 +274,18 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 	}
 
 	if inventoryDoc != nil {
-		return emitVEX(inventory, inventoryDoc, statements)
+		if err := emitVEX(inventory, inventoryDoc, statements); err != nil {
+			return err
+		}
+	}
+	// /SCAN (#69): every document this build wrote, after the VEX it may answer findings with.
+	// Scanning them together is what lets a bundle's BOM-Link to its MSI count as covered.
+	if scan {
+		docs := make([]string, 0, len(artifacts))
+		for _, a := range artifacts {
+			docs = append(docs, sbom.SidecarPath(a))
+		}
+		return scanDocuments(docs)
 	}
 	return nil
 }

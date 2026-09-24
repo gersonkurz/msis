@@ -32,6 +32,7 @@ just coverage           # coverage profile + Cobertura XML
 just release-all        # Full dogfood: build x64/x86/arm64 MSIs + universal bundle from bootstrap/
 just repin-check        # Network: have Microsoft's aliases moved past the prerequisite pins? (D5, #49) Gates release/release-all.
 just wix-packages-check # Network: do the pinned WiX extension package facts (authors, repository, licence text digest) still match nuget.org? (#67, D18) Gates release/release-all.
+just sbom-scan          # Release SBOMs scanned with grype by the msis just built; reports to bootstrap/scan (#69, D19). A report, never a gate.
 just sbom-gate          # Release SBOMs in bootstrap/dist vs the coverage baseline in tools/sbom/gate.go + pinned sbomqs BSI floor (#63). Gates release/release-all.
 just test-race          # Optional: the root-module suite under -race (not tools/sbom-index); needs mingw-w64 gcc on PATH, stops non-zero otherwise (D9, #51)
 ```
@@ -65,6 +66,7 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `cabinet` | Shared in-memory cabinet extraction (Windows FDI), used by both readers. |
 | `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `merge.go` composes a component SBOM the script supplied for one payload file (#36): imported components are emitted VERBATIM (raw JSON, so licences and anything else msis does not model survive), only their document-local `bom-ref` is namespaced, and the supplier's coverage statements are preserved rather than improved. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
 | `vex` | Evaluates a VEX document (#37) against the SBOM of the build it accompanies, and writes the sidecar beside it. msis assesses nothing; what it checks is that an assessment's recorded conditions STILL HOLD - above all the release it was made for, because a library can be byte-identical between two releases while the application around it starts calling the vulnerable path. A statement whose conditions lapsed is kept and flagged, and one that was SUPPRESSING a finding stops doing so. |
+| `scan` | `/SCAN` (#69): runs grype (on PATH, never downloaded) on an SBOM, keeps its JSON verbatim beside it, and states what the scan could not cover (components without purl/CPE, BOM-Links not scanned in the same run). A finding is "answered" only by a statement from msis's VEX sidecar evaluated against that very document (D19). A finding never fails a run. |
 | `buildrecord` | What a build knows and the artifact cannot say (#34): each payload's source, the toolchain, whether a prerequisite is carried or merely detected, and where a downloaded one came from. Each of the four build paths **contributes** to a record; `sbom` layers it onto the artifact-derived document and refuses to emit if the two disagree about any file. |
 
 Outside `internal/`: **`tools/sbom-index` is its own Go module** (nested `go.mod`) holding the
@@ -92,7 +94,9 @@ The tool accepts Windows-style `/FLAG` and `/FLAG:VALUE`; `parseArgs` in `main.g
 to `--flag` for Go's `flag` package (paths with `\` or `:` are left as files). `/SET:NAME=VALUE`
 overrides variables. Key flags: `/BUILD`, `/RETAINWXS`, `/STANDALONE`, `/DRY-RUN`, `/STATUS`,
 `/TEMPLATE`, `/TEMPLATEFOLDER`, `/CUSTOMTEMPLATES`. `/STATUS` is the diagnostic entry point (WiX
-location/version, template search order, prerequisite cache).
+location/version, template search order, prerequisite cache). `/INSPECT` and `/SBOM` read a built
+artifact; `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; alone, on the
+`.cdx.json` documents named) and applies msis's evaluated VEX to the findings (D19).
 
 ## Supported Directory Roots
 

@@ -664,3 +664,37 @@ which §6.1 says is not a modification.
 
 **What would reopen this:** SPDX adding an id for the agreement; ScanCode adding one for WiX's
 current text; or a WiX version whose package declares something else.
+
+## D19 — `/SCAN` runs grype and applies msis's evaluated VEX itself; a finding never fails a run
+
+**Settled in:** [#69](https://github.com/gersonkurz/msis/issues/69), 2026-09-24. Product owner's
+decisions: grype first, grype's JSON kept verbatim, the release scan a report and never a gate.
+**Implemented by:** `internal/scan/scan.go` — `func vexAnswers(d document, vexDoc []byte)`, `func Grype(doc string)`
+
+The product owner's purpose for SBOMs is vulnerability scanning. msis drives a scanner; it does
+not become one.
+
+- **grype, found on PATH, never downloaded.** grype reads CycloneDX natively, and it reports each
+  finding's component by the document's own `bom-ref` (`artifact.id`), so a finding joins its
+  component exactly. osv-scanner can join later behind the same flag.
+- **msis applies the VEX, not grype.** grype 0.119 does not read CycloneDX VEX. Passing msis's
+  sidecar with `--vex` fails with "unable to detect document format". Even a scanner that read it
+  could not know which statements still hold: that is what msis's evaluation (#37) decides, and
+  it already moved every lapsed statement out of a suppressing state. So a finding is answered
+  only by a statement from a sidecar evaluated against this very document (its subject's
+  BOM-Link), by id or alias, for that component, in `vex.Suppresses`' states. grype's own report
+  is left untouched: the answers are msis's reading of it, stated in the terminal.
+- **Coverage is always stated.** The count of components without purl or CPE, and every BOM-Link
+  not scanned in the same run. A clean scan of unidentifiable components is the misleading
+  result this exists to prevent.
+- **A finding never fails a run.** A newly published CVE would otherwise break a build that did
+  not change. msis's own release scans as a report and releases without grype.
+  - A `--fail-on` threshold in the user's grype configuration (or `GRYPE_FAIL_ON_SEVERITY`) makes
+    grype exit 2 with its report. That is grype reporting findings, so the report is kept and
+    the scan stands.
+- **The report is verbatim and names the local grype database path.** msis's own release keeps
+  its reports outside `dist/`.
+
+**What would reopen this:** a grype that reads CycloneDX VEX and evaluates it with the same care;
+a need for a CI gate on findings, which would be an opt-in threshold and never the default; a
+second scanner.

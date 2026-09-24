@@ -157,13 +157,14 @@ clean:
 [unix]
 clean-bootstrap:
     rm -f {{bootstrap_dir}}/*.exe
-    rm -rf {{bootstrap_dir}}/dist
+    rm -rf {{bootstrap_dir}}/dist {{bootstrap_dir}}/scan
     mkdir -p {{bootstrap_dir}}/dist
 
 [windows]
 clean-bootstrap:
     Remove-Item -Force -ErrorAction SilentlyContinue {{bootstrap_dir}}\*.exe
     if (Test-Path {{bootstrap_dir}}\dist) { Remove-Item -Recurse -Force {{bootstrap_dir}}\dist }
+    if (Test-Path {{bootstrap_dir}}\scan) { Remove-Item -Recurse -Force {{bootstrap_dir}}\scan }
     New-Item -ItemType Directory -Force {{bootstrap_dir}}\dist | Out-Null
 
 # Clean everything
@@ -356,6 +357,23 @@ sbom-components arches="x64,x86,arm64":
 sbom:
     go run ./tools/sbom -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
 
+# The release's vulnerability scan (#69): msis's own /SCAN over every SBOM the release wrote,
+# with the msis binary it just built. A REPORT, never a gate (product owner's decision,
+# 2026-09-24): a CVE published tomorrow must not stop an unchanged release, and a machine without
+# grype still releases, saying it was not scanned. grype's reports name the local grype database
+# path, so they are moved out of dist/ - which is what gets uploaded - into scan/. Reports already
+# in scan/ are moved back beside their documents first, so /SCAN keeps each by its timestamp as it
+# would anywhere else, and nothing is overwritten. If a report of the same name is already in
+# dist/ too, nothing is moved or scanned, and the clash is named: both reports survive.
+# Scan the release SBOMs in bootstrap/dist with grype and keep the reports in bootstrap/scan
+[windows]
+sbom-scan:
+    if (-not (Get-Command grype -ErrorAction SilentlyContinue)) { Write-Host "grype is not on PATH: this release is not scanned (a report, never a gate)"; exit 0 }; $docs = @(Get-ChildItem {{bootstrap_dir}}\dist -Filter 'msis-{{version}}*.cdx.json' | Where-Object { $_.Name -notlike '*.vex.cdx.json' } | ForEach-Object FullName); $clash = @(Get-ChildItem {{bootstrap_dir}}\scan -Filter *.grype.json -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path {{bootstrap_dir}}\dist $_.Name) } | ForEach-Object Name); if ($clash) { Write-Host "not scanned: $($clash -join ', ') exist in both scan\ and dist\; move one aside so neither report is lost"; exit 0 }; if (Test-Path {{bootstrap_dir}}\scan) { Move-Item {{bootstrap_dir}}\scan\*.grype.json {{bootstrap_dir}}\dist }; & .\{{bootstrap_dir}}\msis-x64.exe /SCAN @docs; $code = $LASTEXITCODE; New-Item -ItemType Directory -Force {{bootstrap_dir}}\scan | Out-Null; Move-Item {{bootstrap_dir}}\dist\*.grype.json {{bootstrap_dir}}\scan -ErrorAction SilentlyContinue; if ($code -ne 0) { Write-Host "the scan did not complete (exit $code); the release is not gated on it" }; exit 0
+
+[unix]
+sbom-scan:
+    @command -v grype >/dev/null || { echo "grype is not on PATH: this release is not scanned (a report, never a gate)"; exit 0; }; docs=$(ls {{bootstrap_dir}}/dist/msis-{{version}}*.cdx.json | grep -v '\.vex\.cdx\.json$'); for f in {{bootstrap_dir}}/scan/*.grype.json; do [ -e "$f" ] || continue; if [ -e "{{bootstrap_dir}}/dist/$(basename "$f")" ]; then echo "not scanned: $(basename "$f") exists in both scan/ and dist/; move one aside so neither report is lost"; exit 0; fi; done; for f in {{bootstrap_dir}}/scan/*.grype.json; do [ -e "$f" ] && mv -n "$f" {{bootstrap_dir}}/dist/; done; ./{{bootstrap_dir}}/msis-x64.exe /SCAN $docs || echo "the scan did not complete; the release is not gated on it"; mkdir -p {{bootstrap_dir}}/scan; mv -n {{bootstrap_dir}}/dist/*.grype.json {{bootstrap_dir}}/scan/ 2>/dev/null; exit 0
+
 # What the WiX extension packages declare - authors, repository, licence file - is pinned in
 # internal/wix/extensions.go (#67, decisions D18): the extension cache a build reads keeps only
 # the DLL. This compares every pin with nuget.org (network), and GATES `release` and
@@ -409,7 +427,7 @@ repin:
 # returned, so `release` announced success and `release-all` carried on after a failure (#53).
 # Build release MSI package (x64 only)
 [unix]
-release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate
+release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
@@ -418,7 +436,7 @@ release: require-clean-tree repin-check wix-packages-check clean-bootstrap build
     @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 [windows]
-release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate
+release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
@@ -428,7 +446,7 @@ release: require-clean-tree repin-check wix-packages-check clean-bootstrap build
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate
+release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
@@ -450,7 +468,7 @@ release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap b
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate
+release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json

@@ -44,6 +44,7 @@ type cliArgs struct {
 	status          bool
 	inspect         bool              // /INSPECT: read a built .msi and report what is in it
 	sbom            bool              // /SBOM: write a CycloneDX document for a built .msi
+	scan            bool              // /SCAN: run grype on the SBOM (#69)
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
@@ -78,6 +79,23 @@ func main() {
 		os.Exit(10)
 	}
 
+	if err := scanArgsValid(args); err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", cli.Error("Error:"), err)
+		os.Exit(2)
+	}
+
+	// /SCAN on its own scans documents that already exist (#69); nothing is built or read. All
+	// of them in one pass, so a bundle's BOM-Link to an MSI document scanned alongside it counts
+	// as covered.
+	if args.scan && !args.sbom {
+		if err := scanDocuments(args.files); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", cli.Error("Error scanning:"), err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	var written []string // /SBOM /SCAN: the documents to scan once every one is written
 	for _, filename := range args.files {
 		// /INSPECT reads a built artifact, so it does not go through the .msis pipeline at
 		// all - no parsing, no generation, no build.
@@ -101,10 +119,17 @@ func main() {
 				fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error writing the SBOM for"), cli.Filename(filename), err)
 				os.Exit(1)
 			}
+			written = append(written, sbom.SidecarPath(filename))
 			continue
 		}
 		if err := processFile(filename, args); err != nil {
 			fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error processing"), cli.Filename(filename), err)
+			os.Exit(1)
+		}
+	}
+	if args.scan && len(written) > 0 {
+		if err := scanDocuments(written); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", cli.Error("Error scanning:"), err)
 			os.Exit(1)
 		}
 	}
@@ -460,7 +485,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{msiPath}, supplied, declared, statements)
+			return emitBuildSBOM(rec, []string{msiPath}, supplied, declared, statements, args.scan)
 		}
 	}
 
@@ -575,7 +600,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		// document exists and its subject digest matches, so this order is what turns two
 		// documents into a linked pair rather than two unrelated files.
 		rec.Sort()
-		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, declared, statements)
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, declared, statements, args.scan)
 	}
 
 	return nil
@@ -749,7 +774,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, nil, statements)
+			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, nil, statements, args.scan)
 		}
 	}
 
@@ -861,6 +886,7 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.status, "status", false, "")
 	fs.BoolVar(&args.inspect, "inspect", false, "")
 	fs.BoolVar(&args.sbom, "sbom", false, "")
+	fs.BoolVar(&args.scan, "scan", false, "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
 	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
@@ -975,6 +1001,9 @@ func printUsage() {
 	fmt.Printf("  %s               With /BUILD on a .msis: build it and describe what was built,\n", cli.Info("     "))
 	fmt.Printf("  %s                enriched with each payload's source, the toolchain, and\n", cli.Info("     "))
 	fmt.Printf("  %s                where each prerequisite came from\n", cli.Info("     "))
+	fmt.Printf("  %s               Run grype on the SBOM: with /SBOM, on what it wrote; on its\n", cli.Info("/SCAN"))
+	fmt.Printf("  %s                own, on the .cdx.json documents named. Keeps grype's report\n", cli.Info("     "))
+	fmt.Printf("  %s                beside it and applies the product's VEX statements\n", cli.Info("     "))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()
