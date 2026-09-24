@@ -576,3 +576,26 @@ file still has one description, whether a `<component>`, a folder `<component>` 
 
 **What would reopen this:** a consumer that needs the declaration as a separately addressable
 component. That is what `<sbom>` is for.
+
+## D17 — msis does not sign its SBOMs
+
+**Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24, product owner's
+decision.
+**Implemented by:** `docs/sbom.md` — `the integrity of a release's documents comes from the release itself (D17)`
+
+BSI TR-03183-2 v2.1.0 §5.4 makes a signature on the SBOM optional, and CycloneDX 1.6 can carry one
+inline (JSF). msis produces none, and sbomqs's optional signature field stays at 0.
+
+The reasons:
+- A signature is only as good as its key handling. Signing inside msis means msis holding,
+  protecting and rotating a private key on every build machine. That is a feature of its own,
+  and one a build tool gets wrong easily.
+- The integrity a consumer needs is already available outside the document. The release that
+  publishes it can be signed or checksummed, and the installer it describes can carry its
+  publisher's Authenticode signature. The document names that installer by its digest.
+- An inline signature fixes the document's bytes, and msis's documents are composed and
+  re-composed: a supplied `<sbom>` is merged, a VEX sidecar is evaluated against the document.
+  Signing belongs at the end of that chain, which is the publisher's step, not msis's.
+
+**What would reopen this:** a regulation or customer that requires the signature inside the
+document, or a signing service the build can call without msis holding a key.

@@ -475,6 +475,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Component creator, version, licence: payload files | when the script declares them, for one file or a whole folder: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), on the file's own component (D16); never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
 | Data licence of the document | not a BSI field; `SBOM_DATA_LICENSE` grants one when the script sets it (D14). msis's own releases use CC0-1.0 |
+| Signature of the document (§5.4, optional) | not produced; the integrity of a release's documents comes from the release itself (D17) |
 
 **Only `/BUILD /SBOM` can be compliant.** §5.1 requires a *Build SBOM*, one created as part of
 the build. `/SBOM` on an existing artifact produces what the guideline calls an *Analysed
@@ -483,6 +484,16 @@ a TR-03183-2 SBOM by definition.
 
 The `bsi:component:*` properties are BSI's, not msis's, and use BSI's values:
 `executable`/`non-executable`, `archive`/`no archive`, `structured`/`unstructured`.
+
+**msis's own releases cannot slip.** `just release` and `just release-all` end with
+`sbom-gate` (`tools/sbom/gate.go`), which fails the release when a release document carries
+more components without a licence, creator or version, more hashed components without SHA-512,
+or more payload files without `bsi:component:filename`, than the last release's baseline.
+Each count is a maximum; when one improves, the gate says so and the baseline is lowered, so
+the improvement is locked in. It also runs sbomqs's BSI v2.1 profile, pinned by version, and
+fails below a floor. sbomqs is a second opinion, not the authority: where it reads BSI
+differently from msis (D10's hash placement, D11's "orphans"), its score is the floor it
+reaches, not a target.
 
 ---
 

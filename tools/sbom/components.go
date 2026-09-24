@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
 	"debug/buildinfo"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -85,7 +88,7 @@ func writeComponentDocs(version, dist, binDir, templatesDir string, binArches []
 // every module that contributed code, so the assemblies are complete; build info carries no
 // module graph, so which module depends on which stays unknown.
 func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, error) {
-	sum, err := sha256File(path)
+	sums, err := fileHashes(path)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +119,7 @@ func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, erro
 		Name:         "msis",
 		Version:      version,
 		PURL:         "pkg:golang/github.com/gersonkurz/msis@v" + version,
-		Hashes:       []hash{{Alg: "SHA-256", Content: sum}},
+		Hashes:       sums,
 		Licenses:     licensed(own),
 		Manufacturer: msisCreator,
 		Components:   parts,
@@ -124,11 +127,22 @@ func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, erro
 	return newComponentDoc(root, "complete"), nil
 }
 
+// fileHashes is the file's SHA-256, which msis checks against the file it packages, and the
+// SHA-512 BSI TR-03183-2 asks of a deployable component (decisions D10).
+func fileHashes(path string) ([]hash, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("hashing release artifact: %w", err)
+	}
+	s256, s512 := sha256.Sum256(data), sha512.Sum512(data)
+	return []hash{{Alg: "SHA-256", Content: hex.EncodeToString(s256[:])}, {Alg: "SHA-512", Content: hex.EncodeToString(s512[:])}}, nil
+}
+
 // hookDoc describes one hook DLL: the two pinned NuGet libraries it links. It also links the MSVC
 // runtime statically (RuntimeLibrary=MultiThreaded), whose version the DLL does not record, so the
 // assemblies are declared incomplete rather than complete.
 func hookDoc(version, path, own string) (*componentDoc, error) {
-	sum, err := sha256File(path)
+	sums, err := fileHashes(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w\nthe hook DLLs are staged by `just build-hooks`", err)
 	}
@@ -143,7 +157,7 @@ func hookDoc(version, path, own string) (*componentDoc, error) {
 		Version:      version,
 		PURL:         "pkg:generic/msi-simplica@" + version,
 		Description:  "Native installer-hook DLL built from native/msi-simplica; the statically linked MSVC runtime is not listed",
-		Hashes:       []hash{{Alg: "SHA-256", Content: sum}},
+		Hashes:       sums,
 		Licenses:     licensed(own),
 		Manufacturer: msisCreator,
 		Components:   parts,

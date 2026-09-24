@@ -31,6 +31,7 @@ just check              # fmt-check + vet + test  (run before committing)
 just coverage           # coverage profile + Cobertura XML
 just release-all        # Full dogfood: build x64/x86/arm64 MSIs + universal bundle from bootstrap/
 just repin-check        # Network: have Microsoft's aliases moved past the prerequisite pins? (D5, #49) Gates release/release-all.
+just sbom-gate          # Release SBOMs in bootstrap/dist vs the coverage baseline in tools/sbom/gate.go + pinned sbomqs BSI floor (#63). Gates release/release-all.
 just test-race          # Optional: the root-module suite under -race (not tools/sbom-index); needs mingw-w64 gcc on PATH, stops non-zero otherwise (D9, #51)
 ```
 

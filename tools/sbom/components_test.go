@@ -1,11 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
 	"debug/buildinfo"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -59,12 +63,14 @@ func TestComponentDocsDescribeTheBytesTheyNameAndValidate(t *testing.T) {
 	}
 	wantHash := func(name, path string, got component) {
 		t.Helper()
-		sum, err := sha256File(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Hashes) != 1 || got.Hashes[0].Content != sum {
-			t.Errorf("%s: subject hash %v, want the file's SHA-256 %s", name, got.Hashes, sum)
+		s256, s512 := sha256.Sum256(data), sha512.Sum512(data)
+		want := []hash{{"SHA-256", hex.EncodeToString(s256[:])}, {"SHA-512", hex.EncodeToString(s512[:])}}
+		if !reflect.DeepEqual(got.Hashes, want) {
+			t.Errorf("%s: subject hash %v, want the file's SHA-256 and SHA-512 %v", name, got.Hashes, want)
 		}
 	}
 	coverage := func(name string, doc componentDoc, assemblies string) {

@@ -12,6 +12,7 @@
 // Usage: sbom -version X.Y.Z -dist DIR [-bin DIR] [-out FILE]
 //
 //	sbom -components ...   the per-file documents msis's own installers compose (components.go)
+//	sbom -gate ...         fail if a release SBOM's coverage fell below the baseline (gate.go)
 package main
 
 import (
@@ -161,6 +162,7 @@ func main() {
 		doComps   = flag.Bool("components", false, "write the component documents setup.msis composes, before packaging")
 		compArch  = flag.String("arches", strings.Join(arches, ","), "with -components: the msis binaries to describe")
 		templates = flag.String("templates", "templates", "with -components: the folder holding the staged hook DLLs")
+		doGate    = flag.Bool("gate", false, "after packaging: fail if a release SBOM's coverage fell below the baseline (gate.go)")
 	)
 	flag.Parse()
 
@@ -185,6 +187,13 @@ func main() {
 			fatal(err)
 		}
 		fmt.Printf("Wrote the component documents in %s\n", componentsDir(*dist))
+		return
+	}
+	if *doGate {
+		if err := gate(*version, *dist); err != nil {
+			fatal(err)
+		}
+		fmt.Println("SBOM coverage is at or above the baseline")
 		return
 	}
 	if *doSeal {

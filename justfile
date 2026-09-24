@@ -356,6 +356,15 @@ sbom-components arches="x64,x86,arm64":
 sbom:
     go run ./tools/sbom -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
 
+# The SBOM coverage gate (#63) GATES `release` and `release-all`, after packaging: a release
+# stops when a release SBOM carries fewer licences, creators, versions, SHA-512s or filenames
+# than the baseline in tools/sbom/gate.go, or scores below its floor on sbomqs's BSI TR-03183-2
+# v2.1.0 profile. sbomqs is `go run` at a pinned version (network on first use, like
+# repin-check); it is a second opinion, msis's own counts are the authority.
+# Check the release SBOMs in bootstrap/dist against the coverage baseline
+sbom-gate:
+    go run ./tools/sbom -gate -version {{version}} -dist {{bootstrap_dir}}/dist
+
 # The prerequisite pins (internal/prereqcache, decisions D5) are version-specific URLs plus
 # SHA-256; a newer redistributable reaches bundles only when a release re-pins (#49). Both
 # recipes need the network and are NOT part of `just check`. repin-check GATES `release` and
@@ -391,7 +400,7 @@ repin:
 # returned, so `release` announced success and `release-all` carried on after a failure (#53).
 # Build release MSI package (x64 only)
 [unix]
-release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64")
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
@@ -400,7 +409,7 @@ release: require-clean-tree repin-check clean-bootstrap build-hooks build-window
     @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 [windows]
-release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64")
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
@@ -410,7 +419,7 @@ release: require-clean-tree repin-check clean-bootstrap build-hooks build-window
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
@@ -432,7 +441,7 @@ release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-al
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
