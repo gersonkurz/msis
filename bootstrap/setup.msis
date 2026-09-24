@@ -50,6 +50,7 @@
     <files source="..\templates\x86" target="[LOCALAPPDATADIR]templates\x86"/>
     <files source="..\templates\arm64" target="[LOCALAPPDATADIR]templates\arm64"/>
     <files source="..\templates\minimal" target="[LOCALAPPDATADIR]templates\minimal"/>
+    <files source="..\templates\minimal-x86" target="[LOCALAPPDATADIR]templates\minimal-x86"/>
     <files source="..\templates\bundle.wxs" target="[LOCALAPPDATADIR]templates"/>
     <files source="..\templates\bundle-silent.wxs" target="[LOCALAPPDATADIR]templates"/>
     <files source="..\templates\wixlib" target="[LOCALAPPDATADIR]templates\wixlib"/>
