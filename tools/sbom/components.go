@@ -30,8 +30,9 @@ type componentDoc struct {
 	SpecVersion string `json:"specVersion"`
 	Version     int    `json:"version"`
 	Metadata    struct {
-		Lifecycles []lifecycle `json:"lifecycles"`
-		Component  component   `json:"component"`
+		Lifecycles []lifecycle         `json:"lifecycles"`
+		Licenses   []dataLicenseChoice `json:"licenses"`
+		Component  component           `json:"component"`
 	} `json:"metadata"`
 	Compositions []composition `json:"compositions"`
 }
@@ -151,6 +152,7 @@ func hookDoc(version, path, own string) (*componentDoc, error) {
 func newComponentDoc(root component, assemblies string) *componentDoc {
 	doc := &componentDoc{BOMFormat: "CycloneDX", SpecVersion: "1.6", Version: 1}
 	doc.Metadata.Lifecycles = postBuild
+	doc.Metadata.Licenses = dataLicense
 	doc.Metadata.Component = root
 	doc.Compositions = []composition{
 		{Aggregate: assemblies, Assemblies: []string{root.BOMRef}},

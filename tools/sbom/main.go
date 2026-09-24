@@ -94,8 +94,10 @@ type property struct {
 
 type metadata struct {
 	Lifecycles []lifecycle `json:"lifecycles,omitempty"`
-	Component  component   `json:"component"`
-	Tools      []tool      `json:"tools,omitempty"`
+	// Licenses is the documents' own data licence; see dataLicense.
+	Licenses  []dataLicenseChoice `json:"licenses,omitempty"`
+	Component component           `json:"component"`
+	Tools     []tool              `json:"tools,omitempty"`
 
 	// Properties carry the build provenance: the commit the artifacts were built from, whether
 	// that tree was clean, and the observed build toolchain. A "+dirty" release cannot be
@@ -110,6 +112,15 @@ type lifecycle struct {
 }
 
 var postBuild = []lifecycle{{Phase: "post-build"}}
+
+// dataLicense is the licence msis's own SBOMs are offered under: CC0-1.0, the data licence SPDX
+// mandates for its documents, so anyone may read, copy, index and republish them without asking
+// (#62; README "SBOM"). bootstrap/setup.msis grants the same through SBOM_DATA_LICENSE.
+type dataLicenseChoice struct {
+	Expression string `json:"expression"`
+}
+
+var dataLicense = []dataLicenseChoice{{Expression: "CC0-1.0"}}
 
 type bom struct {
 	BOMFormat   string      `json:"bomFormat"`
@@ -291,6 +302,7 @@ func build(version, dist, binDir string) (*bom, error) {
 		Version:     1,
 		Metadata: metadata{
 			Lifecycles: postBuild,
+			Licenses:   dataLicense,
 			Component: component{
 				Type:        "application",
 				Name:        "msis",

@@ -230,7 +230,7 @@ func processFile(filename string, args *cliArgs) error {
 		}
 	}
 
-	if err := vars.CheckContacts(); err != nil {
+	if err := vars.CheckSBOMVariables(); err != nil {
 		return err
 	}
 
@@ -316,7 +316,8 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	}
 	rec := newBuildRecord(recordPath, filename,
 		buildBindPaths(filepath.Dir(wxsPath(filename, vars)), workDir, customTemplates, templateFolder))
-	rec.SBOMCreator = strings.TrimSpace(vars["SBOM_CREATOR"]) // validated by CheckContacts (#64)
+	rec.SBOMCreator = strings.TrimSpace(vars["SBOM_CREATOR"]) // validated by CheckSBOMVariables (#64)
+	rec.DataLicense = vars["SBOM_DATA_LICENSE"]               // validated by CheckSBOMVariables (#62)
 	recordGeneratedFiles(rec, ctx)
 	recordTemplateBinaries(rec, vars)
 
@@ -668,7 +669,8 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	rec := newBuildRecord(buildrecord.PathBundle, filename,
 		buildBindPaths(filepath.Dir(bundleWxsPath(bundleBaseName(filename, vars))),
 			workDir, customTemplates, templateFolder))
-	rec.SBOMCreator = strings.TrimSpace(vars["SBOM_CREATOR"]) // validated by CheckContacts (#64)
+	rec.SBOMCreator = strings.TrimSpace(vars["SBOM_CREATOR"]) // validated by CheckSBOMVariables (#64)
+	rec.DataLicense = vars["SBOM_DATA_LICENSE"]               // validated by CheckSBOMVariables (#62)
 	// A supplied <prerequisite source=> is verified against the file WiX will bind (#50): the
 	// record's bind paths are WiX's, so the same lookup serves both.
 	gen.ResolveSource = rec.Locate

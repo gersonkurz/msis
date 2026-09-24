@@ -13,6 +13,13 @@
   <set name="MANUFACTURER" value="NG Branch Technology GmbH"/>
   <set name="UPGRADE_CODE" value="{E7A3B8C1-5D2F-4A9E-B6C4-8F1D3E2A7B5C}"/>
 
+  <!-- Who made msis, and who produced its SBOMs (#64): written into the installer and read back
+       by /SBOM. A URL, not an email: BSI TR-03183-2 accepts one when no email is given. -->
+  <set name="MANUFACTURER_URL" value="https://github.com/gersonkurz/msis"/>
+  <set name="SBOM_CREATOR" value="https://github.com/gersonkurz/msis"/>
+  <!-- The licence msis's own SBOMs are offered under (#62; see README "SBOM"). -->
+  <set name="SBOM_DATA_LICENSE" value="CC0-1.0"/>
+
   <!-- Allow user to select install folder -->
   <set name="INSTALL_DIR_DIALOG" value="true"/>
 

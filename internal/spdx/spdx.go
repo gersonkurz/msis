@@ -1,4 +1,6 @@
-package parser
+// Package spdx checks SPDX licence expressions for their syntax (#64): the .msis <component
+// license=> attribute, the SBOM_DATA_LICENSE variable and the conformance check all ask it.
+package spdx
 
 import (
 	"fmt"
@@ -27,8 +29,8 @@ var (
 	spdxWordRun = regexp.MustCompile(`^[A-Za-z0-9.:+-]+`)
 )
 
-// validSPDX reports whether expr is a syntactically valid SPDX licence expression.
-func validSPDX(expr string) error {
+// Valid reports whether expr is a syntactically valid SPDX licence expression, and if not, why.
+func Valid(expr string) error {
 	toks, err := spdxTokens(expr)
 	if err != nil {
 		return err

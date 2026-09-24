@@ -494,3 +494,27 @@ own (a Go module `v1.2.3` inside a binary versioned `1.0.0.0`).
 **What would reopen this:** a legitimate case where a file's version resource is known to be
 wrong and the declaration right, which would need an explicit override rather than a silent
 preference for either.
+
+## D14 — An SBOM's data licence is its creator's grant: none by default, CC0-1.0 for msis's own
+
+**Settled in:** [#62](https://github.com/gersonkurz/msis/issues/62), 2026-09-24, product owner's
+decision. First "not worth a field", then reversed to CC0-1.0 for msis's own documents with a
+README section explaining why. The scope (a variable, not a default) was chosen over "CC0 on
+every document".
+**Implemented by:** `internal/sbom/enrich.go` — `if l := rec.DataLicense; l != ""`
+**Implemented by:** `tools/sbom/main.go` — `var dataLicense = []dataLicenseChoice{{Expression: "CC0-1.0"}}`
+
+CycloneDX's `metadata.licenses` is optional, and neither BSI TR-03183-2 nor NTIA asks for it; it
+is an SPDX convention (every SPDX document is `CC0-1.0`). msis's own SBOMs carry CC0-1.0 all the
+same. An SBOM exists to be passed on (to customers, auditors, scanners, SBOM indexes), and
+public domain answers the redistribution question before anyone has to ask it. The README's
+"SBOM" section states that reasoning for users.
+
+msis also writes SBOMs for its users' products, and those documents are their creator's, not
+msis's. So the licence is `SBOM_DATA_LICENSE`, an SPDX expression validated like `<component
+license=>`, granted only when the `.msis` sets it. `bootstrap/setup.msis` and `setup-bundle.msis`
+set `CC0-1.0`. The release-wide and component documents `tools/sbom` writes are msis's own and
+state CC0-1.0 directly.
+
+**What would reopen this:** a standard that requires a data licence, or a customer need for a
+default. Either would still have to leave the grant to the document's creator.

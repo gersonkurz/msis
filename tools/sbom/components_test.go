@@ -144,6 +144,9 @@ func TestComponentDocsDescribeTheBytesTheyNameAndValidate(t *testing.T) {
 			}
 		}
 	}
+	if len(doc.Metadata.Licenses) != 1 || doc.Metadata.Licenses[0].Expression != "CC0-1.0" {
+		t.Errorf("msis-x64: data licence %+v, want CC0-1.0 (msis's own documents, #62)", doc.Metadata.Licenses)
+	}
 	if len(doc.Metadata.Lifecycles) != 1 || doc.Metadata.Lifecycles[0].Phase != "post-build" {
 		t.Errorf("msis-x64: lifecycles %v, want [post-build]", doc.Metadata.Lifecycles)
 	}

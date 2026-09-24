@@ -511,6 +511,11 @@ Templates use Handlebars syntax. Key variables available:
   back by `/SBOM` as the creator's contact. A plain address only (#64)
 - `{{UPGRADE_CODE}}` - Upgrade GUID
 
+`SBOM_DATA_LICENSE` (an SPDX licence expression, e.g. `CC0-1.0`) is the licence the SBOM
+document itself is offered under, written as its `metadata.licenses` under `/BUILD /SBOM`
+(#62). msis grants none by default: the document's creator decides. msis's own installers set
+`CC0-1.0` (see the README's "SBOM" section).
+
 `SBOM_CREATOR` (an email address or an absolute URL) is not a template variable. It names who
 created the SBOM, and `/BUILD /SBOM` writes it as the document's `metadata.manufacturer`, which is
 BSI TR-03183-2's "creator of the SBOM". It is never inferred from `MANUFACTURER_*`: the entity

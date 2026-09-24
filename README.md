@@ -117,6 +117,38 @@ That's it. Your installer is ready at `setup.msi`.
 | **[Roadmap](docs/roadmap.md)** | Planned features and future direction |
 | **[Developer Overview](docs/overview.md)** | Architecture, code structure, and internals |
 
+## SBOM
+
+msis writes a CycloneDX 1.6 SBOM for the installers it builds (`/BUILD /SBOM`, or `/SBOM` on an
+existing `.msi` or bundle `.exe`). It reads the built artifact, not the script, so the document
+describes what actually ships. Every file has its SHA-256 and SHA-512, and a bundle links to the
+documents of the installers it chains. It aims at [BSI TR-03183-2](docs/sbom.md#bsi-tr-03183-2),
+the most concrete SBOM specification behind the EU Cyber Resilience Act.
+[docs/sbom.md](docs/sbom.md) says what the document claims, and just as importantly what it does not.
+
+**msis's own releases carry their SBOMs.** Each MSI and the universal bundle ship with a
+`.cdx.json` beside them. Each MSI's document lists what is inside `msis.exe`: its Go modules and the
+Go standard library, each with its licence. It also lists what is inside the installer-hook DLL:
+the WiX libraries it links.
+
+### Why msis's SBOMs are CC0-1.0
+
+The software is MIT (see [License](#license)). Its SBOMs are offered under **CC0-1.0**, public
+domain, set in `bootstrap/setup.msis` as `SBOM_DATA_LICENSE`.
+
+An SBOM is not code. It is a set of facts about a release, and its only use is to be passed on:
+- to the customer who installs msis;
+- to their auditor;
+- to vulnerability scanners and SBOM indexes that copy, merge and republish it.
+
+Every one of those steps should be possible without anyone asking whether the document's licence
+permits it. CC0 answers that question in advance. It is the same licence the SPDX specification
+makes mandatory for every SPDX document, for the same reason.
+
+**The SBOMs msis writes for your products are yours.** msis grants no licence on them unless your
+`.msis` sets `SBOM_DATA_LICENSE`, just as it names no SBOM creator unless you set `SBOM_CREATOR`.
+The document's creator decides, not the tool.
+
 ## Command Line
 
 ```

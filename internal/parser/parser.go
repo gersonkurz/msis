@@ -10,6 +10,7 @@ import (
 
 	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/spdx"
 )
 
 // Parse reads an .msis file and returns the parsed Setup structure.
@@ -241,7 +242,7 @@ func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) erro
 		return fmt.Errorf("<component for=%q>: creator %q is neither an email address nor an absolute http(s) URL", c.For, c.Creator)
 	}
 	if c.License != "" {
-		if err := validSPDX(c.License); err != nil {
+		if err := spdx.Valid(c.License); err != nil {
 			return fmt.Errorf("<component for=%q>: license %q is not an SPDX licence expression: %v", c.For, c.License, err)
 		}
 	}

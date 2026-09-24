@@ -472,6 +472,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
 | Component creator, version, licence: payload files | when the script declares them: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), or a supplied `<sbom>`; never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
+| Data licence of the document | not a BSI field; `SBOM_DATA_LICENSE` grants one when the script sets it (D14). msis's own releases use CC0-1.0 |
 
 **Only `/BUILD /SBOM` can be compliant.** §5.1 requires a *Build SBOM*, one created as part of
 the build. `/SBOM` on an existing artifact produces what the guideline calls an *Analysed

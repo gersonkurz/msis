@@ -308,6 +308,7 @@ func sidecar(bom *sbom.Document, src Source, opts Options,
 			Supplier:   bom.Metadata.Supplier,
 			// The same entity created the sidecar as the inventory it evaluates (#64).
 			Manufacturer: bom.Metadata.Manufacturer,
+			Licenses:     bom.Metadata.Licenses, // and offers it under the same data licence (#62)
 			// The identity metadata is COPIED from the inventory rather than restated. A
 			// consumer - the index above all - identifies a product by its UpgradeCode,
 			// which Windows Installer defines as the identifier constant across releases;

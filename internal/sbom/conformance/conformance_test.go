@@ -399,6 +399,20 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			mustSay: "both a URL and an email address",
 		},
 		{
+			name: "a data licence that is not an SPDX expression (#62)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["licenses"] = []any{map[string]any{"expression": "public domain"}}
+			},
+			mustSay: "data licence",
+		},
+		{
+			name: "a data licence given as an empty expression (#62's review)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["licenses"] = []any{map[string]any{"expression": ""}}
+			},
+			mustSay: "data licence",
+		},
+		{
 			name: "a creator with no contact at all (#64)",
 			mutate: func(d map[string]any) {
 				d["metadata"].(map[string]any)["manufacturer"] = map[string]any{"name": "Acme"}

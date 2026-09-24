@@ -76,3 +76,26 @@ func TestTheSBOMCreatorComesFromTheBuild(t *testing.T) {
 		}
 	}
 }
+
+// #62: the document's data licence is the build's grant (SBOM_DATA_LICENSE), never msis's
+// default: an SBOM msis writes for a customer's product is the customer's document.
+func TestTheDataLicenceIsTheBuildsGrant(t *testing.T) {
+	rec := recordFor(t)
+	rec.DataLicense = "CC0-1.0"
+	doc, err := docWith(t, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.Metadata.Licenses; !reflect.DeepEqual(got, []LicenseExpression{{Expression: "CC0-1.0"}}) {
+		t.Errorf("metadata.licenses %+v, want CC0-1.0", got)
+	}
+	conforms(t, doc, conformance.Expected{})
+
+	plain, err := docWith(t, recordFor(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Metadata.Licenses != nil {
+		t.Errorf("no grant, but metadata.licenses %+v", plain.Metadata.Licenses)
+	}
+}

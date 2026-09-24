@@ -64,6 +64,9 @@ type Record struct {
 	// SBOMCreator is who created the SBOM - an email address or a URL, from the .msis's
 	// SBOM_CREATOR (#64). Empty when the script names nobody.
 	SBOMCreator string
+	// DataLicense is the licence the SBOM itself is offered under, an SPDX expression, from the
+	// .msis's SBOM_DATA_LICENSE (#62). Empty when the script grants none.
+	DataLicense string
 
 	Files      []File
 	Binaries   []Binary
@@ -443,6 +446,7 @@ func (r *Record) For(s Scope) *Record {
 		Script:      r.Script,
 		Toolchain:   r.Toolchain,
 		SBOMCreator: r.SBOMCreator,
+		DataLicense: r.DataLicense,
 		Unresolved:  r.Unresolved,
 		scriptDir:   r.scriptDir,
 		bindPaths:   r.bindPaths,

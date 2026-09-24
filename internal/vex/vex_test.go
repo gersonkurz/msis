@@ -503,9 +503,13 @@ func TestTheSidecarCarriesTheInventorysGenerationContext(t *testing.T) {
 func TestTheSidecarNamesTheInventorysCreator(t *testing.T) {
 	bom := inventory("4.1", libDigest)
 	bom.Metadata.Manufacturer = &sbom.OrganizationalEntity{Contact: []sbom.OrganizationalContact{{Email: "sbom@acme.example"}}}
+	bom.Metadata.Licenses = []sbom.LicenseExpression{{Expression: "CC0-1.0"}}
 	doc := apply(t, bom, statement("not_affected", map[string]string{
 		sbom.PropAssessedVersion: "4.1", sbom.PropAssessedDigest: libDigest}))
 	if !reflect.DeepEqual(doc.Metadata.Manufacturer, bom.Metadata.Manufacturer) {
 		t.Errorf("sidecar creator %+v, want the inventory's %+v", doc.Metadata.Manufacturer, bom.Metadata.Manufacturer)
+	}
+	if !reflect.DeepEqual(doc.Metadata.Licenses, bom.Metadata.Licenses) {
+		t.Errorf("sidecar data licence %+v, want the inventory's %+v", doc.Metadata.Licenses, bom.Metadata.Licenses)
 	}
 }

@@ -32,6 +32,12 @@ func enrich(doc *Document, rec *buildrecord.Record) error {
 	doc.Metadata.Lifecycles = append([]Lifecycle{{Phase: LifecycleBuild}}, doc.Metadata.Lifecycles...)
 	// Who created the SBOM (BSI TR-03183-2 v2.1.0 §5.2.1): named by the build, never inferred
 	// from the manufacturer, and validated when the variables were read (#64).
+	// The licence the document itself is offered under, when the build grants one (#62). The
+	// SBOM's creator decides it, never msis: an SBOM msis writes for a customer's product is the
+	// customer's document.
+	if l := rec.DataLicense; l != "" {
+		doc.Metadata.Licenses = []LicenseExpression{{Expression: l}}
+	}
 	if c := rec.SBOMCreator; c != "" {
 		if contact.IsEmail(c) {
 			doc.Metadata.Manufacturer = creatorEntity("", "", c)

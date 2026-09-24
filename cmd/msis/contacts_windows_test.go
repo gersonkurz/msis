@@ -27,6 +27,7 @@ func TestContactsGoIntoTheInstallersAndComeBackOutOfThem(t *testing.T) {
 		"MANUFACTURER_URL":   "https://acme.example",
 		"MANUFACTURER_EMAIL": "support@acme.example",
 		"SBOM_CREATOR":       "sbom@acme.example",
+		"SBOM_DATA_LICENSE":  "CC0-1.0",
 	}})
 
 	msiDoc, _ := readDoc(t, filepath.Join(dir, "app.msi"))
@@ -46,6 +47,9 @@ func TestContactsGoIntoTheInstallersAndComeBackOutOfThem(t *testing.T) {
 	for name, d := range map[string]*sbom.Document{"MSI": msiDoc, "bundle": bundleDoc} {
 		if got := d.Metadata.Manufacturer; !reflect.DeepEqual(got, wantCreator) {
 			t.Errorf("%s document's creator %+v, want %+v", name, got, wantCreator)
+		}
+		if got := d.Metadata.Licenses; !reflect.DeepEqual(got, []sbom.LicenseExpression{{Expression: "CC0-1.0"}}) {
+			t.Errorf("%s document's data licence %+v, want CC0-1.0 (#62)", name, got)
 		}
 	}
 }

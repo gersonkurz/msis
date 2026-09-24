@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/gersonkurz/msis/internal/contact"
+	"github.com/gersonkurz/msis/internal/spdx"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -407,6 +408,14 @@ func Check(data []byte, want Expected) []error {
 		}
 	}
 	checkCreator("the document", doc.Metadata.Manufacturer)
+	// The document's data licence, where one is granted, is a valid SPDX expression (#62).
+	for _, l := range doc.Metadata.Licenses {
+		if l.Expression != nil {
+			if err := spdx.Valid(*l.Expression); err != nil {
+				fail("the document's data licence %q is not an SPDX expression: %v", *l.Expression, err)
+			}
+		}
+	}
 	checkCreator("the subject component", doc.Metadata.Component.Manufacturer)
 	for _, c := range components {
 		if c.suppliedFrom() == "" {
@@ -700,7 +709,12 @@ type document struct {
 		Component    component  `json:"component"`
 		Properties   []property `json:"properties"`
 		Manufacturer *entity    `json:"manufacturer"`
-		Supplier     *struct {
+		Licenses     []struct {
+			// A pointer, so an expression that is present but empty is told apart from one that
+			// is absent (a licence given by id instead) - and validated (#62's review).
+			Expression *string `json:"expression"`
+		} `json:"licenses"`
+		Supplier *struct {
 			Name string `json:"name"`
 		} `json:"supplier"`
 	} `json:"metadata"`

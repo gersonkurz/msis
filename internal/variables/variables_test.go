@@ -569,16 +569,16 @@ func TestResolveAllRealCycleThroughTakenBranch(t *testing.T) {
 }
 
 // #64: the contact variables go into the installer, so a malformed one stops the build.
-func TestCheckContacts(t *testing.T) {
+func TestCheckSBOMVariables(t *testing.T) {
 	ok := Dictionary{"MANUFACTURER_URL": "https://acme.example", "MANUFACTURER_EMAIL": "support@acme.example",
 		"SBOM_CREATOR": "sbom@acme.example"}
-	if err := ok.CheckContacts(); err != nil {
+	if err := ok.CheckSBOMVariables(); err != nil {
 		t.Errorf("valid contacts refused: %v", err)
 	}
-	if err := (Dictionary{"SBOM_CREATOR": "https://acme.example"}).CheckContacts(); err != nil {
+	if err := (Dictionary{"SBOM_CREATOR": "https://acme.example"}).CheckSBOMVariables(); err != nil {
 		t.Errorf("a URL as SBOM_CREATOR refused: %v", err)
 	}
-	if err := (Dictionary{}).CheckContacts(); err != nil {
+	if err := (Dictionary{}).CheckSBOMVariables(); err != nil {
 		t.Errorf("no contacts at all refused: %v", err)
 	}
 	for name, bad := range map[string]Dictionary{
@@ -586,7 +586,7 @@ func TestCheckContacts(t *testing.T) {
 		"email with a name":      {"MANUFACTURER_EMAIL": "Acme <support@acme.example>"},
 		"SBOM_CREATOR free text": {"SBOM_CREATOR": "the build team"},
 	} {
-		if err := bad.CheckContacts(); err == nil {
+		if err := bad.CheckSBOMVariables(); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
 	}
@@ -594,9 +594,9 @@ func TestCheckContacts(t *testing.T) {
 
 // #64's review: the values are trimmed in the dictionary the templates read, so what was checked
 // is what is written into the installer; a whitespace-only value is unset, not truthy.
-func TestCheckContactsNormalisesWhatTheTemplatesRead(t *testing.T) {
+func TestCheckSBOMVariablesNormalisesWhatTheTemplatesRead(t *testing.T) {
 	d := Dictionary{"MANUFACTURER_URL": "  https://acme.example  ", "MANUFACTURER_EMAIL": "   ", "SBOM_CREATOR": "\tsbom@acme.example\n"}
-	if err := d.CheckContacts(); err != nil {
+	if err := d.CheckSBOMVariables(); err != nil {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]string{
@@ -604,6 +604,20 @@ func TestCheckContactsNormalisesWhatTheTemplatesRead(t *testing.T) {
 	} {
 		if d[name] != want {
 			t.Errorf("%s = %q after the check, want %q", name, d[name], want)
+		}
+	}
+}
+
+// #62: SBOM_DATA_LICENSE is the licence the documents themselves are offered under - an SPDX
+// expression, trimmed where the build record reads it.
+func TestCheckSBOMDataLicense(t *testing.T) {
+	d := Dictionary{"SBOM_DATA_LICENSE": "  CC0-1.0 "}
+	if err := d.CheckSBOMVariables(); err != nil || d["SBOM_DATA_LICENSE"] != "CC0-1.0" {
+		t.Errorf("CC0-1.0: err %v, value %q", err, d["SBOM_DATA_LICENSE"])
+	}
+	for _, bad := range []string{"public domain", "(CC0-1.0"} {
+		if err := (Dictionary{"SBOM_DATA_LICENSE": bad}).CheckSBOMVariables(); err == nil {
+			t.Errorf("SBOM_DATA_LICENSE %q accepted", bad)
 		}
 	}
 }

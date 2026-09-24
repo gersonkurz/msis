@@ -111,7 +111,10 @@ type Metadata struct {
 	Component    Component             `json:"component"`
 	Supplier     *Supplier             `json:"supplier,omitempty"`
 	Manufacturer *OrganizationalEntity `json:"manufacturer,omitempty"` // the SBOM's creator (#64)
-	Properties   []Property            `json:"properties,omitempty"`
+	// Licenses is the licence the document itself is offered under - its data licence - when
+	// the build names one (SBOM_DATA_LICENSE, #62). CycloneDX 1.6 holds one expression.
+	Licenses   []LicenseExpression `json:"licenses,omitempty"`
+	Properties []Property          `json:"properties,omitempty"`
 }
 
 // Lifecycle is when the information in a document was obtained: NTIA's "generation context"
@@ -135,6 +138,11 @@ type Tools struct {
 
 type Supplier struct {
 	Name string `json:"name,omitempty"`
+}
+
+// LicenseExpression is CycloneDX's expression form of a licence choice.
+type LicenseExpression struct {
+	Expression string `json:"expression"`
 }
 
 // OrganizationalEntity is a creator as BSI TR-03183-2 v2.1.0 maps it (Tables 8 and 9): the

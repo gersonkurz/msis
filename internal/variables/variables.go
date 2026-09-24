@@ -9,6 +9,7 @@ import (
 	"github.com/aymerick/raymond"
 	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/spdx"
 )
 
 // Dictionary holds the variable name-value mappings for template resolution.
@@ -416,7 +417,11 @@ func (d Dictionary) CheckDeprecated() []string {
 	return warnings
 }
 
-// CheckContacts validates the contact variables (#64). MANUFACTURER_URL and MANUFACTURER_EMAIL are
+// CheckSBOMVariables validates the variables that end up in the SBOM or the installer: the
+// contact variables (#64) and SBOM_DATA_LICENSE, the licence the documents themselves are
+// offered under (an SPDX expression, #62).
+//
+// The contact variables: MANUFACTURER_URL and MANUFACTURER_EMAIL are
 // written into the installer (ARPURLINFOABOUT, ARPCONTACT; a bundle's AboutUrl) and read back as
 // the product creator's contact, and SBOM_CREATOR names who created the SBOM; BSI TR-03183-2
 // v2.1.0 asks for an email address or a URL. A malformed value is a build error, not a warning:
@@ -426,8 +431,8 @@ func (d Dictionary) CheckDeprecated() []string {
 // record read the dictionary, and a value validated as "support@acme.example" but written as
 // " support@acme.example " would be rejected when read back out of the installer, and silently
 // vanish from the SBOM. A value that is only whitespace becomes unset (#64's review).
-func (d Dictionary) CheckContacts() error {
-	for _, name := range []string{"MANUFACTURER_URL", "MANUFACTURER_EMAIL", "SBOM_CREATOR"} {
+func (d Dictionary) CheckSBOMVariables() error {
+	for _, name := range []string{"MANUFACTURER_URL", "MANUFACTURER_EMAIL", "SBOM_CREATOR", "SBOM_DATA_LICENSE"} {
 		if v, ok := d[name]; ok {
 			d[name] = strings.TrimSpace(v)
 		}
@@ -440,6 +445,11 @@ func (d Dictionary) CheckContacts() error {
 	}
 	if v := d["SBOM_CREATOR"]; v != "" && !contact.IsEmail(v) && !contact.IsURL(v) {
 		return fmt.Errorf("SBOM_CREATOR %q is neither an email address nor an absolute http(s) URL", v)
+	}
+	if v := d["SBOM_DATA_LICENSE"]; v != "" {
+		if err := spdx.Valid(v); err != nil {
+			return fmt.Errorf("SBOM_DATA_LICENSE %q is not an SPDX licence expression: %v", v, err)
+		}
 	}
 	return nil
 }
