@@ -517,6 +517,45 @@ func TestBuildContextRegistryTreeNormalization(t *testing.T) {
 	}
 }
 
+// TestBooleanGatesNormalized renders the real x64/x86 templates through buildContext and checks that
+// a false-like INSTALL_DIR_DIALOG / INCLUDE_VCREDIST does not take the {{#if}} branch (#57): the raw
+// string "false" is Handlebars-truthy, so without normalization it showed the dialog and emitted the
+// VC++ merge modules while CheckDeprecated, which uses GetBool, stayed silent.
+func TestBooleanGatesNormalized(t *testing.T) {
+	data := &generator.GeneratedOutput{}
+	gates := []struct{ name, marker string }{
+		{"INSTALL_DIR_DIALOG", `<DialogRef Id="InstallDirDlg" />`},
+		{"INCLUDE_VCREDIST", `<Merge Id="VCRedist_141"`},
+	}
+	for _, arch := range []string{"x64", "x86"} {
+		content, err := os.ReadFile(filepath.Join("..", "..", "templates", arch, "template.wxs"))
+		if err != nil {
+			t.Fatalf("reading %s template: %v", arch, err)
+		}
+		render := func(name, value string) string {
+			vars := variables.New()
+			vars[name] = value
+			out, err := RenderString(string(content), NewRenderer(vars, "/t", "", data).buildContext())
+			if err != nil {
+				t.Fatalf("%s render: %v", arch, err)
+			}
+			return out
+		}
+		for _, g := range gates {
+			for _, falsey := range []string{"false", "False", "no", "OFF", "0", ""} {
+				if strings.Contains(render(g.name, falsey), g.marker) {
+					t.Errorf("%s: %s=%q must not emit %s", arch, g.name, falsey, g.marker)
+				}
+			}
+			for _, truthy := range []string{"true", "True", "yes", "1"} {
+				if !strings.Contains(render(g.name, truthy), g.marker) {
+					t.Errorf("%s: %s=%q should emit %s", arch, g.name, truthy, g.marker)
+				}
+			}
+		}
+	}
+}
+
 // TestBundleLaunchTarget renders the real bundle template and checks that the
 // success-page "Launch" button (LaunchTarget Burn variable) appears only when
 // LAUNCH_TARGET is set, and that a bracketed Formatted path passes through verbatim.

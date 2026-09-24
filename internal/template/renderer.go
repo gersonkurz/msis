@@ -305,6 +305,11 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	ctx["DLL_CUSTOM"] = r.Variables["DLL_CUSTOM"]
 	ctx["REPAIR_ENABLED"] = r.Variables.GetBool("REPAIR_ENABLED")
 	ctx["REMOVE_ENABLED"] = r.Variables.GetBool("REMOVE_ENABLED")
+	// Template-gated booleans: a raw "False" would be Handlebars-truthy and take the {{#if}} branch.
+	ctx["INSTALL_DIR_DIALOG"] = r.Variables.GetBool("INSTALL_DIR_DIALOG")
+	// INCLUDE_VCREDIST is deprecated (use <requires type="vcredist"/>; variables.CheckDeprecated
+	// warns) but the regular templates still honour it with their legacy <Merge> block.
+	ctx["INCLUDE_VCREDIST"] = r.Variables.GetBool("INCLUDE_VCREDIST")
 	// REMOVE_REGISTRY_TREE is a comma-separated path list, not a boolean. Normalize false-like
 	// values (False/No/Off/0/empty) to "" so {{#if REMOVE_REGISTRY_TREE}} gates correctly
 	// (a non-empty "False" would otherwise be truthy in Handlebars and emit the cleanup).
@@ -328,8 +333,6 @@ func (r *Renderer) buildContext() map[string]interface{} {
 	// Arch-native subfolder for the hook DLL Binary SourceFile (x86/x64/arm64). arm64 uses the x64
 	// template but must load the arm64 DLL, so this is distinct from template selection.
 	ctx["HOOK_DLL_DIR"] = r.Variables.HookDllDir()
-	// Note: INCLUDE_VCREDIST is deprecated. Use <requires type="vcredist" version="..."/> instead.
-	// Variable is no longer passed to templates; deprecation warning is shown by variables.CheckDeprecated()
 
 	return ctx
 }
