@@ -584,7 +584,9 @@ The emitted shapes were as the Setup section says: direct `Value='a[\[]b'`; pres
   `C:\Program Files\`**, and msis's folder-permission component then tries to change the ACL
   of `C:\Program Files\` itself: `Error 25521. Failed to set security descriptor on object
   C:\Program Files\` (access denied), install rolled back, 1603. Set `INSTALLDIR`. Filed as
-  [#55](https://github.com/gersonkurz/msis/issues/55).
+  [#55](https://github.com/gersonkurz/msis/issues/55) and fixed there: an unnamed root
+  directory no longer gets a permission component, so this failure no longer occurs — but the
+  payload still lands in `C:\Program Files\` itself, so set `INSTALLDIR` regardless.
 
 ### Rerunning it
 

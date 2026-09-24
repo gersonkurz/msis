@@ -1634,9 +1634,16 @@ func (c *Context) generateDirectoryXML(dir *Directory, sb *strings.Builder, dept
 		sb.WriteString(fmt.Sprintf("%s<Directory Id='%s' Name='%s'>\n", indent, dir.ID, escapeWixPath(dir.Name)))
 	}
 
-	// Generate CreateFolder with permissions if enabled
-	// Only for directories that have a name (not the unnamed root container)
-	if (dir.Name != "" || dir.CustomID != "") && c.shouldSetFilePermissions() {
+	// Generate CreateFolder with permissions if enabled - only for directories that have a
+	// NAME. An unnamed directory is the standard folder it sits in: a root whose variable is
+	// unset (`<Directory Id='INSTALLDIR'>` with no Name) resolves to ProgramFiles64Folder
+	// itself, an unnamed APPDATADIR to C:\ProgramData, an unnamed WINDOWSDIR to C:\Windows.
+	// The condition used to add `|| dir.CustomID != ""`, which let exactly those through: with
+	// INSTALLDIR unset msis tried to grant Users full control of C:\Program Files, Windows
+	// refused (Error 25521), and the install rolled back (#55, observed in T8). msis-2.x
+	// emitted the root and its permission component only when the root had a name
+	// (WxsItem/Directory.cs, CreateComponent), so this is parity as well as safety.
+	if dir.Name != "" && c.shouldSetFilePermissions() {
 		c.generatePermissionComponent(dir, sb, depth+1)
 	}
 

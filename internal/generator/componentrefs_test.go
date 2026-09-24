@@ -244,7 +244,9 @@ func TestSharedDirectoryIsReferencedByEveryOwningFeature(t *testing.T) {
 		{Name: "B", Items: []ir.Item{ir.SetEnv{Name: "B", Value: "2"}}},
 	}}
 
-	ctx := NewContext(setup, variables.New(), t.TempDir())
+	// A named INSTALLDIR: an unnamed one is the Program Files folder itself, which gets no
+	// permission component (#55).
+	ctx := NewContext(setup, variables.Dictionary{"INSTALLDIR": "Shared"}, t.TempDir())
 	output, err := ctx.Generate()
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)

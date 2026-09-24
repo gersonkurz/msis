@@ -1403,6 +1403,9 @@ func TestFilePermissionsDefault(t *testing.T) {
 		},
 	}
 	vars := variables.New()
+	// A named INSTALLDIR: an unnamed one is the Program Files folder itself, which gets no
+	// permission component (#55).
+	vars["INSTALLDIR"] = "TestApp"
 	// Default: permissions enabled
 	ctx := NewContext(setup, vars, tmpDir)
 
@@ -1451,6 +1454,9 @@ func TestFilePermissionsDisabled(t *testing.T) {
 		},
 	}
 	vars := variables.New()
+	// A named INSTALLDIR, which WOULD get a permission component: an unnamed one gets none
+	// whatever the switch says (#55), and the test would then prove nothing about the switch.
+	vars["INSTALLDIR"] = "TestApp"
 	vars["DISABLE_FILE_PERMISSIONS"] = "True"
 	ctx := NewContext(setup, vars, tmpDir)
 
@@ -1493,6 +1499,9 @@ func TestFilePermissionsFeatureRef(t *testing.T) {
 		},
 	}
 	vars := variables.New()
+	// A named INSTALLDIR: an unnamed one is the Program Files folder itself, which gets no
+	// permission component (#55).
+	vars["INSTALLDIR"] = "TestApp"
 	ctx := NewContext(setup, vars, tmpDir)
 
 	output, err := ctx.Generate()
@@ -1556,6 +1565,9 @@ func TestFilePermissionsRestricted(t *testing.T) {
 		},
 	}
 	vars := variables.New()
+	// A named INSTALLDIR: an unnamed one is the Program Files folder itself, which gets no
+	// permission component (#55).
+	vars["INSTALLDIR"] = "TestApp"
 	vars["RESTRICT_FILE_PERMISSIONS"] = "True"
 	ctx := NewContext(setup, vars, tmpDir)
 
