@@ -305,6 +305,7 @@ func bundleComponent(b *burnread.Bundle, ns, subject string) Component {
 	if b.Name != "" && b.Version != "" {
 		c.PURL = "pkg:generic/" + purlEscape(b.Name) + "@" + purlEscape(b.Version)
 	}
+	markNTIAUnknown(&c, "the bundle records no Version", "the bundle records no Publisher")
 	return c
 }
 

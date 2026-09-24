@@ -271,6 +271,7 @@ const (
 	propSubjectArtifact = "msis:subject.artifact"
 	propCoverage        = "msis:coverage"
 	propIdentityUnknown = "msis:identity"
+	propNTIAUnknown     = "msis:ntia.unknown"
 
 	// Bundle-side vocabulary. A bundle inventories installers rather than files, so it needs
 	// terms for where a payload lives and whether its bytes are in the artifact at all.

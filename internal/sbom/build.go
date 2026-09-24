@@ -254,7 +254,34 @@ func rootComponent(pkg *msiread.Package, ns, subject string) Component {
 	if name != "" && version != "" {
 		c.PURL = "pkg:generic/" + purlEscape(name) + "@" + purlEscape(version)
 	}
+	markNTIAUnknown(&c, "the package records no ProductVersion", "the package records no Manufacturer")
 	return c
+}
+
+// markNTIAUnknown states on the subject which NTIA minimum element the artifact does not record
+// (#29 D8, #59): "present or explicitly unknown". The field itself stays absent - a placeholder
+// such as a supplier named "unknown" would read as an identity, which D4 forbids - and the
+// property says which element is missing and why, so a reader, and the conformance check, can
+// tell an artifact that omits it from a document that forgot it.
+func markNTIAUnknown(c *Component, noVersion, noSupplier string) {
+	if c.Version == "" {
+		c.Properties = append(c.Properties, Property{propNTIAUnknown, "version: " + noVersion})
+	}
+	if c.Supplier == nil {
+		c.Properties = append(c.Properties, Property{propNTIAUnknown, "supplier: " + noSupplier})
+	}
+}
+
+// NTIAUnknowns lists the NTIA minimum elements the subject artifact does not record, as the
+// document states them - so the caller can say so in the terminal, not only in the JSON.
+func (d *Document) NTIAUnknowns() []string {
+	var out []string
+	for _, p := range d.Metadata.Component.Properties {
+		if p.Name == propNTIAUnknown {
+			out = append(out, p.Value)
+		}
+	}
+	return out
 }
 
 // fileComponent describes one installed file.

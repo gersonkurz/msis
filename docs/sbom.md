@@ -314,6 +314,12 @@ Namespaced so a consumer can tell msis's properties from anyone else's.
 | `msis:msi.productCode`, `msis:msi.upgradeCode` | product identity; the UpgradeCode is what stays constant across releases |
 | `msis:burn.bundleCode`, `msis:burn.engineVersion` | the same for a bundle |
 
+**The subject** (`metadata.component`)
+
+| property | |
+|---|---|
+| `msis:ntia.unknown` | an NTIA minimum element the artifact does not record, and why — `version: the bundle records no Version`, `supplier: the package records no Manufacturer`. The field itself is left out rather than filled with a placeholder, which would read as an identity. An installer msis builds always records both; this is for an artifact built elsewhere |
+
 **Every component**
 
 | property | |
@@ -401,7 +407,7 @@ drifts:
 - SHA-256 on every payload component, with narrow, *declared* exceptions
 - sorted by defined keys, and byte-identical across runs except `metadata.timestamp` and
   `serialNumber`
-- NTIA fields present or explicitly unknown
+- NTIA fields present or explicitly unknown (`msis:ntia.unknown` on the subject)
 - `metadata.tools` names msis with the SHA-256 of the binary that ran; if msis cannot hash
   itself, no document is written
 - `compositions` present and referencing real components

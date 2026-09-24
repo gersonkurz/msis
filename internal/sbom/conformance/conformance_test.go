@@ -97,6 +97,23 @@ func check(t *testing.T, doc map[string]any, want Expected) []error {
 	return Check(data, want)
 }
 
+// NTIA's "or explicitly unknown" (#59): a supplier and version the artifact does not record are
+// accepted when the subject states them unknown.
+func TestStatedUnknownNTIAElementsAreAccepted(t *testing.T) {
+	d := good()
+	m := d["metadata"].(map[string]any)
+	delete(m, "supplier")
+	c := m["component"].(map[string]any)
+	delete(c, "version")
+	c["properties"] = []any{
+		map[string]any{"name": "msis:ntia.unknown", "value": "version: the bundle records no Version"},
+		map[string]any{"name": "msis:ntia.unknown", "value": "supplier: the bundle records no Publisher"},
+	}
+	if problems := check(t, d, Expected{PayloadNames: []string{"a.dll"}}); len(problems) != 0 {
+		t.Errorf("stated unknowns were rejected: %v", problems)
+	}
+}
+
 func TestACleanDocumentPasses(t *testing.T) {
 	if problems := check(t, good(), Expected{
 		PayloadNames:         []string{"a.dll"},
@@ -308,6 +325,23 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 		{
 			name:    "no supplier",
 			mutate:  func(d map[string]any) { delete(d["metadata"].(map[string]any), "supplier") },
+			mustSay: "supplier",
+		},
+		{
+			name: "no version, not stated unknown (#59)",
+			mutate: func(d map[string]any) {
+				delete(d["metadata"].(map[string]any)["component"].(map[string]any), "version")
+			},
+			mustSay: "version",
+		},
+		{
+			name: "no supplier, and the unknown statement is about a DIFFERENT element",
+			mutate: func(d map[string]any) {
+				m := d["metadata"].(map[string]any)
+				delete(m, "supplier")
+				m["component"].(map[string]any)["properties"] = []any{
+					map[string]any{"name": "msis:ntia.unknown", "value": "version: the package records no ProductVersion"}}
+			},
 			mustSay: "supplier",
 		},
 		{

@@ -356,11 +356,14 @@ func Check(data []byte, want Expected) []error {
 	if doc.Metadata.Component.Name == "" {
 		fail("the subject component has no name")
 	}
-	if doc.Metadata.Component.Version == "" {
-		fail("the subject component has no version")
+	// NTIA's "present or explicitly unknown": an element the artifact does not record may be
+	// absent only when the subject says so (msis:ntia.unknown, #59); a silent gap is a defect.
+	if doc.Metadata.Component.Version == "" && !statedUnknown(doc.Metadata.Component, "version") {
+		fail("the subject component has no version, and does not state it as unknown")
 	}
-	if doc.Metadata.Supplier == nil || doc.Metadata.Supplier.Name == "" {
-		fail("no supplier (NTIA requires one)")
+	if (doc.Metadata.Supplier == nil || doc.Metadata.Supplier.Name == "") &&
+		!statedUnknown(doc.Metadata.Component, "supplier") {
+		fail("no supplier (NTIA requires one, or an explicit statement that it is unknown)")
 	}
 	if !hasSHA256(doc.Metadata.Component.Hashes) {
 		fail("the subject component has no SHA-256: a BOM-Link could not be checked against " +
@@ -531,6 +534,16 @@ func compile() (*jsonschema.Schema, error) {
 func hasSHA256(hashes []hash) bool {
 	for _, h := range hashes {
 		if strings.EqualFold(h.Alg, "SHA-256") && len(h.Content) == 64 {
+			return true
+		}
+	}
+	return false
+}
+
+// statedUnknown reports whether the component declares the NTIA element as unknown.
+func statedUnknown(c component, element string) bool {
+	for _, p := range c.Properties {
+		if p.Name == "msis:ntia.unknown" && strings.HasPrefix(p.Value, element+": ") {
 			return true
 		}
 	}

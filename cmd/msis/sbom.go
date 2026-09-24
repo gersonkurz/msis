@@ -43,6 +43,7 @@ func runSBOM(path string) error {
 		// customer already holds.
 		fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 	}
+	warnNTIAUnknown(doc)
 
 	// Say where the inventory stops, in the terminal as well as in the document.
 	for _, m := range pkg.Media {
@@ -52,6 +53,14 @@ func runSBOM(path string) error {
 		}
 	}
 	return nil
+}
+
+// warnNTIAUnknown says in the terminal which NTIA minimum element the artifact does not record,
+// as the document states it (#59) - a gap a reader should hear about, not only find in the JSON.
+func warnNTIAUnknown(doc *sbom.Document) {
+	for _, u := range doc.NTIAUnknowns() {
+		fmt.Printf("  %s\n", cli.Warning("Warning: NTIA "+u+"; the SBOM marks it unknown"))
+	}
 }
 
 // sbomablePath rejects what /SBOM cannot read, so pointing it at the script names the mistake
@@ -94,6 +103,7 @@ func runBundleSBOM(path string) error {
 	if preserved != "" {
 		fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 	}
+	warnNTIAUnknown(doc)
 
 	// One line per chained package saying whether its own document was linked. A link that
 	// was NOT made is the thing a reader needs to act on, so it is not left to the JSON.

@@ -237,6 +237,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 		if preserved != "" {
 			fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 		}
+		warnNTIAUnknown(doc)
 
 		if inventoryDoc == nil || !isBundleArtifact(artifact) {
 			inventory, inventoryDoc = artifact, doc
