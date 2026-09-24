@@ -271,7 +271,7 @@ check: fmt-check vet test test-tools
 ext := if os() == "windows" { ".exe" } else { "" }
 
 # Common msis flags for bootstrap builds
-msis_flags := "--build --templatefolder=../templates /SET:PRODUCT_VERSION=" + version
+msis_flags := "--build --sbom --templatefolder=../templates /SET:PRODUCT_VERSION=" + version
 
 # This file is the only place a real version number lives - the binary gets it via -ldflags,
 # the MSI via /SET:PRODUCT_VERSION, and cmd/msis/main.go falls back to "dev" rather than to a
@@ -342,6 +342,16 @@ sbom-capture:
 sbom-seal:
     go run ./tools/sbom -seal -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
 
+# msis's own installers are built with /SBOM, so each MSI and the bundle get a document of their
+# own beside them, and the bundle's links to the three MSIs'. setup.msis composes a component
+# document into each MSI's (#36): one for msis.exe (its Go modules, read from the binary) and one
+# per hook DLL (its NuGet libraries). msis checks each against the packaged file's SHA-256, so the
+# packaging lines copy the document for the architecture being packaged beside msis.exe, exactly
+# as they copy the binary.
+# Write the component documents setup.msis composes (release and release-all run this)
+sbom-components arches="x64,x86,arm64":
+    go run ./tools/sbom -components -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}} -arches {{arches}}
+
 # Write the release SBOM (CycloneDX) next to the artifacts in bootstrap/dist
 sbom:
     go run ./tools/sbom -version {{version}} -dist {{bootstrap_dir}}/dist -bin {{bootstrap_dir}}
@@ -381,32 +391,37 @@ repin:
 # returned, so `release` announced success and `release-all` carried on after a failure (#53).
 # Build release MSI package (x64 only)
 [unix]
-release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64")
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
+    cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
     @echo "Building x64 MSI package..."
     cd {{bootstrap_dir}} && ./msis.exe {{msis_flags}} --template=../templates/minimal/template.wxs setup.msis
     @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
 
 [windows]
-release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64
+release: require-clean-tree repin-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64")
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
+    Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
     @echo "Building x64 MSI package..."
     Set-Location {{bootstrap_dir}}; & .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis; exit $LASTEXITCODE
     @echo "Release build complete: {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi"
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
+    cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
     cd {{bootstrap_dir}} && ./msis.exe {{msis_flags}} --template=../templates/minimal/template.wxs setup.msis
     @echo "=== Building x86 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x86.exe {{bootstrap_dir}}/msis.exe
+    cp {{bootstrap_dir}}/dist/components/msis-x86.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
     cd {{bootstrap_dir}} && ./{{binary}}-x64.exe {{msis_flags}} --template=../templates/minimal-x86/template.wxs /SET:PLATFORM=x86 setup.msis
     @echo "=== Building ARM64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-arm64.exe {{bootstrap_dir}}/msis.exe
+    cp {{bootstrap_dir}}/dist/components/msis-arm64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
     cd {{bootstrap_dir}} && ./{{binary}}-x64.exe {{msis_flags}} --template=../templates/minimal/template.wxs /SET:PLATFORM=arm64 setup.msis
     @echo "=== Building Bundle ==="
     cd {{bootstrap_dir}} && ./{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis
@@ -417,15 +432,18 @@ release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-al
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture && sbom-seal sbom
+release-all: require-clean-tree repin-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
+    Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
     Set-Location {{bootstrap_dir}}; & .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis; exit $LASTEXITCODE
     @echo "=== Building x86 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x86.exe {{bootstrap_dir}}\msis.exe
+    Copy-Item {{bootstrap_dir}}\dist\components\msis-x86.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
     Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal-x86\template.wxs /SET:PLATFORM=x86 setup.msis; exit $LASTEXITCODE
     @echo "=== Building ARM64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-arm64.exe {{bootstrap_dir}}\msis.exe
+    Copy-Item {{bootstrap_dir}}\dist\components\msis-arm64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
     Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal\template.wxs /SET:PLATFORM=arm64 setup.msis; exit $LASTEXITCODE
     @echo "=== Building Bundle ==="
     Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis; exit $LASTEXITCODE

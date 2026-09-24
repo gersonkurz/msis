@@ -3,8 +3,8 @@
   MSIS Self-Packaging Setup (x64)
   Installs msis.exe to Program Files, templates to LocalAppData
 
-  Build with: msis /BUILD bootstrap/setup.msis
-  Or use: just release
+  Build with: just release (x64) or just release-all, which first write the component
+  documents the <sbom> elements below name
 -->
 <setup>
   <!-- Product identification -->
@@ -28,6 +28,15 @@
 
   <!-- License -->
   <set name="LICENSE_URL" value="https://github.com/gersonkurz/msis/blob/main/LICENSE"/>
+
+  <!-- What is inside the files msis cannot see into, composed into this MSI's own SBOM (#36).
+       `just sbom-components` writes them, and the release recipes copy the document for the
+       architecture being packaged to msis.exe.cdx.json beside msis.exe. msis checks each
+       document's SHA-256 against the packaged file, so a stale one fails the build. -->
+  <sbom source="dist\components\msis.exe.cdx.json" for="[INSTALLDIR]msis.exe"/>
+  <sbom source="dist\components\msi-simplica-x64.dll.cdx.json" for="[LOCALAPPDATADIR]templates\x64\msi-simplica.dll"/>
+  <sbom source="dist\components\msi-simplica-x86.dll.cdx.json" for="[LOCALAPPDATADIR]templates\x86\msi-simplica.dll"/>
+  <sbom source="dist\components\msi-simplica-arm64.dll.cdx.json" for="[LOCALAPPDATADIR]templates\arm64\msi-simplica.dll"/>
 
   <!-- Main feature -->
   <feature name="MSIS">

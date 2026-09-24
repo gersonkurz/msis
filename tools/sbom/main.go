@@ -10,6 +10,8 @@
 // silently omitted a native DLL would be worse than none.
 //
 // Usage: sbom -version X.Y.Z -dist DIR [-bin DIR] [-out FILE]
+//
+//	sbom -components ...   the per-file documents msis's own installers compose (components.go)
 package main
 
 import (
@@ -60,11 +62,15 @@ type hash struct {
 
 type component struct {
 	Type        string `json:"type"`
+	BOMRef      string `json:"bom-ref,omitempty"`
 	Name        string `json:"name"`
 	Version     string `json:"version,omitempty"`
 	PURL        string `json:"purl,omitempty"`
 	Description string `json:"description,omitempty"`
 	Hashes      []hash `json:"hashes,omitempty"`
+
+	// Components nests what is linked INTO this one; only the component documents use it.
+	Components []component `json:"components,omitempty"`
 }
 
 // tool identifies what produced this BOM. CycloneDX reserves metadata.tools for tools that
@@ -107,6 +113,9 @@ func main() {
 		out       = flag.String("out", "", "output file (default <dist>/msis-<version>.cdx.json)")
 		doCapture = flag.Bool("capture", false, "record the binaries and toolchain before packaging")
 		doSeal    = flag.Bool("seal", false, "record the artifacts after packaging succeeds")
+		doComps   = flag.Bool("components", false, "write the component documents setup.msis composes, before packaging")
+		compArch  = flag.String("arches", strings.Join(arches, ","), "with -components: the msis binaries to describe")
+		templates = flag.String("templates", "templates", "with -components: the folder holding the staged hook DLLs")
 	)
 	flag.Parse()
 
@@ -124,6 +133,13 @@ func main() {
 			fatal(err)
 		}
 		fmt.Printf("Recorded %d binaries and the build toolchain in %s\n", len(arches), manifestPath(*dist))
+		return
+	}
+	if *doComps {
+		if err := writeComponentDocs(*version, *dist, *bin, *templates, strings.Split(*compArch, ",")); err != nil {
+			fatal(err)
+		}
+		fmt.Printf("Wrote the component documents in %s\n", componentsDir(*dist))
 		return
 	}
 	if *doSeal {

@@ -34,3 +34,10 @@ Built installers are placed in `bootstrap/dist/`:
 - `msis-{version}-x86.msi`
 - `msis-{version}-arm64.msi`
 - `msis-{version}-setup.exe` (universal bundle)
+
+Each is built with `/SBOM`, so each has its CycloneDX document beside it
+(`<artifact>.cdx.json`); the bundle's links to the three MSIs'. Each MSI's document carries,
+composed in via `<sbom>` in `setup.msis`, what is inside `msis.exe` (its Go modules and the Go
+standard library) and inside each hook DLL (its NuGet libraries). `components/` holds those
+component documents, written by `just sbom-components`. `release-all` also writes
+`msis-{version}.cdx.json`, the release-wide document from `tools/sbom`.
