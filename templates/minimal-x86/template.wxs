@@ -22,8 +22,12 @@
 
     {{{FEATURES}}}
 
-    <!-- Minimal UI with install directory selection -->
+    <!-- Minimal UI with install directory selection. INSTALLDIR_FILES is empty exactly when the
+         package declares no INSTALLDIR (e.g. registry-only, #56): there is no folder to choose, so
+         the flow is Welcome -> VerifyReady. -->
+    {{#if INSTALLDIR_FILES}}
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    {{/if}}
     <UI>
       <UIRef Id="WixUI_Common" />
       <UIRef Id="WixUI_ErrorProgressText" />
@@ -43,9 +47,10 @@
       <DialogRef Id="ResumeDlg" />
       <DialogRef Id="UserExit" />
       <DialogRef Id="WelcomeDlg" />
-      <DialogRef Id="InstallDirDlg" />
       <DialogRef Id="VerifyReadyDlg" />
 
+      {{#if INSTALLDIR_FILES}}
+      <DialogRef Id="InstallDirDlg" />
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" />
       <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
       <Publish Dialog="InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1" />
@@ -53,6 +58,10 @@
       <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Property="_BrowseProperty" Value="[WIXUI_INSTALLDIR]" Order="1" />
       <Publish Dialog="InstallDirDlg" Control="ChangeFolder" Event="SpawnDialog" Value="BrowseDlg" Order="2" />
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
+      {{else}}
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" />
+      {{/if}}
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" />
     </UI>
 

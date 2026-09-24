@@ -24,7 +24,7 @@ templates/
 ├── x86/                    # 32-bit MSI templates
 │   ├── template.wxs        # Full UI installer
 │   └── template-silent.wxs # Silent/minimal installer
-├── minimal/                # Minimal templates (no UI)
+├── minimal/                # Minimal UI: Welcome -> [install folder] -> Verify
 │   └── template.wxs
 ├── minimal-x86/            # Minimal 32-bit templates
 │   └── template.wxs
@@ -39,6 +39,10 @@ The recommended way to handle the VC++ runtime is `<requires type="vcredist" ver
 and x86 silent templates are MSM-free; the regular `x64`/`x86` templates still carry legacy
 `<Merge>`/`<MergeRef>` blocks pending a separate, customer-affecting migration.
 
+The `minimal` templates always offer the install-folder dialog when the package installs anything
+under `INSTALLDIR`, regardless of `INSTALL_DIR_DIALOG`, and skip it when nothing does (a
+registry-only package goes straight from Welcome to Verify).
+
 ## Selecting Templates
 
 By default, msis uses `x64/template.wxs` for 64-bit builds and `x86/template.wxs` for 32-bit builds.
@@ -46,7 +50,7 @@ By default, msis uses `x64/template.wxs` for 64-bit builds and `x86/template.wxs
 Override with command line options:
 
 ```bash
-# Use minimal template (no UI)
+# Use minimal template (Welcome -> [install folder] -> Verify; no license, feature tree or hooks)
 msis /BUILD /TEMPLATE:templates/minimal/template.wxs setup.msis
 
 # Use custom template folder
