@@ -328,14 +328,13 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	if err != nil {
 		return err
 	}
-	// #64: facts the script declares about a file become supplied documents too, merged by the
-	// same rules; one file described twice is refused by the merge, whichever way it was described.
+	// #64/#65: facts the script declares about a file, applied to that file's own component (D16);
+	// one file described twice is refused, whichever way it was described.
 	declared, err := resolveDeclaredComponents(setup.Components, ctx, filename)
 	if err != nil {
 		return err
 	}
-	supplied = append(supplied, declared...)
-	if err := sbom.OneDocumentPerFile(supplied); err != nil {
+	if err := sbom.OneDescriptionPerFile(supplied, declared); err != nil {
 		return err
 	}
 	// #37: the team's own VEX document, read now so a path that does not exist is a build
@@ -454,12 +453,12 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		// Milestone 6.2 - Auto-bundle if requirements present
 		if needsAutoBundle {
 			return processAutoBundle(setup, vars, workDir, templateFolder, customTemplates, msiPath,
-				args, rec, supplied, statements)
+				args, rec, supplied, declared, statements)
 		}
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{msiPath}, supplied, statements)
+			return emitBuildSBOM(rec, []string{msiPath}, supplied, declared, statements)
 		}
 	}
 
@@ -492,7 +491,7 @@ func writeWxs(path, content string) error {
 }
 
 // processAutoBundle generates a bundle wrapper for an MSI with prerequisites.
-func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record, supplied []sbom.Supplied,
+func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, templateFolder, customTemplates, msiPath string, args *cliArgs, rec *buildrecord.Record, supplied []sbom.Supplied, declared []sbom.Declaration,
 	statements *vex.Source) error {
 	fmt.Printf("  %s\n", cli.Info("Generating auto-bundle wrapper..."))
 
@@ -574,7 +573,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		// document exists and its subject digest matches, so this order is what turns two
 		// documents into a linked pair rather than two unrelated files.
 		rec.Sort()
-		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, statements)
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, declared, statements)
 	}
 
 	return nil
@@ -748,7 +747,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, statements)
+			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, nil, statements)
 		}
 	}
 

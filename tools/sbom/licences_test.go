@@ -158,6 +158,13 @@ func TestNugetLicencesMatchTheNuspec(t *testing.T) {
 			c.Licenses[0].License.Acknowledgement != "declared" {
 			t.Errorf("%s: licence %+v, but the .nuspec declares %s", c.Name, c.Licenses, m[1])
 		}
+		// The creator is the package's own declaration too (#65).
+		authors := regexp.MustCompile(`<authors>([^<]+)</authors>`).FindSubmatch(data)
+		project := regexp.MustCompile(`<projectUrl>([^<]+)</projectUrl>`).FindSubmatch(data)
+		if authors == nil || project == nil || c.Manufacturer == nil || c.Manufacturer.Name != string(authors[1]) ||
+			len(c.Manufacturer.URL) != 1 || c.Manufacturer.URL[0] != string(project[1]) {
+			t.Errorf("%s: creator %+v, but the .nuspec declares %q / %q", c.Name, c.Manufacturer, authors, project)
+		}
 		checked++
 	}
 	if checked == 0 {

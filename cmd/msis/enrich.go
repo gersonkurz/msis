@@ -190,7 +190,7 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 // first so that the bundle's can link to it. #33 verifies a BOM-Link against the child's
 // subject digest before making it, so a bundle written first would simply record that no
 // document was there - correct, but less useful than doing it the other way round.
-func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied,
+func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied, declared []sbom.Declaration,
 	statements *vex.Source) error {
 
 	// The VEX annotates ONE document: the inventory of what is installed. Where a build
@@ -217,7 +217,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 			// wrapper carries the MSI itself and links to its document (#33); repeating the
 			// contents of a file inside that MSI would say the bundle contains them directly.
 			opts := sbom.Options{MsisVersion: Version,
-				Build: rec.For(buildrecord.ScopeArtifactMSI), Supplied: supplied}
+				Build: rec.For(buildrecord.ScopeArtifactMSI), Supplied: supplied, Declared: declared}
 			var pkg *msiread.Package
 			if pkg, err = msiread.Read(artifact); err == nil {
 				doc, err = sbom.FromPackage(pkg, opts)

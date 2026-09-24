@@ -43,8 +43,8 @@ func declaredFixture(t *testing.T, components string) (dir, script string) {
 	return dir, scriptFor(t, dir, "declared.msi", strings.Replace(declaredScript, "{{COMPONENTS}}", components, 1))
 }
 
-// #64 end to end, with the real wix: a <component> declaration reaches the installer's SBOM as a
-// supplied component carrying exactly the declared facts, marked as coming from this script.
+// #64 end to end, with the real wix: a <component> declaration's facts land on the file's OWN
+// component (D16) - where BSI TR-03183-2 looks - with each field's provenance stated.
 func TestADeclaredComponentReachesTheSBOM(t *testing.T) {
 	dir, script := declaredFixture(t, `<component for="[INSTALLDIR]notes.txt" name="libnotes" version="2.3.1"
     creator="notes@foo.example" license="Apache-2.0 OR MIT" purl="pkg:generic/libnotes@2.3.1"/>`)
@@ -74,33 +74,38 @@ func TestADeclaredComponentReachesTheSBOM(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	found := false
+	found := 0
 	for _, c := range doc.Components {
-		if c.Name != "libnotes" {
+		prop := map[string]string{}
+		for _, p := range c.Properties {
+			prop[p.Name] = p.Value
+		}
+		if prop["bsi:component:filename"] != "notes.txt" {
 			continue
 		}
-		found = true
-		if c.Version != "2.3.1" || c.PURL != "pkg:generic/libnotes@2.3.1" {
-			t.Errorf("version/purl %q/%q", c.Version, c.PURL)
+		found++
+		// The file component itself: its name is the declared one, its filename its own.
+		if c.Name != "libnotes" || c.Version != "2.3.1" || c.PURL != "pkg:generic/libnotes@2.3.1" {
+			t.Errorf("name/version/purl %q/%q/%q", c.Name, c.Version, c.PURL)
 		}
-		if len(c.Licenses) != 1 || c.Licenses[0].Expression != "Apache-2.0 OR MIT" || c.Licenses[0].Acknowledgement != "declared" {
-			t.Errorf("licences %+v, want the declared expression", c.Licenses)
+		if len(c.Licenses) != 1 || c.Licenses[0].Expression != "Apache-2.0 OR MIT" || c.Licenses[0].Acknowledgement != "concluded" {
+			t.Errorf("licences %+v, want the declared expression as the distribution licence", c.Licenses)
 		}
 		if len(c.Manufacturer.Contact) != 1 || c.Manufacturer.Contact[0].Email != "notes@foo.example" {
 			t.Errorf("creator %+v, want the declared email", c.Manufacturer)
 		}
-		var from string
-		for _, p := range c.Properties {
-			if p.Name == "msis:supplied.from" {
-				from = p.Value
-			}
+		if prop["msis:declared.by"] != `setup.msis <component for="[INSTALLDIR]notes.txt">` {
+			t.Errorf("msis:declared.by = %q, want it to name the script's <component>", prop["msis:declared.by"])
 		}
-		if from != `setup.msis <component for="[INSTALLDIR]notes.txt">` {
-			t.Errorf("msis:supplied.from = %q, want it to name the script's <component>", from)
+		if prop["msis:declared.fields"] != "creator,license,name,purl,version" {
+			t.Errorf("msis:declared.fields = %q", prop["msis:declared.fields"])
+		}
+		if prop["msis:installTarget"] == "" || prop["msis:msi.fileKey"] == "" {
+			t.Error("the declaration replaced the file component instead of adding to it")
 		}
 	}
-	if !found {
-		t.Fatal("the declared component is not in the document")
+	if found != 1 {
+		t.Fatalf("%d components for notes.txt, want exactly its own", found)
 	}
 }
 

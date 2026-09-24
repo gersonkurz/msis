@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gersonkurz/msis/internal/msiread"
 	"github.com/gersonkurz/msis/internal/sbom/conformance"
 )
 
@@ -38,11 +37,6 @@ type Supplied struct {
 	Target string // the install target the script named, for messages
 	FileID string // the WiX File id of the payload it describes - an exact join, not a name
 	Data   []byte // the document, as read from disk
-
-	// Declared marks a document msis generated from the script's <component> element (#64):
-	// the author's statement about the file, not a document someone's build produced. Its
-	// version is held to the file's own - see mergeOne.
-	Declared bool
 }
 
 // suppliedDocument is the permissive view of a supplied document: the parts msis reasons about
@@ -125,7 +119,7 @@ type mergeState struct {
 }
 
 func mergeSupplied(doc *Document, supplied []Supplied) error {
-	if err := OneDocumentPerFile(supplied); err != nil {
+	if err := OneDescriptionPerFile(supplied, nil); err != nil {
 		return err
 	}
 	state := &mergeState{roots: map[string]string{}, declared: map[string]string{}}
@@ -171,19 +165,6 @@ func mergeOne(doc *Document, s Supplied, state *mergeState) error {
 			return fmt.Errorf("the supplied document describes bytes with SHA-256 %s..., but "+
 				"the package contains %s... - the document is about a different build of %s",
 				abbreviate(want), abbreviate(got), target.Name)
-		}
-	}
-
-	// A declared version is checked against the version resource the package records for the
-	// file (#64, product owner's decision): a script that is wrong about the file refuses the
-	// build rather than publish a version msis knows is doubtful. Only trailing ".0" groups may
-	// differ - "2.3.1" is the version resource "2.3.1.0".
-	// D13 compares with the version the PACKAGE records. A version msis filled in from the source
-	// file's modification date (#63, marked msis:build.versionFrom) is msis's own build fact, not
-	// the package's, and a declaration is not held to it.
-	if s.Declared && propertyValueOf(target.Properties, propBuildVersionFrom) == "" {
-		if err := declaredVersionConflict(s, sup.Metadata.Component.str("version"), target.Version, target.Name); err != nil {
-			return err
 		}
 	}
 
@@ -745,55 +726,4 @@ func sameVersion(a, b string) bool {
 		return v
 	}
 	return trim(a) == trim(b)
-}
-
-// OneDocumentPerFile refuses two descriptions of one file - two <sbom>s, two <component>s, or one
-// of each. msis does not combine two claims about the same file: their coverage statements would
-// have to be reconciled, and only their authors can do that. It is checked on every build, not
-// only when a document is written (#64's review).
-func OneDocumentPerFile(supplied []Supplied) error {
-	first := map[string]string{} // FileID -> the source that describes it
-	for _, s := range supplied {
-		if prev, ok := first[s.FileID]; ok {
-			return fmt.Errorf("both %s and %s are supplied for %s: msis does not combine two "+
-				"documents into one claim about the same file, because their coverage "+
-				"statements would have to be reconciled and only their authors can do that",
-				prev, s.Source, s.Target)
-		}
-		first[s.FileID] = s.Source
-	}
-	return nil
-}
-
-// CheckDeclarations holds each <component>'s declared version to the version the built package
-// records for its file (D13). The merge applies the same check when a document is written; this
-// runs after every build, so /BUILD without /SBOM does not publish an installer whose script
-// contradicts it (#64's review).
-func CheckDeclarations(pkg *msiread.Package, supplied []Supplied) error {
-	for _, s := range supplied {
-		if !s.Declared {
-			continue
-		}
-		var sup suppliedDocument
-		if err := json.Unmarshal(s.Data, &sup); err != nil {
-			return fmt.Errorf("%s: %w", s.Source, err)
-		}
-		for _, f := range pkg.Files {
-			if f.ID == s.FileID {
-				if err := declaredVersionConflict(s, sup.Metadata.Component.str("version"), f.Version, f.Name); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// declaredVersionConflict is the one statement of D13's rule: only trailing ".0" groups may differ.
-func declaredVersionConflict(s Supplied, declared, recorded, file string) error {
-	if declared == "" || recorded == "" || sameVersion(declared, recorded) {
-		return nil
-	}
-	return fmt.Errorf("%s declares version %s, but the package records version %s for %s; "+
-		"correct the declaration or leave the version out", s.Source, declared, recorded, file)
 }

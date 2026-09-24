@@ -41,22 +41,37 @@ var arches = []string{"x64", "x86", "arm64"}
 // TestNugetLicencesMatchTheNuspec checks it where the NuGet cache is present.
 var nativeComponents = []component{
 	{
-		Type:        "library",
-		Name:        "WixToolset.WcaUtil",
-		Version:     "5.0.2",
-		PURL:        "pkg:nuget/WixToolset.WcaUtil@5.0.2",
-		Description: "WiX custom-action utility library, linked into msi-simplica.dll",
-		Licenses:    licensed("MS-RL"),
+		Type:         "library",
+		Name:         "WixToolset.WcaUtil",
+		Version:      "5.0.2",
+		PURL:         "pkg:nuget/WixToolset.WcaUtil@5.0.2",
+		Description:  "WiX custom-action utility library, linked into msi-simplica.dll",
+		Licenses:     licensed("MS-RL"),
+		Manufacturer: wixCreator,
 	},
 	{
-		Type:        "library",
-		Name:        "WixToolset.DUtil",
-		Version:     "5.0.2",
-		PURL:        "pkg:nuget/WixToolset.DUtil@5.0.2",
-		Description: "WiX base utility library, linked into msi-simplica.dll",
-		Licenses:    licensed("MS-RL"),
+		Type:         "library",
+		Name:         "WixToolset.DUtil",
+		Version:      "5.0.2",
+		PURL:         "pkg:nuget/WixToolset.DUtil@5.0.2",
+		Description:  "WiX base utility library, linked into msi-simplica.dll",
+		Licenses:     licensed("MS-RL"),
+		Manufacturer: wixCreator,
 	},
 }
+
+// creator is CycloneDX's organizationalEntity, the parts used here.
+type creator struct {
+	Name string   `json:"name,omitempty"`
+	URL  []string `json:"url,omitempty"`
+}
+
+// msisCreator is msis's own repository: the creator of msis.exe and msi-simplica.dll.
+var msisCreator = &creator{URL: []string{"https://github.com/gersonkurz/msis"}}
+
+// wixCreator is what both WiX packages declare in their .nuspec (authors, projectUrl);
+// TestNugetLicencesMatchTheNuspec checks it.
+var wixCreator = &creator{Name: "WiX Toolset Team", URL: []string{"https://wixtoolset.org/"}}
 
 type hash struct {
 	Alg     string `json:"alg"`
@@ -73,6 +88,11 @@ type component struct {
 	Hashes      []hash `json:"hashes,omitempty"`
 
 	Licenses []licenseChoice `json:"licenses,omitempty"`
+
+	// Manufacturer is the component's creator (BSI TR-03183-2 v2.1.0 §5.2.2, #65): only where it
+	// is declared - a NuGet package's authors and projectUrl, msis's own repository - never
+	// derived from a name.
+	Manufacturer *creator `json:"manufacturer,omitempty"`
 
 	// Components nests what is linked INTO this one; only the component documents use it.
 	Components []component `json:"components,omitempty"`

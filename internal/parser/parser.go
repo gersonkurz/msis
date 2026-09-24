@@ -211,6 +211,7 @@ type xmlComponent struct {
 // value is checked for the shape it must have. A declaration is published as a fact about the
 // file, so a malformed one is refused here, where the author can see which element it came from.
 func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var recursive string
 	for _, attr := range start.Attr {
 		v := strings.TrimSpace(attr.Value)
 		switch attr.Name.Local {
@@ -228,9 +229,30 @@ func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) erro
 			c.PURL = v
 		case "cpe":
 			c.CPE = v
+		case "recursive":
+			recursive = v
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <component>", attr.Name.Local)
 		}
+	}
+	// A folder declaration (#65) applies the same facts to every file installed under it, and
+	// to subfolders unless recursive="no". A name is refused there - every file would get the
+	// same one - and recursive is refused on a single file, where it would mean nothing.
+	if c.IsFolder() {
+		if c.Name != "" {
+			return fmt.Errorf("<component for=%q> names a folder, where a name would be given to "+
+				"every file in it; leave name out, and each file keeps its own", c.For)
+		}
+		switch strings.ToLower(recursive) {
+		case "", "true", "yes", "on", "1":
+			c.Recursive = true
+		case "false", "no", "off", "0":
+			c.Recursive = false
+		default:
+			return fmt.Errorf("<component for=%q>: recursive %q is neither yes nor no", c.For, recursive)
+		}
+	} else if recursive != "" {
+		return fmt.Errorf("<component for=%q>: recursive applies to a folder target, which ends in a separator", c.For)
 	}
 	if c.For == "" {
 		return fmt.Errorf("<component> requires a for attribute naming the file it describes")

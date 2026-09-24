@@ -47,3 +47,35 @@ func TestAMalformedDeclarationIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// #65: a folder target applies the same facts to every file under it, recursively by default.
+func TestAFolderDeclaration(t *testing.T) {
+	for element, want := range map[string]bool{
+		`<component for="[LOCALAPPDATADIR]templates\" license="MIT"/>`:      true,
+		`<component for="[INSTALLDIR]" license="MIT"/>`:                     true,
+		`<component for="[INSTALLDIR]lib/" license="MIT" recursive="no"/>`:  false,
+		`<component for="[INSTALLDIR]lib\" license="MIT" recursive="yes"/>`: true,
+	} {
+		s, err := ParseBytes(setupWith(element))
+		if err != nil {
+			t.Fatalf("%s: %v", element, err)
+		}
+		if c := s.Components[0]; !c.IsFolder() || c.Recursive != want {
+			t.Errorf("%s: folder %v recursive %v, want a folder with recursive %v", element, c.IsFolder(), c.Recursive, want)
+		}
+	}
+	// Only the WHOLE target as a bare root is a folder: a filename ending in "]" stays a file.
+	s, err := ParseBytes(setupWith(`<component for="[INSTALLDIR]notes[old]" name="notes" license="MIT"/>`))
+	if err != nil || s.Components[0].IsFolder() {
+		t.Errorf("a bracket-ending filename: err %v, folder %v; want a single-file target", err, err == nil && s.Components[0].IsFolder())
+	}
+	for element, mustSay := range map[string]string{
+		`<component for="[INSTALLDIR]lib\" name="x"/>`:                      "names a folder",
+		`<component for="[INSTALLDIR]a.dll" recursive="no" license="MIT"/>`: "recursive applies to a folder",
+		`<component for="[INSTALLDIR]lib\" recursive="yse" license="MIT"/>`: "neither yes nor no",
+	} {
+		if _, err := ParseBytes(setupWith(element)); err == nil || !strings.Contains(err.Error(), mustSay) {
+			t.Errorf("%s: want an error saying %q, got %v", element, mustSay, err)
+		}
+	}
+}

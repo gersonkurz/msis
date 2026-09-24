@@ -140,6 +140,18 @@ type Supplier struct {
 	Name string `json:"name,omitempty"`
 }
 
+// LicenseChoice is one entry of a component's licences: a license object, or an expression.
+type LicenseChoice struct {
+	License         *LicenseID `json:"license,omitempty"`
+	Expression      string     `json:"expression,omitempty"`
+	Acknowledgement string     `json:"acknowledgement,omitempty"` // with Expression only
+}
+
+type LicenseID struct {
+	ID              string `json:"id"`
+	Acknowledgement string `json:"acknowledgement,omitempty"`
+}
+
 // LicenseExpression is CycloneDX's expression form of a licence choice.
 type LicenseExpression struct {
 	Expression string `json:"expression"`
@@ -179,10 +191,14 @@ type Component struct {
 	Version      string                `json:"version,omitempty"`
 	Description  string                `json:"description,omitempty"`
 	PURL         string                `json:"purl,omitempty"`
+	CPE          string                `json:"cpe,omitempty"`
 	Supplier     *Supplier             `json:"supplier,omitempty"`
 	Manufacturer *OrganizationalEntity `json:"manufacturer,omitempty"` // the component's creator (#64)
 	Hashes       []Hash                `json:"hashes,omitempty"`
-	Properties   []Property            `json:"properties,omitempty"`
+	// Licenses are a component's licences where msis states them - declared by the script
+	// (#64, D16) - in CycloneDX 1.6's two shapes: license objects, or one expression.
+	Licenses   []LicenseChoice `json:"licenses,omitempty"`
+	Properties []Property      `json:"properties,omitempty"`
 
 	// ExternalReferences carries BOM-Links: a bundle's document points at the document for
 	// each installer it chains rather than repeating that installer's contents.
@@ -322,6 +338,8 @@ const (
 	propCoverage        = "msis:coverage"
 	propIdentityUnknown = "msis:identity"
 	propNTIAUnknown     = "msis:ntia.unknown"
+	propDeclaredBy      = "msis:declared.by"
+	propDeclaredFields  = "msis:declared.fields"
 
 	// BSI TR-03183-2 v2.1.0 §5.2.2 and its CycloneDX property taxonomy (#63). Named by BSI,
 	// not msis, so a BSI-aware consumer finds them where the guideline says they are.

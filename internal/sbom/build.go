@@ -36,6 +36,9 @@ type Options struct {
 	// from the inside. Empty for `/SBOM` against an artifact alone, for the same reason.
 	Supplied []Supplied
 
+	// Declared are the script's <component> facts, each about one file (#64, #65, D16).
+	Declared []Declaration
+
 	Now       func() time.Time
 	NewSerial func() (string, error)
 }
@@ -157,9 +160,16 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 	if err := enrich(doc, opts.Build); err != nil {
 		return nil, err
 	}
-	// Then what someone else knew about the inside of a payload file (#36). After enrichment
-	// because it joins on the same WiX File id, and before sorting for the same reason.
+	// Then what someone else knew about the inside of a payload file (#36), and what the script
+	// declares about a file itself (#64). After enrichment because both join on the same WiX File
+	// id, and a declared version replaces the build's date fallback (D15); before sorting.
+	if err := OneDescriptionPerFile(opts.Supplied, opts.Declared); err != nil {
+		return nil, err
+	}
 	if err := mergeSupplied(doc, opts.Supplied); err != nil {
+		return nil, err
+	}
+	if err := applyDeclarations(doc, opts.Declared); err != nil {
 		return nil, err
 	}
 

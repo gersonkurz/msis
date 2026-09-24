@@ -478,7 +478,8 @@ no longer suffices and one of the two statements has to go.
 
 **Settled in:** [#64](https://github.com/gersonkurz/msis/issues/64), 2026-09-24, product owner's
 decision between refusing the build and recording both values with a warning.
-**Implemented by:** `internal/sbom/merge.go` — `declares version %s, but the package records version %s`, `func sameVersion(a, b string) bool`
+**Implemented by:** `internal/sbom/declare.go` — `declares version %s, but the package records version %s`
+**Implemented by:** `internal/sbom/merge.go` — `func sameVersion(a, b string) bool`
 
 `<component version=>` is the author's statement about a file. Where the package also records a
 version for that file (a PE's version resource, which WiX writes into the File table), the two
@@ -489,7 +490,8 @@ and keeping both with a flag would ship a document that contradicts itself. This
 
 The check applies to `<component>` only. A supplied CycloneDX document (`<sbom>`) describes what
 a file contains, and its subject's version is the component's, which need not be the file's
-own (a Go module `v1.2.3` inside a binary versioned `1.0.0.0`).
+own (a Go module `v1.2.3` inside a binary versioned `1.0.0.0`). Since D16 the declared facts are
+written onto the file's own component; the check is the same, and is applied where they are.
 
 **What would reopen this:** a legitimate case where a file's version resource is known to be
 wrong and the declaration right, which would need an explicit override rather than a silent
@@ -524,7 +526,7 @@ default. Either would still have to leave the grant to the document's creator.
 **Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24, product owner's
 decision ("build-time only", over leaving the field out).
 **Implemented by:** `internal/sbom/enrich.go` — `c.Version = f.Modified.UTC().Format(time.RFC3339)`
-**Implemented by:** `internal/sbom/merge.go` — `propertyValueOf(target.Properties, propBuildVersionFrom) == ""`
+**Implemented by:** `internal/sbom/declare.go` — `fallback := propertyValueOf(c.Properties, propBuildVersionFrom) != ""`
 
 BSI TR-03183-2 v2.1.0 §5.2.2: a component with no version takes "the modification date of the
 file expressed as date-time according to RFC 3339", from the file's metadata. The artifact does
@@ -545,3 +547,32 @@ version the package records, and this one msis supplied.
 
 **What would reopen this:** a BSI revision that drops the fallback, or one that accepts the
 artifact's own date with an explicit unknown zone.
+
+## D16 — `<component>` facts go onto the file's own component, not onto a supplied one
+
+**Settled in:** [#65](https://github.com/gersonkurz/msis/issues/65), 2026-09-24, product owner's
+decision, on evidence from re-scoring msis's own release SBOMs against BSI TR-03183-2 v2.1.0.
+It reverses #64's first implementation.
+**Implemented by:** `internal/sbom/declare.go` — `func applyDeclarations(doc *Document, declared []Declaration) error`, `propDeclaredBy`
+
+#64 first turned each `<component>` into a generated supplied document and merged it by #36's
+rules. The declared facts then sat on a **separate** component that the file depended on.
+Declaring msis's own payload files that way made the SBOM *worse* by BSI's measure: the MSI
+document went from 6.8 to 6.3, and components without a licence from 28 to 44. The file
+components still carried no licence or creator, and every declaration added a half-empty
+component with no filename, digest or file properties. The model is right for `<sbom>`, which
+describes what is **inside** a file. It is wrong for `<component>`, whose facts are about **the
+file itself**.
+
+So a declaration now writes onto the file's own component:
+- name, version (only where the package records none, or where D15's date fallback stood in),
+  creator (email, else URL), purl and cpe;
+- the licence as BSI's pair, `declared` and `concluded`, or as one `concluded` expression when it
+  is compound (D12's limit);
+- `msis:declared.by` and `msis:declared.fields`, saying where each declared value came from.
+
+No component is added. D13 still refuses a version that contradicts the recorded one, and one
+file still has one description, whether a `<component>`, a folder `<component>` or an `<sbom>`.
+
+**What would reopen this:** a consumer that needs the declaration as a separately addressable
+component. That is what `<sbom>` is for.

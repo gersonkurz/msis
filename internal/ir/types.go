@@ -2,6 +2,8 @@
 // These types mirror the msis.xsd schema structure.
 package ir
 
+import "strings"
+
 // Setup is the root element of an .msis file.
 type Setup struct {
 	Silent   bool
@@ -41,6 +43,20 @@ type DeclaredComponent struct {
 	License string // an SPDX licence expression
 	PURL    string
 	CPE     string
+
+	// Recursive applies a folder declaration to files in subfolders too (#65). Only meaningful
+	// for a folder target; true unless the script says recursive="no".
+	Recursive bool
+}
+
+// IsFolder reports whether the declaration names a folder rather than one file (#65): a target
+// that ends in a separator, or a bare root such as [INSTALLDIR] - the WHOLE target, so a file
+// named "notes[old]" stays a file.
+func (c DeclaredComponent) IsFolder() bool {
+	if strings.HasSuffix(c.For, `\`) || strings.HasSuffix(c.For, "/") {
+		return true
+	}
+	return strings.HasPrefix(c.For, "[") && strings.Index(c.For, "]") == len(c.For)-1
 }
 
 // Requirement represents a runtime dependency declaration.

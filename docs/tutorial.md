@@ -978,10 +978,29 @@ least one fact is required:
 | `license` | an SPDX licence expression: `MIT`, `Apache-2.0 OR MIT`, `GPL-3.0-only WITH Classpath-exception-2.0` |
 | `purl`, `cpe` | identifiers a vulnerability database can match. **Give one only if you are sure:** a wrong one produces false matches and hides real ones |
 
-msis turns the declaration into a supplied document and merges it by the same rules as `<sbom>`,
-so the SBOM marks every declared value as coming from your script (`msis:supplied.from` names the
-`<component>`), never as something msis observed. A file described twice (two `<component>`s, or
-a `<component>` and an `<sbom>`) is refused.
+**A whole folder.** A target ending in a separator declares the same facts for every file
+installed under it, recursively unless `recursive="no"`:
+
+```xml
+<component for="[LOCALAPPDATADIR]templates\wixlib\" creator="https://wixtoolset.org" license="MS-RL"/>
+```
+
+Each file still gets its own entry (and D13's version check), `name` is refused (every file
+keeps its own), and a folder that covers no file is an error. A file may be described once
+only: covered by a folder declaration and also named by its own `<component>` or `<sbom>`, it
+stops the build. Declare the folder's other files individually instead.
+
+The facts go onto the file's **own** component in the SBOM, beside what msis read from the
+bytes, not onto a separate one. `msis:declared.by` names the `<component>` they came from, and
+`msis:declared.fields` lists which fields it set, so a reader can always tell a declared value
+from an observed one. The licence becomes BSI's pair: the original licence, marked `declared`,
+and the distribution licence, marked `concluded`. A compound expression such as
+`Apache-2.0 OR MIT` can only be one CycloneDX expression, so it is given as the distribution
+licence. A file described twice (two `<component>`s, or a `<component>` and an `<sbom>`) is refused.
+
+`<sbom>` and `<component>` answer different questions. `<sbom>` describes what is **inside** a
+file, the libraries it links, as components of their own. `<component>` describes **the file
+itself**.
 
 ---
 

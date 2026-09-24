@@ -370,6 +370,7 @@ the two have different evidentiary weight.
 |---|---|
 | `msis:supplied.from` | which document contributed this component. It is also what admits a component with no digest: msis never held those bytes, so there was never a hash to drop |
 | `msis:supplied.document` | per merged document, on the metadata: what the merge did, and what it did **not** establish |
+| `msis:declared.by`, `msis:declared.fields` | this file's component carries facts the script declared in a `<component>` (D16): which element, and which fields - name, version, creator, licence, purl, cpe. Everything else on the component is what msis read |
 | `msis:supplied.ref` | msis assigned this component's `bom-ref` because its author gave it none. An address is not identity; nothing else about it was invented |
 
 **VEX assessments** — see [Tutorial 14](tutorial.md) for the `<vex>` element. The first three are
@@ -471,7 +472,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Component version | ✓ where the artifact records one (a PE's version resource). Otherwise, under `/BUILD /SBOM`, BSI's fallback: the modification date of the source file the build read, an exact UTC instant, marked `msis:build.versionFrom` (D15). `/SBOM` on an artifact alone has no source file, and leaves it out |
 | Creator of the SBOM | ✓ under `/BUILD /SBOM`: `SBOM_CREATOR` (email or URL) as `metadata.manufacturer`; never inferred |
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
-| Component creator, version, licence: payload files | when the script declares them: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), or a supplied `<sbom>`; never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
+| Component creator, version, licence: payload files | when the script declares them, for one file or a whole folder: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), on the file's own component (D16); never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
 | Data licence of the document | not a BSI field; `SBOM_DATA_LICENSE` grants one when the script sets it (D14). msis's own releases use CC0-1.0 |
 

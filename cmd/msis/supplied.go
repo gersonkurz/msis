@@ -1,14 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/generator"
 	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/sbom"
@@ -68,8 +66,9 @@ func resolveSuppliedSBOMs(decls []ir.SuppliedSBOM, ctx *generator.Context, scrip
 // resolved: msis already packages two different files to one destination under short names
 // (that is what TestDuplicateTargetFilesGetShortName covers), and attaching someone's dependency
 // graph to whichever of them came first would be a coin toss presented as a fact.
-func matchTarget(targets map[string][]string, want string) ([]string, error) {
-	ids, ok := targets[canonicalTarget(generator.ParseTarget(want))]
+func matchTarget(targets map[string]installed, want string) ([]string, error) {
+	at, ok := targets[canonicalTarget(generator.ParseTarget(want))]
+	ids := at.ids
 	switch {
 	case !ok:
 		known := make([]string, 0, len(targets))
@@ -88,12 +87,20 @@ func matchTarget(targets map[string][]string, want string) ([]string, error) {
 	return ids, nil
 }
 
+// installed is what one install target holds: the WiX File ids at it, and the target as the
+// script would write it - canonical keys are folded to lower case for matching, and a file's own
+// name keeps its case (#65).
+type installed struct {
+	ids     []string
+	spelled string
+}
+
 // installTargets maps every install target this build produces to the WiX File ids at it.
 //
 // Built from the generator's own tree, in the script's vocabulary, so the comparison is between
 // two things written the same way.
-func installTargets(ctx *generator.Context) map[string][]string {
-	out := map[string][]string{}
+func installTargets(ctx *generator.Context) map[string]installed {
+	out := map[string]installed{}
 	for _, key := range sortedTreeKeys(ctx.DirectoryTrees) {
 		root := ctx.DirectoryTrees[key]
 		// A root key with a nested value - INSTALLDIR="Company\App" - becomes a chain of
@@ -106,8 +113,9 @@ func installTargets(ctx *generator.Context) map[string][]string {
 		walk = func(d *generator.Directory, rel string) {
 			for _, c := range d.Components {
 				for _, f := range c.Files {
+					spelled := "[" + key + "]" + joinRel(rel, f.Name)
 					t := canonicalTarget(key, joinRel(rel, f.Name))
-					out[t] = append(out[t], f.ID)
+					out[t] = installed{ids: append(out[t].ids, f.ID), spelled: spelled}
 				}
 			}
 			for _, name := range sortedChildNames(d) {
@@ -151,70 +159,81 @@ func canonicalTarget(rootKey, sub string) string {
 	return strings.ToLower("[" + rootKey + "]" + sub)
 }
 
-// resolveDeclaredComponents turns each <component> element into a supplied document (#64), so
-// a declaration is merged by exactly the rules a supplied SBOM is: joined to one file by its
-// target, namespaced, marked as supplied - here, by the script - and never taken for something
-// msis observed. Like <sbom>, it runs on every build, so a `for` that names nothing is reported
-// now rather than at the next release.
-func resolveDeclaredComponents(decls []ir.DeclaredComponent, ctx *generator.Context, script string) ([]sbom.Supplied, error) {
+// resolveDeclaredComponents turns each <component> element into per-file declarations (#64,
+// #65): one for a single target, one for every file under a folder target. Each is joined to
+// exactly one file by its target; its facts go onto that file's own component (D16). Like
+// <sbom>, it runs on every build, so a `for` that names nothing is reported now rather than at
+// the next release.
+func resolveDeclaredComponents(decls []ir.DeclaredComponent, ctx *generator.Context, script string) ([]sbom.Declaration, error) {
 	if len(decls) == 0 {
 		return nil, nil
 	}
 	targets := installTargets(ctx)
-	out := make([]sbom.Supplied, 0, len(decls))
+	var out []sbom.Declaration
 	for _, d := range decls {
+		element := fmt.Sprintf("%s <component for=%q>", filepath.Base(script), d.For)
+		if d.IsFolder() {
+			files, err := expandFolder(targets, d)
+			if err != nil {
+				return nil, fmt.Errorf("<component for=%q>: %w", d.For, err)
+			}
+			for _, f := range files {
+				out = append(out, declarationFor(d, element, f.spelled, f.ids[0]))
+			}
+			continue
+		}
 		ids, err := matchTarget(targets, d.For)
 		if err != nil {
 			return nil, fmt.Errorf("<component for=%q>: %w", d.For, err)
 		}
-		data, err := declaredDocument(d)
-		if err != nil {
-			return nil, fmt.Errorf("<component for=%q>: %w", d.For, err)
-		}
-		out = append(out, sbom.Supplied{
-			// The source names the element, so the document's provenance says where the facts
-			// came from: this script, this declaration.
-			Source:   fmt.Sprintf("%s <component for=%q>", filepath.Base(script), d.For),
-			Target:   d.For,
-			FileID:   ids[0],
-			Data:     data,
-			Declared: true,
-		})
+		out = append(out, declarationFor(d, element, d.For, ids[0]))
 	}
 	return out, nil
 }
 
-// declaredDocument is the CycloneDX document a declaration stands for: one subject, carrying
-// exactly the fields the author declared and nothing else. It says nothing about what the file
-// contains or depends on, so both stay unknown.
-func declaredDocument(d ir.DeclaredComponent) ([]byte, error) {
-	name := d.Name
-	if name == "" {
-		// The file's name: the last segment of its install target.
-		name = d.For[strings.LastIndexAny(d.For, `]/\`)+1:]
+func declarationFor(d ir.DeclaredComponent, element, target, fileID string) sbom.Declaration {
+	return sbom.Declaration{
+		Source: element, Target: target, FileID: fileID,
+		Name: d.Name, Version: d.Version, Creator: d.Creator, License: d.License, PURL: d.PURL, CPE: d.CPE,
 	}
-	subject := map[string]any{"type": "library", "bom-ref": "declared", "name": name}
-	if d.Version != "" {
-		subject["version"] = d.Version
+}
+
+// expandFolder is every file a folder declaration covers (#65): installed under the folder, and
+// in subfolders unless the declaration says recursive="no". Each must be exactly one file, as
+// for a single target, and a folder that covers nothing is an error, as a target that names
+// nothing is.
+func expandFolder(targets map[string]installed, d ir.DeclaredComponent) ([]installed, error) {
+	root, sub := generator.ParseTarget(d.For)
+	prefix := canonicalTarget(root, sub)
+	keys := make([]string, 0, len(targets))
+	for t := range targets {
+		keys = append(keys, t)
 	}
-	if d.PURL != "" {
-		subject["purl"] = d.PURL
+	sort.Strings(keys)
+	var out []installed
+	for _, t := range keys {
+		rest, ok := strings.CutPrefix(t, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		if sub != "" {
+			// "[root]templates" must not match "[root]templates-old\x".
+			if rest, ok = strings.CutPrefix(rest, `\`); !ok {
+				continue
+			}
+		}
+		if !d.Recursive && strings.Contains(rest, `\`) {
+			continue
+		}
+		at := targets[t]
+		if len(at.ids) > 1 {
+			return nil, fmt.Errorf("%d files are installed at %s, so which one a declaration "+
+				"describes cannot be decided; give them distinct targets", len(at.ids), at.spelled)
+		}
+		out = append(out, at)
 	}
-	if d.CPE != "" {
-		subject["cpe"] = d.CPE
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no file is installed under that folder")
 	}
-	switch {
-	case contact.IsEmail(d.Creator):
-		subject["manufacturer"] = map[string]any{"contact": []any{map[string]any{"email": d.Creator}}}
-	case d.Creator != "":
-		subject["manufacturer"] = map[string]any{"url": []any{d.Creator}}
-	}
-	if d.License != "" {
-		// The author declares the licence the component's creator assigned: its original licence.
-		subject["licenses"] = []any{map[string]any{"expression": d.License, "acknowledgement": "declared"}}
-	}
-	return json.Marshal(map[string]any{
-		"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
-		"metadata": map[string]any{"component": subject},
-	})
+	return out, nil
 }

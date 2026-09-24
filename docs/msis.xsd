@@ -290,21 +290,24 @@
     <xs:annotation>
       <xs:documentation>
         States what msis cannot read from a payload file's bytes: what it is, which version, who
-        created it, under which licence. msis turns the declaration into a supplied SBOM and merges
-        it like an sbom element, so every value appears in the installer's SBOM marked as declared
-        by this script, never as observed. A declared version that contradicts the version
-        resource the package records for the file stops the build.
+        created it, under which licence. The facts go onto the file's own component in the
+        installer's SBOM, marked as declared by this script (msis:declared.by, msis:declared.fields),
+        never as observed. A declared version that contradicts the version resource the package
+        records for the file stops the build.
       </xs:documentation>
     </xs:annotation>
     <xs:attribute name="for" type="xs:string" use="required">
       <xs:annotation>
-        <xs:documentation>Install target of the file, e.g. [INSTALLDIR]libfoo.dll. It must match exactly one installed file.</xs:documentation>
+        <xs:documentation>Install target of the file, e.g. [INSTALLDIR]libfoo.dll, which must match exactly one installed file; or of a folder, ending in a separator (e.g. [INSTALLDIR]lib\), whose facts then apply to every file installed under it.</xs:documentation>
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="name" type="xs:string" use="optional">
       <xs:annotation><xs:documentation>The component's name as its creator gives it; defaults to the file's name.</xs:documentation></xs:annotation>
     </xs:attribute>
     <xs:attribute name="version" type="xs:string" use="optional"/>
+    <xs:attribute name="recursive" type="msisBoolean" use="optional">
+      <xs:annotation><xs:documentation>For a folder target: whether files in its subfolders are covered too. Default yes.</xs:documentation></xs:annotation>
+    </xs:attribute>
     <xs:attribute name="creator" type="xs:string" use="optional">
       <xs:annotation><xs:documentation>The creator's email address, or a URL when there is none.</xs:documentation></xs:annotation>
     </xs:attribute>

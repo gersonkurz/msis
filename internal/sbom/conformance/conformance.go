@@ -933,3 +933,24 @@ var (
 	refFieldsOnce sync.Once
 	refFields     map[string]bool
 )
+
+var licenseIDs = sync.OnceValue(func() map[string]bool {
+	raw, err := schemaFS.ReadFile("schema/spdx.schema.json")
+	if err != nil {
+		panic(err) // the embedded schema is part of the binary
+	}
+	var s struct{ Enum []string }
+	if err := json.Unmarshal(raw, &s); err != nil {
+		panic(err)
+	}
+	ids := make(map[string]bool, len(s.Enum))
+	for _, id := range s.Enum {
+		ids[id] = true
+	}
+	return ids
+})
+
+// IsLicenseID reports whether id is one of the SPDX identifiers CycloneDX 1.6 accepts as a
+// license.id - the vendored spdx.schema.json enum. Anything else, a LicenseRef- included, can
+// only be given as an expression.
+func IsLicenseID(id string) bool { return licenseIDs()[id] }
