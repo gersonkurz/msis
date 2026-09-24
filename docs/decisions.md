@@ -390,3 +390,61 @@ machine that has gcc; it is not answered by a timing-based test, and it is not a
 **What would reopen this:** a data race that a coordinated test could not have caught and the
 detector would have; or a CI runner with gcc, at which point `test-race` can join the gate there
 without being required of developer machines.
+
+## D10 — BSI TR-03183-2 is read from the text, v2.1.0; SHA-512 goes in `hashes`, and in a distribution reference only where one exists
+
+**Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24. Product owner's
+decision between three options for the SHA-512 placement.
+**Implemented by:** `internal/sbom/bundle.go` — `where the engine downloads this payload from`
+**Implemented by:** `internal/sbom/conformance/conformance.go` — `has a SHA-256 but no SHA-512`, `bsiValues`
+
+**The yardstick is BSI's own text, not a checker's reading of it.** The BSI landing page names
+**v2.1.0 (2025-08-20)** as current. The file published as `BSI-TR-03183-2_v2_2_0.pdf` contains
+the 1.1 text: its document history ends at 1.1. sbomqs's `--bsi-v2` profile checks 2.0.0, so
+its score is a second opinion on an older version, not the requirement. §7 says only the most
+recent version counts (plus the immediately preceding one for six months).
+
+**SHA-512.** §5.2.2 requires the deployable component's hash as SHA-512. Table 9 maps it to
+`externalReferences[{type: "distribution", hashes: [SHA-512]}]`, but CycloneDX requires a `url`
+on every external reference, and a file inside an MSI has no distribution location. Three options
+were weighed:
+- emit a distribution reference for every file, pointing at the containing artifact;
+- put SHA-512 only in `hashes` and ignore BSI's placement;
+- **(chosen)** both, honestly: SHA-512 goes beside SHA-256 in `hashes` wherever msis held the
+  bytes (payload files, Binary-table streams, bundle payloads, the artifact itself). A
+  `distribution` reference, carrying that SHA-512, is added only where a real location exists:
+  a payload the Burn engine downloads.
+
+Pointing a "distribution" at the MSI would name a place the file is not distributed from. The
+cost of this choice: a checker that looks for the SHA-512 only in the distribution reference
+still scores the in-MSI files 0, and this entry is the answer to that score.
+
+**The other §5.2.2 file facts** — `bsi:component:filename`, `bsi:component:executable`,
+`bsi:component:archive`, `bsi:component:structured` — are read from the bytes (`internal/filekind`).
+A property that cannot be proven is omitted, not guessed; §3.2.1 allows omitting what is not
+available. A PE with unexplained appended data may be a self-extracting archive, so it gets no
+archive or structured property.
+
+**What would reopen this:** a newer BSI version that moves the hash, or that defines a
+distribution reference without a location; or evidence that consumers the customers actually
+use reject SHA-512 in `hashes`.
+
+## D11 — An unknown dependency graph is stated in compositions, not as an empty `dependsOn`; sbomqs's "orphans" are not a defect
+
+**Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24, from reading
+CycloneDX 1.6 and BSI TR-03183-2 v2.1.0 against sbomqs's report.
+**Implemented by:** `internal/sbom/conformance/conformance.go` — `nothing in the document says what %q depends on, or that it is unknown`
+
+sbomqs reported "13 orphan components" and scored dependency-graph completeness 5/10 for msis's
+MSI documents. Traced on the 3.0.5 release documents: **every component is reachable from the
+primary component**. What the components have in common is that they have no `dependencies`
+entry of their own: payload files, Binary-table streams, supplied libraries. That is deliberate
+and correct. CycloneDX 1.6 says components that do not have their own dependencies MUST be
+declared as empty elements, and that components not represented in the graph MAY have unknown
+dependencies. For an opaque file msis does not know the dependencies, so an empty `dependsOn`
+would assert "depends on nothing". #29 settled that as the error to avoid, with the three
+knowledge states. The graph instead lists these components under an `unknown` composition,
+which is BSI §5.2.2's "the completeness of this enumeration MUST be clearly indicated".
+
+**What would reopen this:** a BSI or CycloneDX revision that requires every component to have a
+graph entry even when its dependencies are unknown, with a defined way to mark that entry unknown.

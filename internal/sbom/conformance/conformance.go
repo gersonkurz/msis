@@ -124,6 +124,19 @@ func Check(data []byte, want Expected) []error {
 		detected[ref] = true
 	}
 	for _, c := range components {
+		// BSI TR-03183-2 v2.1.0 §5.2.2 asks for the deployable form's SHA-512. Wherever msis
+		// held the bytes it has both digests; a supplied component carries what its author gave.
+		if hasSHA256(c.Hashes) && !hasSHA512(c.Hashes) && c.suppliedFrom() == "" {
+			fail("component %q has a SHA-256 but no SHA-512 (BSI TR-03183-2 v2.1.0 §5.2.2)", c.BOMRef)
+		}
+		if c.suppliedFrom() == "" {
+			for _, p := range c.Properties {
+				if allowed, ok := bsiValues[p.Name]; ok && !allowed[p.Value] {
+					fail("component %q gives %s the value %q, which BSI TR-03183-2 v2.1.0 does not define",
+						c.BOMRef, p.Name, p.Value)
+				}
+			}
+		}
 		switch {
 		case hasSHA256(c.Hashes):
 			if unhashable[c.BOMRef] || detected[c.BOMRef] {
@@ -368,6 +381,9 @@ func Check(data []byte, want Expected) []error {
 		!statedUnknown(doc.Metadata.Component, "supplier") {
 		fail("no supplier (NTIA requires one, or an explicit statement that it is unknown)")
 	}
+	if !hasSHA512(doc.Metadata.Component.Hashes) {
+		fail("the subject component has no SHA-512 (BSI TR-03183-2 v2.1.0 §5.2.2)")
+	}
 	if !hasSHA256(doc.Metadata.Component.Hashes) {
 		fail("the subject component has no SHA-256: a BOM-Link could not be checked against " +
 			"the artifact it claims to describe")
@@ -590,6 +606,22 @@ func hasSHA256(hashes []hash) bool {
 		}
 	}
 	return false
+}
+
+func hasSHA512(hashes []hash) bool {
+	for _, h := range hashes {
+		if strings.EqualFold(h.Alg, "SHA-512") && len(h.Content) == 128 {
+			return true
+		}
+	}
+	return false
+}
+
+// bsiValues are the values BSI TR-03183-2 v2.1.0 §5.2.2 defines for its three file properties.
+var bsiValues = map[string]map[string]bool{
+	"bsi:component:executable": {"executable": true, "non-executable": true},
+	"bsi:component:archive":    {"archive": true, "no archive": true},
+	"bsi:component:structured": {"structured": true, "unstructured": true},
 }
 
 func propertiesSorted(p []property) bool {

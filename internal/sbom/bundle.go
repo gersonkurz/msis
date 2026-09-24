@@ -40,6 +40,9 @@ func FromBundle(b *burnread.Bundle, opts Options) (*Document, error) {
 
 	ns := bundleNamespace(b)
 	root := bundleComponent(b, ns, subject)
+	if err := describeArtifact(&root, b.Path); err != nil {
+		return nil, err
+	}
 
 	doc := &Document{
 		BOMFormat:    "CycloneDX",
@@ -434,8 +437,26 @@ func applyDigests(c *Component, p burnread.Payload) {
 	if p.SHA256 != "" {
 		c.Hashes = append(c.Hashes, Hash{Alg: "SHA-256", Content: p.SHA256})
 	}
-	if p.RecordedSHA512 != "" {
-		c.Hashes = append(c.Hashes, Hash{Alg: "SHA-512", Content: strings.ToLower(p.RecordedSHA512)})
+	// Of the bytes msis holds; otherwise the one the manifest records, which the engine enforces.
+	// Where both exist they agree: carried bytes are verified against the recorded digest.
+	sha512 := p.SHA512
+	if sha512 == "" {
+		sha512 = strings.ToLower(p.RecordedSHA512)
+	}
+	if sha512 != "" {
+		c.Hashes = append(c.Hashes, Hash{Alg: "SHA-512", Content: sha512})
+	}
+	c.Properties = append(c.Properties, bsiProperties(baseName(p.Name), p.Kind)...)
+	// BSI maps the deployable form's SHA-512 to a distribution reference, which CycloneDX gives a
+	// url. Only a payload the engine downloads HAS a distribution location, so only it gets one;
+	// a file inside the bundle carries its SHA-512 in hashes instead (decisions: #63).
+	if p.DownloadURL != "" && sha512 != "" {
+		c.ExternalReferences = append(c.ExternalReferences, ExternalReference{
+			Type:    "distribution",
+			URL:     p.DownloadURL,
+			Comment: "where the engine downloads this payload from",
+			Hashes:  []Hash{{Alg: "SHA-512", Content: sha512}},
+		})
 	}
 	if p.SHA256 != "" {
 		return

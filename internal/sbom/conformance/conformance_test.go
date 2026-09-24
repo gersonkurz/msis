@@ -28,7 +28,8 @@ func good() map[string]any {
 			},
 			"component": map[string]any{
 				"type": "application", "bom-ref": "ns/product", "name": "Product", "version": "1.0",
-				"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat("a", 64)}},
+				"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat("a", 64)},
+					map[string]any{"alg": "SHA-512", "content": strings.Repeat("a", 128)}},
 			},
 		},
 		"components": []any{
@@ -55,7 +56,8 @@ func good() map[string]any {
 func payload(ref, name, fill string) map[string]any {
 	return map[string]any{
 		"type": "file", "bom-ref": ref, "name": name,
-		"hashes":     []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat(fill, 64)}},
+		"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat(fill, 64)},
+			map[string]any{"alg": "SHA-512", "content": strings.Repeat(fill, 128)}},
 		"properties": []any{map[string]any{"name": "msis:role", "value": "payload"}},
 	}
 }
@@ -84,7 +86,8 @@ func withSupplied(d map[string]any, c map[string]any) map[string]any {
 func stream(ref, name, fill string) map[string]any {
 	return map[string]any{
 		"type": "file", "bom-ref": ref, "name": name,
-		"hashes":     []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat(fill, 64)}},
+		"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat(fill, 64)},
+			map[string]any{"alg": "SHA-512", "content": strings.Repeat(fill, 128)}},
 		"properties": []any{map[string]any{"name": "msis:role", "value": "binary-stream"}},
 	}
 }
@@ -344,6 +347,33 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 					map[string]any{"name": "msis:ntia.unknown", "value": "version: the package records no ProductVersion"}}
 			},
 			mustSay: "supplier",
+		},
+		{
+			name: "a payload with a SHA-256 but no SHA-512 (#63)",
+			mutate: func(d map[string]any) {
+				c := d["components"].([]any)[0].(map[string]any)
+				c["hashes"] = c["hashes"].([]any)[:1]
+			},
+			mustSay: "no SHA-512",
+		},
+		{
+			name: "a subject with no SHA-512 (#63)",
+			mutate: func(d map[string]any) {
+				c := d["metadata"].(map[string]any)["component"].(map[string]any)
+				c["hashes"] = c["hashes"].([]any)[:1]
+			},
+			mustSay: "subject component has no SHA-512",
+		},
+		{
+			name: "a BSI property with a value BSI does not define (#63)",
+			mutate: func(d map[string]any) {
+				c := d["components"].([]any)[0].(map[string]any)
+				c["properties"] = []any{
+					map[string]any{"name": "bsi:component:executable", "value": "yes"},
+					map[string]any{"name": "msis:role", "value": "payload"},
+				}
+			},
+			mustSay: "does not define",
 		},
 		{
 			name:    "no generation context (#62)",

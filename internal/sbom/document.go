@@ -286,6 +286,13 @@ const (
 	propIdentityUnknown = "msis:identity"
 	propNTIAUnknown     = "msis:ntia.unknown"
 
+	// BSI TR-03183-2 v2.1.0 §5.2.2 and its CycloneDX property taxonomy (#63). Named by BSI,
+	// not msis, so a BSI-aware consumer finds them where the guideline says they are.
+	propBSIFilename   = "bsi:component:filename"
+	propBSIExecutable = "bsi:component:executable"
+	propBSIArchive    = "bsi:component:archive"
+	propBSIStructured = "bsi:component:structured"
+
 	// Bundle-side vocabulary. A bundle inventories installers rather than files, so it needs
 	// terms for where a payload lives and whether its bytes are in the artifact at all.
 	propBundleCode         = "msis:burn.bundleCode"

@@ -278,12 +278,12 @@ func syntheticPackage() *msiread.Package {
 		},
 		Files: []msiread.File{
 			{ID: "F1", Name: "a.dll", Target: `[INSTALLDIR]a.dll`, Component: "C_A",
-				Sequence: 1, SHA256: strings.Repeat("a", 64)},
+				Sequence: 1, SHA256: strings.Repeat("a", 64), SHA512: strings.Repeat("a", 128)},
 			{ID: "F2", Name: "b.dll", Target: `[INSTALLDIR]b.dll`, Component: "C_B",
-				Sequence: 2, SHA256: strings.Repeat("b", 64)},
+				Sequence: 2, SHA256: strings.Repeat("b", 64), SHA512: strings.Repeat("b", 128)},
 		},
 		Binaries: []msiread.Binary{
-			{Name: "CustomActionDll", Size: 10, SHA256: strings.Repeat("c", 64)},
+			{Name: "CustomActionDll", Size: 10, SHA256: strings.Repeat("c", 64), SHA512: strings.Repeat("c", 128)},
 		},
 		Media: []msiread.Media{{DiskID: 1, Cabinet: "#c.cab", LastSequence: 2}},
 	}

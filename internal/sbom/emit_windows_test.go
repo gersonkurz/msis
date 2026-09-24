@@ -3,6 +3,8 @@
 package sbom
 
 import (
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -62,6 +64,71 @@ func TestRealPackageProducesAConformingDocument(t *testing.T) {
 	}
 	if !merged {
 		t.Error("the merge module's contribution is missing from the document")
+	}
+}
+
+// #63: BSI TR-03183-2 v2.1.0 §5.2.2 on a real package. The subject - the MSI itself - carries its
+// SHA-512 (computed here independently) and is a structured, non-executable archive; every
+// payload file carries a SHA-512 beside its SHA-256, its filename, and what kind of file it is.
+func TestARealPackageCarriesBSIsFileFacts(t *testing.T) {
+	pkg, err := msiread.Read(fixtureMSI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := FromPackage(pkg, Options{MsisVersion: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fixtureMSI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha512.Sum512(data)
+	root := doc.Metadata.Component
+	var subject512 string
+	for _, h := range root.Hashes {
+		if h.Alg == "SHA-512" {
+			subject512 = h.Content
+		}
+	}
+	if subject512 != hex.EncodeToString(sum[:]) {
+		t.Errorf("subject SHA-512 %q, want the fixture's %x", subject512, sum)
+	}
+	for name, want := range map[string]string{
+		propBSIFilename: "fixture.msi", propBSIExecutable: "non-executable",
+		propBSIArchive: "archive", propBSIStructured: "structured",
+	} {
+		if got := propertyValue(root.Properties, name); got != want {
+			t.Errorf("subject %s = %q, want %q", name, got, want)
+		}
+	}
+
+	payloads := 0
+	for _, c := range doc.Components {
+		if propertyValue(c.Properties, propRole) != rolePayload {
+			continue
+		}
+		payloads++
+		var n512 int
+		for _, h := range c.Hashes {
+			if h.Alg == "SHA-512" && len(h.Content) == 128 {
+				n512++
+			}
+		}
+		if n512 != 1 {
+			t.Errorf("%s: %d SHA-512 digests, want 1", c.Name, n512)
+		}
+		for name, want := range map[string]string{
+			propBSIFilename: c.Name, propBSIExecutable: "non-executable",
+			propBSIArchive: "no archive", propBSIStructured: "unstructured",
+		} {
+			if got := propertyValue(c.Properties, name); got != want {
+				t.Errorf("%s: %s = %q, want %q (it is a text file)", c.Name, name, got, want)
+			}
+		}
+	}
+	if payloads == 0 {
+		t.Fatal("the fixture's payload files are missing")
 	}
 }
 

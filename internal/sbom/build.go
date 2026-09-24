@@ -3,6 +3,7 @@ package sbom
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
+	"github.com/gersonkurz/msis/internal/filekind"
 	"github.com/gersonkurz/msis/internal/msiread"
 )
 
@@ -68,6 +70,9 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 
 	ns := namespaceOf(pkg)
 	root := rootComponent(pkg, ns, subject)
+	if err := describeArtifact(&root, pkg.Path); err != nil {
+		return nil, err
+	}
 
 	doc := &Document{
 		BOMFormat:    "CycloneDX",
@@ -311,6 +316,10 @@ func fileComponent(f msiread.File, ns, componentGUID string) Component {
 	if f.SHA256 != "" {
 		c.Hashes = []Hash{{Alg: "SHA-256", Content: f.SHA256}}
 	}
+	if f.SHA512 != "" {
+		c.Hashes = append(c.Hashes, Hash{Alg: "SHA-512", Content: f.SHA512})
+	}
+	c.Properties = append(c.Properties, bsiProperties(f.Name, f.Kind)...)
 	return c
 }
 
@@ -318,17 +327,56 @@ func fileComponent(f msiread.File, ns, componentGUID string) Component {
 // database. It is executed during installation and never installed, which is a different thing
 // from payload and is marked as such.
 func binaryComponent(b msiread.Binary, ns string) Component {
-	return Component{
+	c := Component{
 		Type:        "file",
 		BOMRef:      ns + "/binary/" + encodeRefPart(b.Name),
 		Name:        b.Name,
 		Description: "Binary-table stream: executed during installation, not installed",
 		Hashes:      []Hash{{Alg: "SHA-256", Content: b.SHA256}},
-		Properties: []Property{
+		// A stream is not a file on disk, so it has no filename to state (BSI §3.2.1 lets
+		// what is not available be omitted); what it is, is still read from its bytes.
+		Properties: append([]Property{
 			{propRole, roleBinary},
 			{propIdentityUnknown, "undetermined: msis reads the bytes, not their provenance"},
-		},
+		}, bsiProperties("", b.Kind)...),
 	}
+	if b.SHA512 != "" {
+		c.Hashes = append(c.Hashes, Hash{Alg: "SHA-512", Content: b.SHA512})
+	}
+	return c
+}
+
+// bsiProperties states BSI TR-03183-2 v2.1.0 §5.2.2's filename, executable, archive and
+// structured properties for one file. A property filekind could not determine is left out,
+// not guessed (#63).
+func bsiProperties(filename string, k filekind.Kind) []Property {
+	var out []Property
+	if filename != "" {
+		out = append(out, Property{propBSIFilename, filename})
+	}
+	for _, p := range []Property{
+		{propBSIExecutable, k.ExecutableValue()},
+		{propBSIArchive, k.ArchiveValue()},
+		{propBSIStructured, k.StructuredValue()},
+	} {
+		if p.Value != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// describeArtifact adds to the subject what BSI asks of the deployable artifact itself: its
+// SHA-512 beside the SHA-256, its filename, and what kind of file it is (#63).
+func describeArtifact(c *Component, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading the subject artifact: %w", err)
+	}
+	sum := sha512.Sum512(data)
+	c.Hashes = append(c.Hashes, Hash{Alg: "SHA-512", Content: hex.EncodeToString(sum[:])})
+	c.Properties = append(c.Properties, bsiProperties(baseName(path), filekind.Of(path, data))...)
+	return nil
 }
 
 // namespaceOf gives the document's identity namespace.

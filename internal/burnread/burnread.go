@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/cabinet"
+	"github.com/gersonkurz/msis/internal/filekind"
 )
 
 // Bundle is everything read out of one bundle executable.
@@ -84,7 +85,9 @@ type Payload struct {
 	// DownloadURL - so there is nothing here to hash.
 	Carried bool
 
-	SHA256 string // computed by msis from the extracted bytes; empty when not Carried
+	SHA256 string        // computed by msis from the extracted bytes; empty when not Carried
+	SHA512 string        // likewise; the manifest records none for bootstrapper payloads (#63)
+	Kind   filekind.Kind // from the extracted bytes; all Unknown when not Carried
 
 	// RecordedSHA512 is the digest the bundle itself records for the payload, which the
 	// engine enforces before using it. For a carried payload it is what the extracted bytes
@@ -482,8 +485,10 @@ func (p *Payload) take(data []byte, want string) error {
 	if err := verify(data, want); err != nil {
 		return err
 	}
-	sum := sha256.Sum256(data)
+	sum, sum512 := sha256.Sum256(data), sha512.Sum512(data)
 	p.SHA256 = hex.EncodeToString(sum[:])
+	p.SHA512 = hex.EncodeToString(sum512[:])
+	p.Kind = filekind.Of(p.Name, data)
 	p.Size = len(data)
 	p.Carried = true
 	return nil

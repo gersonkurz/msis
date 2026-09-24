@@ -449,6 +449,34 @@ changes a parent's link inputs, which is why the retention rule above exists.
 
 ---
 
+## BSI TR-03183-2
+
+msis aims its documents at **BSI TR-03183-2 v2.1.0** (2025-08-20), the most concrete
+CRA-adjacent SBOM specification, read from the guideline's own text
+([decisions D10](decisions.md)). Where it stands today:
+
+| BSI §5.2 field | msis |
+|---|---|
+| Timestamp, SBOM-URI (`serialNumber`) | ✓ |
+| Hash of the deployable component, **SHA-512** | ✓ beside SHA-256 in `hashes` for every file msis read, and the artifact itself; a `distribution` external reference only where one exists (a payload the engine downloads), see D10 |
+| Filename, executable / archive / structured | ✓ `bsi:component:filename`, `:executable`, `:archive`, `:structured`, read from the bytes; a property that cannot be proven is omitted |
+| Dependencies, and their completeness | ✓ `dependsOn` plus compositions; an unknown graph is stated, not left empty (D11) |
+| Distribution / original licence | ✓ for msis's own components (`tools/sbom`); never guessed for a payload file |
+| Component name | ✓ |
+| Component version | ✓ where the artifact records one (a PE's version resource). BSI's fallback, the file's modification date, is not yet emitted: a cabinet stores local time with no time zone, and turning that into an RFC 3339 instant would mean guessing the offset |
+| Creator of the SBOM, component creator | not yet: they need a declared source ([#64](https://github.com/gersonkurz/msis/issues/64)) |
+| No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
+
+**Only `/BUILD /SBOM` can be compliant.** §5.1 requires a *Build SBOM*, one created as part of
+the build. `/SBOM` on an existing artifact produces what the guideline calls an *Analysed
+SBOM* (§8.4.4): still useful, and exactly the right tool for "what is at customer X", but not
+a TR-03183-2 SBOM by definition.
+
+The `bsi:component:*` properties are BSI's, not msis's, and use BSI's values:
+`executable`/`non-executable`, `archive`/`no archive`, `structured`/`unstructured`.
+
+---
+
 ## Asking questions across releases
 
 `tools/sbom-index` builds a SQLite index over a directory of documents:

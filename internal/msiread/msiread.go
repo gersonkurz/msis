@@ -18,6 +18,7 @@ package msiread
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
 	"runtime"
@@ -25,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/cabinet"
+	"github.com/gersonkurz/msis/internal/filekind"
 )
 
 // Package is everything read out of one installer database.
@@ -57,6 +59,8 @@ type File struct {
 	Sequence  int
 	Target    string // symbolic, e.g. [ProgramFiles64Folder]MSIS\templates\x64\msi-simplica.dll
 	SHA256    string // of the payload bytes, extracted from the package's cabinet
+	SHA512    string // of the same bytes: BSI TR-03183-2 v2.1.0 asks for SHA-512 (#63)
+	Kind      filekind.Kind
 }
 
 // Binary is a row of the Binary table: a stream held in the database rather than in a cabinet.
@@ -66,6 +70,8 @@ type Binary struct {
 	Name   string
 	Size   int
 	SHA256 string
+	SHA512 string
+	Kind   filekind.Kind
 }
 
 // Media describes one cabinet or media entry. A Cabinet beginning with '#' is embedded in the
@@ -255,11 +261,13 @@ func readBinaries(db *database, p *Package) error {
 			// detail to skip: these are executable custom actions.
 			return fmt.Errorf("reading the stream for Binary %q: %w", name, err)
 		}
-		sum := sha256.Sum256(data)
+		sum, sum512 := sha256.Sum256(data), sha512.Sum512(data)
 		p.Binaries = append(p.Binaries, Binary{
 			Name:   name,
 			Size:   len(data),
 			SHA256: hex.EncodeToString(sum[:]),
+			SHA512: hex.EncodeToString(sum512[:]),
+			Kind:   filekind.Of(name, data),
 		})
 		return nil
 	})
@@ -503,8 +511,10 @@ func hashPayload(db *database, p *Package) error {
 			return fmt.Errorf("file %s (%s): the cabinet holds %d bytes, the File table says %d",
 				f.ID, f.Name, len(data), f.Size)
 		}
-		sum := sha256.Sum256(data)
+		sum, sum512 := sha256.Sum256(data), sha512.Sum512(data)
 		f.SHA256 = hex.EncodeToString(sum[:])
+		f.SHA512 = hex.EncodeToString(sum512[:])
+		f.Kind = filekind.Of(f.Name, data)
 	}
 
 	if missing := unexplainedFiles(p.Files, p.Media, payload); len(missing) > 0 {

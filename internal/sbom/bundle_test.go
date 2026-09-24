@@ -40,12 +40,12 @@ func syntheticBundle(path string) *burnread.Bundle {
 					{
 						ID: "Main", Name: "Example.msi", Size: 10,
 						Role: burnread.RoleChained, Carried: true,
-						SHA256: strings.Repeat("b", 64),
+						SHA256: strings.Repeat("b", 64), SHA512: strings.Repeat("b", 128),
 					},
 					{
 						ID: "Extra", Name: "extra.cab", Size: 5,
 						Role: burnread.RoleSupplementary, Carried: true,
-						SHA256: strings.Repeat("c", 64),
+						SHA256: strings.Repeat("c", 64), SHA512: strings.Repeat("c", 128),
 					},
 				},
 			},
@@ -230,6 +230,18 @@ func TestAPayloadTheBundleDoesNotCarryIsStillDescribed(t *testing.T) {
 	}
 	if v := propertyValue(c.Properties, propDownloadURL); v != "https://example.invalid/runtime.exe" {
 		t.Errorf("%s = %q, want the download URL", propDownloadURL, v)
+	}
+	// #63: BSI maps the deployable form's SHA-512 to a distribution reference. This payload has
+	// a real distribution location, so it gets one - carrying the digest the engine enforces.
+	var dist []ExternalReference
+	for _, r := range c.ExternalReferences {
+		if r.Type == "distribution" {
+			dist = append(dist, r)
+		}
+	}
+	if len(dist) != 1 || dist[0].URL != "https://example.invalid/runtime.exe" ||
+		len(dist[0].Hashes) != 1 || dist[0].Hashes[0].Alg != "SHA-512" || dist[0].Hashes[0].Content != sha512 {
+		t.Errorf("distribution references %+v, want one at the download URL with the recorded SHA-512", dist)
 	}
 	if v := propertyValue(c.Properties, propCarried); v != "false" {
 		t.Errorf("%s = %q, want false", propCarried, v)
