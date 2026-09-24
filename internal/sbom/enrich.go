@@ -64,6 +64,7 @@ func enrich(doc *Document, rec *buildrecord.Record) error {
 		return err
 	}
 	enrichBinaries(doc, rec)
+	enrichExtensionFiles(doc, rec)
 	enrichPrerequisites(doc, rec)
 	enrichChained(doc, rec)
 	enrichRuntimes(doc, rec)
@@ -162,6 +163,42 @@ func enrichBinaries(doc *Document, rec *buildrecord.Record) {
 		c.Properties = append(c.Properties,
 			Property{propBuildSource, b.Source},
 			Property{propBuildSourceRoot, b.Root},
+		)
+	}
+}
+
+// enrichExtensionFiles attributes a Binary-table stream to the WiX extension package that
+// shipped it (#67, decisions D18): its bytes must be those of a file in the extension the build
+// loaded. A stream that merely has WiX's name - a template can define WixUI_Bmp_Banner itself -
+// matches nothing and stays as it was. The package's facts are what its .nuspec declares,
+// pinned in internal/wix and checked against nuget.org before a release: the authors, reached
+// through the repository they name; the licence by the id BSI §6.1 prescribes - ScanCode's, as
+// the agreement has no SPDX id, and so one concluded expression (licencesOf); and the package
+// version as the stream's version.
+func enrichExtensionFiles(doc *Document, rec *buildrecord.Record) {
+	byDigest := map[string]buildrecord.ExtensionFile{}
+	for _, e := range rec.Extensions {
+		if _, seen := byDigest[strings.ToLower(e.SHA256)]; !seen { // rec is sorted: the first is stable
+			byDigest[strings.ToLower(e.SHA256)] = e
+		}
+	}
+	for i := range doc.Components {
+		c := &doc.Components[i]
+		if propertyValueOf(c.Properties, propRole) != roleBinary {
+			continue
+		}
+		e, ok := byDigest[strings.ToLower(sha256Of(c.Hashes))]
+		if !ok {
+			continue
+		}
+		from := fmt.Sprintf("%s %s, %s", e.Package, e.Version, e.Entry)
+		c.Version = e.Version
+		c.Manufacturer = creatorEntity(e.Authors, e.Repository, "")
+		c.Licenses = licencesOf(e.License)
+		c.Properties = withoutProperty(c.Properties, propIdentityUnknown)
+		c.Properties = append(c.Properties,
+			Property{propIdentityUnknown, "the file " + from + ", matched by SHA-256"},
+			Property{propBuildExtension, from},
 		)
 	}
 }

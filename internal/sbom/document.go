@@ -369,6 +369,7 @@ const (
 	propBuildTool          = "msis:build.tool"
 	propBuildSource        = "msis:build.source"
 	propBuildSourceRoot    = "msis:build.sourceRoot"
+	propBuildExtension     = "msis:build.extension"
 	propBuildVersionFrom   = "msis:build.versionFrom"
 	propBuildUnresolved    = "msis:build.unresolved"
 	propBuildCoverage      = "msis:build.coverage"

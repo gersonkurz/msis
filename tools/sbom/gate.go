@@ -44,9 +44,9 @@ type baseline struct {
 // after "msis-<version>-". Measured on the 3.0.6 release inputs, 2026-09-24. Lower a maximum or
 // raise a minimum when a change improves a document; the gate says when that is due.
 var gateBaselines = map[string]baseline{
-	"x64.msi":   {coverage{NoLicence: 12, NoCreator: 18, NoVersion: 7}, 6.89},
-	"x86.msi":   {coverage{NoLicence: 12, NoCreator: 18, NoVersion: 7}, 6.89},
-	"arm64.msi": {coverage{NoLicence: 12, NoCreator: 18, NoVersion: 7}, 6.89},
+	"x64.msi":   {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
+	"x86.msi":   {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
+	"arm64.msi": {coverage{NoLicence: 5, NoCreator: 11}, 7.30},
 	"setup.exe": {coverage{NoLicence: 10, NoCreator: 9, NoVersion: 6}, 6.75},
 }
 

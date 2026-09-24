@@ -105,6 +105,34 @@ func recordTemplateBinaries(rec *buildrecord.Record, vars variables.Dictionary) 
 	rec.AddTemplateBinary(vars.HookDllDir() + "/" + entry)
 }
 
+// recordExtensionFiles is the MSI path's third contribution (#67): the files the WiX extensions
+// the build LOADED carry, so a Binary-table stream WiX embedded can be attributed to the package
+// that shipped it. It reads the extensions the builder handed to wix, the resolved DLLs, so the
+// record describes those very files (decisions D18). Only a package whose .nuspec facts msis
+// pins is recorded.
+func recordExtensionFiles(rec *buildrecord.Record, loaded []wix.ResolvedExtension) {
+	for _, e := range loaded {
+		if e.Path == "" {
+			continue // wix found it by id; msis does not know which file, and claims nothing
+		}
+		facts, ok := wix.ExtensionPackageFacts(e.ID, e.Version)
+		if !ok {
+			continue
+		}
+		payloads, err := wix.ExtensionPayloads(e.Path)
+		if err != nil {
+			rec.Unresolved = append(rec.Unresolved, fmt.Sprintf("%s %s: reading its files: %v", e.ID, e.Version, err))
+			continue
+		}
+		for sum, entry := range payloads {
+			rec.Extensions = append(rec.Extensions, buildrecord.ExtensionFile{
+				Package: e.ID, Version: e.Version, Entry: entry, SHA256: sum,
+				Authors: facts.Authors, Repository: facts.Repository, License: facts.License,
+			})
+		}
+	}
+}
+
 // recordStandaloneRuntimes is the /STANDALONE contribution: no chain at all. The prerequisites
 // become launch conditions, so what the build arranged is DETECTION, not distribution, and the
 // record says so - a document that listed them like bundled payload would claim the installer

@@ -13,6 +13,7 @@
 //
 //	sbom -components ...   the per-file documents msis's own installers compose (components.go)
 //	sbom -gate ...         fail if a release SBOM's coverage fell below the baseline (gate.go)
+//	sbom -wix-packages     check the pinned WiX extension package facts against nuget.org (wixpackages.go)
 package main
 
 import (
@@ -163,9 +164,16 @@ func main() {
 		compArch  = flag.String("arches", strings.Join(arches, ","), "with -components: the msis binaries to describe")
 		templates = flag.String("templates", "templates", "with -components: the folder holding the staged hook DLLs")
 		doGate    = flag.Bool("gate", false, "after packaging: fail if a release SBOM's coverage fell below the baseline (gate.go)")
+		doWixPins = flag.Bool("wix-packages", false, "network: check the pinned WiX extension package facts against nuget.org (wixpackages.go)")
 	)
 	flag.Parse()
 
+	if *doWixPins { // needs no release version: the pins are msis's, not a release's
+		if err := checkWixPackages(fetch); err != nil {
+			fatal(err)
+		}
+		return
+	}
 	if *version == "" {
 		fatal(fmt.Errorf("-version is required"))
 	}

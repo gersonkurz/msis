@@ -71,6 +71,7 @@ type Record struct {
 
 	Files      []File
 	Binaries   []Binary
+	Extensions []ExtensionFile
 	Prereqs    []Prerequisite
 	Chained    []Chained
 	Runtimes   []Runtime
@@ -112,6 +113,24 @@ type Binary struct {
 	Source string // relative to the bind path that matched
 	Root   string // WHICH bind path matched; see BindPath.Name
 	SHA256 string
+}
+
+// ExtensionFile is one file a WiX extension the build loaded carries in its embedded .wixlib
+// (#67), with what that extension's package declares. An MSI embeds some of these as
+// Binary-table streams, and they are joined to the artifact by CONTENT: a stream named
+// WixUI_Bmp_Banner is WiX's only if its bytes are the ones this extension shipped, because a
+// template can define a stream of that name itself.
+type ExtensionFile struct {
+	Package string // WixToolset.UI.wixext
+	Version string // the package version the build loaded
+	Entry   string // the file inside the .wixlib, e.g. wix-ir/bannrbmp.bmp
+	SHA256  string
+
+	// What the package's .nuspec declares, from msis's pinned table (internal/wix): the
+	// cache the build loads from does not keep the .nuspec.
+	Authors    string
+	Repository string
+	License    string // an SPDX id or ScanCode LicenseRef, as BSI §6.1 names licences
 }
 
 // Prerequisite is a runtime the build arranged for.
@@ -474,6 +493,7 @@ func (r *Record) For(s Scope) *Record {
 	case ScopeArtifactMSI:
 		out.Files = r.Files
 		out.Binaries = r.Binaries
+		out.Extensions = r.Extensions
 		out.Runtimes = r.Runtimes
 	case ScopeArtifactBundle:
 		out.Prereqs = r.Prereqs
@@ -487,6 +507,10 @@ func (r *Record) For(s Scope) *Record {
 func (r *Record) Sort() {
 	sort.Slice(r.Files, func(i, j int) bool { return r.Files[i].FileID < r.Files[j].FileID })
 	sort.Slice(r.Binaries, func(i, j int) bool { return r.Binaries[i].Source < r.Binaries[j].Source })
+	sort.Slice(r.Extensions, func(i, j int) bool {
+		a, b := r.Extensions[i], r.Extensions[j]
+		return a.SHA256+"\x00"+a.Package+"\x00"+a.Entry < b.SHA256+"\x00"+b.Package+"\x00"+b.Entry
+	})
 	sort.Slice(r.Prereqs, func(i, j int) bool { return r.Prereqs[i].Key() < r.Prereqs[j].Key() })
 	sort.Slice(r.Chained, func(i, j int) bool { return r.Chained[i].Source < r.Chained[j].Source })
 	sort.Slice(r.Runtimes, func(i, j int) bool {

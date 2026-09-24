@@ -29,6 +29,19 @@ var bundleExtensions = []string{extBootstrapper, extUtil, extNetfx}
 // AllExtensions is the union of every extension msis can use; EnsureWix installs all of them.
 var AllExtensions = []string{extUI, extUtil, extBootstrapper, extNetfx}
 
+// extensionArgs is the `-ext` arguments for a build: the resolved DLLs where the build resolved
+// them (#67), else the bare ids.
+func extensionArgs(resolved []ResolvedExtension, ids []string) []string {
+	if resolved == nil {
+		return extArgs(ids)
+	}
+	args := make([]string, 0, len(resolved)*2)
+	for _, r := range resolved {
+		args = append(args, "-ext", r.arg())
+	}
+	return args
+}
+
 // extArgs turns a list of extension IDs into `-ext <id>` build arguments.
 func extArgs(exts []string) []string {
 	args := make([]string, 0, len(exts)*2)

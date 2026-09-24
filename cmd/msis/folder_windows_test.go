@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gersonkurz/msis/internal/wix"
 )
 
 const folderScript = `<?xml version="1.0" encoding="utf-8"?>
@@ -99,5 +101,44 @@ func TestAFolderDeclarationOverlapIsRefused(t *testing.T) {
 	err = processFile(script, &cliArgs{setOverrides: map[string]string{}, templateFolder: repoTemplates(t)})
 	if err == nil || !strings.Contains(err.Error(), "no file is installed under that folder") {
 		t.Errorf("a partial folder name matched: %v", err)
+	}
+}
+
+// #67 with the real wix: every Binary-table stream the loaded WiX extensions supplied - the
+// WixUI bitmaps and icons, the Util custom-action DLL - is attributed to its package by its
+// bytes, when msis pins the facts of the wix version installed here.
+func TestWixStreamsAreAttributedToTheirPackage(t *testing.T) {
+	requireWix(t)
+	dir, script := folderFixture(t, "")
+	// The extension this build will load, resolved as WiX resolves it from the .wxs directory.
+	loaded := wix.ResolveExtensions(dir, wix.MSIExtensions()[:1], wix.GetWixMajorVersion())[0]
+	version := loaded.Version
+	if _, ok := wix.ExtensionPackageFacts(loaded.ID, version); loaded.Path == "" || !ok {
+		t.Skipf("%s %q is not in a cache msis resolves, or not pinned; nothing is attributed by design", loaded.ID, version)
+	}
+	buildWithSBOM(t, script, &cliArgs{})
+	doc, _ := readDoc(t, filepath.Join(dir, "folder.msi"))
+	streams := 0
+	for _, c := range doc.Components {
+		role, from := "", ""
+		for _, p := range c.Properties {
+			switch p.Name {
+			case "msis:role":
+				role = p.Value
+			case "msis:build.extension":
+				from = p.Value
+			}
+		}
+		if role != "binary-stream" || !strings.HasPrefix(c.Name, "Wix") {
+			continue
+		}
+		streams++
+		if !strings.HasPrefix(from, "WixToolset.") || c.Version != version || c.Manufacturer == nil ||
+			len(c.Licenses) != 1 || c.Licenses[0].Expression != "LicenseRef-scancode-os-maintenance-fee-eula" {
+			t.Errorf("%s: from %q, version %q, creator %+v, licences %+v", c.Name, from, c.Version, c.Manufacturer, c.Licenses)
+		}
+	}
+	if streams == 0 {
+		t.Fatal("the fixture's package has no WiX streams to attribute")
 	}
 }

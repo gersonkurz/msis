@@ -599,3 +599,68 @@ The reasons:
 
 **What would reopen this:** a regulation or customer that requires the signature inside the
 document, or a signing service the build can call without msis holding a key.
+
+## D18 — WiX's Binary-table streams are attributed by their bytes, and their licence is ScanCode's id for the WiX agreement
+
+**Settled in:** [#67](https://github.com/gersonkurz/msis/issues/67), 2026-09-24. Product owner's
+decisions: pin the package facts and check them against nuget.org; the ScanCode id.
+**Implemented by:** `internal/sbom/enrich.go` — `func enrichExtensionFiles(doc *Document, rec *buildrecord.Record)`
+**Implemented by:** `internal/wix/extensions.go` — `LicenseRef-scancode-os-maintenance-fee-eula`, `func ExtensionPayloads(dll string)`, `func ResolveExtensions(`
+
+An MSI built with WixUI embeds WiX's bitmaps and icons (`WixUI_Bmp_Banner`, ...) and the Util
+custom-action DLL (`Wix4UtilCA_X64`) as Binary-table streams. They had no creator, licence or
+version, the largest honest gap left in msis's own SBOMs.
+
+**By bytes, never by name.** A template can define a stream called `WixUI_Bmp_Banner` itself.
+At `/BUILD`, msis reads the extension DLLs the build loaded - the `.wixlib` each embeds is a
+zip - and attributes a stream only when its SHA-256 is that of a file in one of them. The
+document then says which package, which version, which file: `msis:build.extension`.
+- **The build and the attribution use the same file.** msis resolves each extension exactly as
+  WiX's `ExtensionManager.Load` resolves a bare id (`wix.ResolveExtensions`), then hands
+  `wix build -ext` the resolved DLL path, which WiX loads as it is. WiX's order:
+  1. the build directory's `.wix` cache;
+  2. the user's (`WIX_EXTENSIONS`, else the profile);
+  3. the machine's under Common Files.
+
+  In the first location that has the extension, WiX takes the latest version by `WixVersion`
+  order. msis does the same, so the version stated is the one that built the installer.
+  - WiX first tries the reference as a file in its working directory, so a file named like the
+    id beside the `.wxs` is left to WiX.
+  - A relative cache root, such as `WIX_EXTENSIONS=cache`, is resolved against WiX's working
+    directory, not msis's.
+  - A location msis cannot determine exactly ends the resolution, rather than being skipped.
+
+  In every case msis cannot reproduce, including an extension found only in the wix tool's own
+  folder, the extension is handed on by id and attributed nothing.
+- A plain `/SBOM` has no build to consult, and attributes nothing.
+- A stream still has no filename (BSI §3.2.1: what is not available is omitted). It is not a
+  file on disk.
+- A stream gets no purl. It is a part of the package, not the package.
+
+**What the package declares, pinned.** The extension cache keeps only the DLL, not the
+`.nuspec`. So the facts are pinned per package version in `internal/wix/extensions.go`:
+authors, repository, licence file and that file's digest. `just wix-packages-check`, which
+gates a release, compares every pin with nuget.org.
+- WiX 6 and 7 packages declare no project URL, so the creator is reached through the
+  repository they name, as msis names itself.
+- A WiX version that is not pinned is not attributed.
+- `TestTheDefaultWixVersionIsPinned` keeps the version msis provisions pinned.
+
+**The licence.** Every WiX 6 and 7 extension package declares `<license type="file">OSMFEULA.txt</license>`:
+the Open Source Maintenance Fee Agreement. Its own text says the source is MS-RL and the binary
+release comes under the agreement. BSI TR-03183-2 v2.1.0 §6.1 names a licence by its SPDX id,
+else by the ScanCode LicenseDB id, else by an own `LicenseRef`. The agreement has no SPDX id.
+ScanCode has `LicenseRef-scancode-os-maintenance-fee-eula` and lists WiX's own `OSMFEULA.txt`
+as a reference. WiX's text fills the template's placeholders (project, software, OSI licence),
+which §6.1 says is not a modification.
+- WiX 7.0.0's text also limits the fee to users with an annual gross revenue of US$10,000 or
+  more, which neither ScanCode's text nor the WiX commit it cites has.
+- The product owner chose ScanCode's id over an own `LicenseRef-msis-...`. It is the
+  established identifier for this agreement, and the one ScanCode's own detector assigns.
+- The two texts (6.x and 7.0.0) are pinned by digest, so a further change stops the release
+  and this entry is read again.
+- A `LicenseRef-` is not on CycloneDX's SPDX list, so it is one concluded expression, D12's
+  limit: there is no declared/concluded pair.
+
+**What would reopen this:** SPDX adding an id for the agreement; ScanCode adding one for WiX's
+current text; or a WiX version whose package declares something else.

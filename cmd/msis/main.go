@@ -436,6 +436,8 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		// recomputing it here and hoping the two stay in step (issue #27).
 		msiPath := builder.OutputFile
 		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(msiPath))
+		// What the build loaded, read now that it is known which files those were (#67).
+		recordExtensionFiles(rec, builder.Extensions)
 
 		// A declared version is held to the version the package records (D13) on every build,
 		// not only when a document is written; /BUILD alone must not ship a script that

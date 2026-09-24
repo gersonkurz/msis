@@ -28,6 +28,10 @@ type Builder struct {
 	SourceDir       string // Directory of the original .msis file (for resolving source paths)
 	Variables       variables.Dictionary
 	RetainWxs       bool
+
+	// Extensions are the extension DLLs the build hands to wix, resolved as WiX resolves them
+	// (ResolveExtensions) when Build runs. Nil means the bare ids, for WiX to find (#67).
+	Extensions []ResolvedExtension
 }
 
 // NewBuilder creates a WiX builder from variables and paths.
@@ -192,6 +196,7 @@ func bindPathArgs(workDir, sourceDir, customTemplates, templateFolder string) []
 
 // runWixBuild executes wix build command.
 func (b *Builder) runWixBuild() error {
+	b.Extensions = ResolveExtensions(filepath.Dir(absPath(b.WxsFile)), msiExtensions, GetWixMajorVersion())
 	workDir, args := b.buildArgs()
 	return runWix(workDir, args)
 }
@@ -213,7 +218,7 @@ func (b *Builder) buildArgs() (workDir string, args []string) {
 	}
 
 	// Extensions (see setup.go for the canonical list)
-	args = append(args, extArgs(msiExtensions)...)
+	args = append(args, extensionArgs(b.Extensions, msiExtensions)...)
 
 	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
 	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)
@@ -350,6 +355,10 @@ type BundleBuilder struct {
 	SourceDir       string // .msis directory; a bundle bind path so source-relative logos/payloads resolve
 	Variables       variables.Dictionary
 	RetainWxs       bool
+
+	// Extensions are the extension DLLs the build hands to wix, resolved as WiX resolves them
+	// (ResolveExtensions) when Build runs. Nil means the bare ids, for WiX to find (#67).
+	Extensions []ResolvedExtension
 }
 
 // TrimPackageSuffix removes a trailing ".exe" or ".msi" (case-insensitively) and nothing else.
@@ -429,6 +438,7 @@ func (b *BundleBuilder) Build() error {
 
 // runWixBuild executes wix build command for bundle.
 func (b *BundleBuilder) runWixBuild() error {
+	b.Extensions = ResolveExtensions(filepath.Dir(absPath(b.WxsFile)), bundleExtensions, GetWixMajorVersion())
 	workDir, args := b.buildArgs()
 	return runWix(workDir, args)
 }
@@ -442,7 +452,7 @@ func (b *BundleBuilder) buildArgs() (workDir string, args []string) {
 	args = []string{"build", wxsFilename}
 
 	// Bundle-specific extensions (see setup.go for the canonical list)
-	args = append(args, extArgs(bundleExtensions)...)
+	args = append(args, extensionArgs(b.Extensions, bundleExtensions)...)
 
 	// EULA acceptance (WiX 7+ only; no-op on WiX 6)
 	args = append(args, eulaAcceptArgs(GetWixMajorVersion())...)

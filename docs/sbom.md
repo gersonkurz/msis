@@ -355,6 +355,7 @@ the two have different evidentiary weight.
 | `msis:build.script` | the `.msis`, by name |
 | `msis:build.tool.msis`, `msis:build.tool.wix` | the toolchain that built it |
 | `msis:build.source`, `msis:build.sourceRoot` | where a payload came from, and which bind path it resolved in |
+| `msis:build.extension` | a Binary-table stream whose bytes are a file of a WiX extension the build loaded: which package, which version, which file in it (D18) |
 | `msis:build.versionFrom` | the component's version is BSI's fallback: the modification date of the source file the build read, because the file has no version of its own (D15) |
 | `msis:build.unresolved` | an input the build could not account for — recorded, never omitted |
 | `msis:build.coverage` | how much of the payload carries a source, and what is not reached |
@@ -473,6 +474,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Creator of the SBOM | ✓ under `/BUILD /SBOM`: `SBOM_CREATOR` (email or URL) as `metadata.manufacturer`; never inferred |
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
 | Component creator, version, licence: payload files | when the script declares them, for one file or a whole folder: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), on the file's own component (D16); never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
+| Component creator, version, licence: WiX's Binary-table streams | ✓ under `/BUILD /SBOM`, for a stream whose bytes are a file of the WiX extension the build loaded (the WixUI bitmaps and icons, the Util custom-action DLL): what that package declares, pinned in `internal/wix` and checked against nuget.org before a release. The licence is ScanCode's `LicenseRef-scancode-os-maintenance-fee-eula`, as §6.1 prescribes for a licence with no SPDX id (D18). A stream that only has WiX's name is not attributed |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
 | Data licence of the document | not a BSI field; `SBOM_DATA_LICENSE` grants one when the script sets it (D14). msis's own releases use CC0-1.0 |
 | Signature of the document (§5.4, optional) | not produced; the integrity of a release's documents comes from the release itself (D17) |
