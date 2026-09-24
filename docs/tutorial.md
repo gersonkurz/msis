@@ -954,6 +954,35 @@ from "nobody looked".
 it chains installers — so a bundle script has no install target to name; msis says so rather
 than failing later. The bundle's document links to the MSI's, and the MSI's carries the merge.
 
+### When you only know the facts: `<component>`
+
+Often there is no CycloneDX document to supply, but you know what a file is: the vendor DLL you
+ship is libfoo 2.3.1, MIT, from Foo Inc. Say so directly:
+
+```xml
+<component for="[INSTALLDIR]libfoo.dll"
+           name="libfoo" version="2.3.1"
+           creator="security@foo.example"
+           license="MIT"
+           purl="pkg:nuget/Foo@2.3.1"/>
+```
+
+`for` names exactly one installed file, as with `<sbom>`. Everything else is optional, but at
+least one fact is required:
+
+| attribute | |
+|---|---|
+| `name` | the component's name as its creator gives it; defaults to the file's name |
+| `version` | the creator's version. If the package records a version resource for the file, the two must agree (trailing `.0` groups aside), or the build stops: a script that is wrong about the file is not published |
+| `creator` | an email address, or a URL when there is none (BSI TR-03183-2's "component creator") |
+| `license` | an SPDX licence expression: `MIT`, `Apache-2.0 OR MIT`, `GPL-3.0-only WITH Classpath-exception-2.0` |
+| `purl`, `cpe` | identifiers a vulnerability database can match. **Give one only if you are sure:** a wrong one produces false matches and hides real ones |
+
+msis turns the declaration into a supplied document and merges it by the same rules as `<sbom>`,
+so the SBOM marks every declared value as coming from your script (`msis:supplied.from` names the
+`<component>`), never as something msis observed. A file described twice (two `<component>`s, or
+a `<component>` and an `<sbom>`) is refused.
+
 ---
 
 ## Tutorial 14: Recording What Is Not Exploitable

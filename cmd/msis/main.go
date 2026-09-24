@@ -17,6 +17,7 @@ import (
 	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/generator"
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/msiread"
 	"github.com/gersonkurz/msis/internal/parser"
 	"github.com/gersonkurz/msis/internal/prereqcache"
 	"github.com/gersonkurz/msis/internal/sbom"
@@ -326,6 +327,16 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 	if err != nil {
 		return err
 	}
+	// #64: facts the script declares about a file become supplied documents too, merged by the
+	// same rules; one file described twice is refused by the merge, whichever way it was described.
+	declared, err := resolveDeclaredComponents(setup.Components, ctx, filename)
+	if err != nil {
+		return err
+	}
+	supplied = append(supplied, declared...)
+	if err := sbom.OneDocumentPerFile(supplied); err != nil {
+		return err
+	}
 	// #37: the team's own VEX document, read now so a path that does not exist is a build
 	// error rather than a surprise at release time.
 	statements, err := resolveVEX(setup.VEX, filename)
@@ -425,6 +436,19 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		// recomputing it here and hoping the two stay in step (issue #27).
 		msiPath := builder.OutputFile
 		fmt.Printf("  %s %s\n", cli.Success("Built:"), cli.Filename(msiPath))
+
+		// A declared version is held to the version the package records (D13) on every build,
+		// not only when a document is written; /BUILD alone must not ship a script that
+		// contradicts its own installer (#64's review).
+		if len(declared) > 0 {
+			pkg, err := msiread.Read(msiPath)
+			if err != nil {
+				return fmt.Errorf("reading %s to check its <component> declarations: %w", filepath.Base(msiPath), err)
+			}
+			if err := sbom.CheckDeclarations(pkg, declared); err != nil {
+				return err
+			}
+		}
 
 		// Milestone 6.2 - Auto-bundle if requirements present
 		if needsAutoBundle {
@@ -622,6 +646,10 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		return fmt.Errorf("<sbom for=%q> is in a script that builds a bundle, which installs no "+
 			"files of its own; put it in the .msis that packages that file",
 			setup.SBOMs[0].For)
+	}
+	if len(setup.Components) > 0 {
+		return fmt.Errorf("<component for=%q> is in a script that builds a bundle, which installs no "+
+			"files of its own; put it in the .msis that packages that file", setup.Components[0].For)
 	}
 
 	// A VEX document, on the other hand, is about the product rather than about an installed

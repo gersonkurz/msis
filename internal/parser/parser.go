@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/ir"
 )
 
@@ -40,10 +41,12 @@ type xmlSetup struct {
 	Sets     []xmlSet
 	Requires []xmlRequires // Top-level runtime requirements
 	SBOMs    []xmlSBOM     // Supplied component SBOMs (#36)
-	VEX      *xmlVEX       // The VEX document annotating this product (#37)
-	Features []xmlFeature
-	Items    []xmlItem // Preserves document order
-	Bundle   *xmlBundle
+	// Components are facts the script declares about payload files (#64)
+	Components []xmlComponent
+	VEX        *xmlVEX // The VEX document annotating this product (#37)
+	Features   []xmlFeature
+	Items      []xmlItem // Preserves document order
+	Bundle     *xmlBundle
 }
 
 // xmlItem holds any item type with its original position
@@ -196,6 +199,64 @@ func (s *xmlSBOM) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	}
 	return d.Skip()
 }
+
+// xmlComponent represents facts declared about one payload file (#64):
+// <component for="[INSTALLDIR]libfoo.dll" name= version= creator= license= purl= cpe=/>
+type xmlComponent struct {
+	ir.DeclaredComponent
+}
+
+// UnmarshalXML for xmlComponent - `for` is required, an unknown attribute is an error, and each
+// value is checked for the shape it must have. A declaration is published as a fact about the
+// file, so a malformed one is refused here, where the author can see which element it came from.
+func (c *xmlComponent) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for _, attr := range start.Attr {
+		v := strings.TrimSpace(attr.Value)
+		switch attr.Name.Local {
+		case "for":
+			c.For = v
+		case "name":
+			c.Name = v
+		case "version":
+			c.Version = v
+		case "creator":
+			c.Creator = v
+		case "license":
+			c.License = v
+		case "purl":
+			c.PURL = v
+		case "cpe":
+			c.CPE = v
+		default:
+			return fmt.Errorf("unknown attribute '%s' on <component>", attr.Name.Local)
+		}
+	}
+	if c.For == "" {
+		return fmt.Errorf("<component> requires a for attribute naming the file it describes")
+	}
+	if c.Name == "" && c.Version == "" && c.Creator == "" && c.License == "" && c.PURL == "" && c.CPE == "" {
+		return fmt.Errorf("<component for=%q> declares nothing", c.For)
+	}
+	if c.Creator != "" && !contact.IsEmail(c.Creator) && !contact.IsURL(c.Creator) {
+		return fmt.Errorf("<component for=%q>: creator %q is neither an email address nor an absolute http(s) URL", c.For, c.Creator)
+	}
+	if c.License != "" {
+		if err := validSPDX(c.License); err != nil {
+			return fmt.Errorf("<component for=%q>: license %q is not an SPDX licence expression: %v", c.For, c.License, err)
+		}
+	}
+	if c.PURL != "" && !purlShape.MatchString(c.PURL) {
+		return fmt.Errorf("<component for=%q>: purl %q is not a package URL (pkg:type/name@version)", c.For, c.PURL)
+	}
+	if c.CPE != "" && !strings.HasPrefix(c.CPE, "cpe:2.3:") && !strings.HasPrefix(c.CPE, "cpe:/") {
+		return fmt.Errorf("<component for=%q>: cpe %q is neither a CPE 2.3 formatted string nor a CPE 2.2 URI", c.For, c.CPE)
+	}
+	return d.Skip()
+}
+
+var (
+	purlShape = regexp.MustCompile(`^pkg:[a-zA-Z][a-zA-Z0-9.+-]*/[^@\s]+(@[^\s]+)?$`)
+)
 
 // xmlVEX represents the VEX document annotating this product: <vex source="..."/>
 type xmlVEX struct {
@@ -634,6 +695,13 @@ func (s *xmlSetup) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 				}
 				s.SBOMs = append(s.SBOMs, sb)
 
+			case "component":
+				var c xmlComponent
+				if err := d.DecodeElement(&c, &t); err != nil {
+					return err
+				}
+				s.Components = append(s.Components, c)
+
 			case "vex":
 				if s.VEX != nil {
 					return fmt.Errorf("<vex> is given twice; one VEX document covers the " +
@@ -870,6 +938,9 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 	// Convert supplied SBOMs
 	for _, sb := range raw.SBOMs {
 		setup.SBOMs = append(setup.SBOMs, ir.SuppliedSBOM{Source: sb.Source, For: sb.For})
+	}
+	for _, c := range raw.Components {
+		setup.Components = append(setup.Components, c.DeclaredComponent)
 	}
 
 	// Convert features

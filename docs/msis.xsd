@@ -285,6 +285,40 @@
     </xs:attribute>
   </xs:complexType>
 
+  <!-- Top-level component element: facts the script declares about one payload file (#64) -->
+  <xs:complexType name="ComponentType">
+    <xs:annotation>
+      <xs:documentation>
+        States what msis cannot read from a payload file's bytes: what it is, which version, who
+        created it, under which licence. msis turns the declaration into a supplied SBOM and merges
+        it like an sbom element, so every value appears in the installer's SBOM marked as declared
+        by this script, never as observed. A declared version that contradicts the version
+        resource the package records for the file stops the build.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="for" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>Install target of the file, e.g. [INSTALLDIR]libfoo.dll. It must match exactly one installed file.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="name" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>The component's name as its creator gives it; defaults to the file's name.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="version" type="xs:string" use="optional"/>
+    <xs:attribute name="creator" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>The creator's email address, or a URL when there is none.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="license" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>An SPDX licence expression, e.g. MIT or Apache-2.0 OR MIT.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="purl" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>Package URL, e.g. pkg:nuget/Foo@2.3.1.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="cpe" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>CPE 2.3 formatted string or CPE 2.2 URI.</xs:documentation></xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
   <!-- Top-level vex element: the VEX document annotating this product's SBOM (#37) -->
   <xs:complexType name="VEXType">
     <xs:annotation>
@@ -311,6 +345,7 @@
           <xs:element name="set" type="SetType"/>
           <xs:element name="requires" type="RequiresType"/>
           <xs:element name="sbom" type="SBOMType"/>
+          <xs:element name="component" type="ComponentType"/>
           <xs:element name="vex" type="VEXType"/>
           <xs:element name="feature" type="FeatureType"/>
           <xs:element name="files" type="FilesType"/>

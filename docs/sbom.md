@@ -470,7 +470,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Component version | ✓ where the artifact records one (a PE's version resource). BSI's fallback, the file's modification date, is not yet emitted: a cabinet stores local time with no time zone, and turning that into an RFC 3339 instant would mean guessing the offset |
 | Creator of the SBOM | ✓ under `/BUILD /SBOM`: `SBOM_CREATOR` (email or URL) as `metadata.manufacturer`; never inferred |
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
-| Component creator: payload files | not yet: needs a per-file declaration ([#64](https://github.com/gersonkurz/msis/issues/64), `<component>`) |
+| Component creator, version, licence: payload files | when the script declares them: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), or a supplied `<sbom>`; never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
 | No vulnerability information in the SBOM | ✓ VEX is a separate sidecar |
 
 **Only `/BUILD /SBOM` can be compliant.** §5.1 requires a *Build SBOM*, one created as part of

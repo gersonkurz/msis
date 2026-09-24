@@ -473,3 +473,24 @@ refuses dual texts today, so such a component stops the release rather than bein
 **What would reopen this:** a CycloneDX version that allows several expressions, each with its
 acknowledgement; or a dependency whose licence is an expression, at which point the list form
 no longer suffices and one of the two statements has to go.
+
+## D13 — A declared version that contradicts the file's version resource stops the build
+
+**Settled in:** [#64](https://github.com/gersonkurz/msis/issues/64), 2026-09-24, product owner's
+decision between refusing the build and recording both values with a warning.
+**Implemented by:** `internal/sbom/merge.go` — `declares version %s, but the package records version %s`, `func sameVersion(a, b string) bool`
+
+`<component version=>` is the author's statement about a file. Where the package also records a
+version for that file (a PE's version resource, which WiX writes into the File table), the two
+are compared. Only trailing `.0` groups may differ, so `2.3.1` is `2.3.1.0`. A mismatch stops
+the build and names both values. Publishing either one would be a claim msis knows is doubtful,
+and keeping both with a flag would ship a document that contradicts itself. This is the stance
+#36 already takes for a supplied document whose SHA-256 does not match the file.
+
+The check applies to `<component>` only. A supplied CycloneDX document (`<sbom>`) describes what
+a file contains, and its subject's version is the component's, which need not be the file's
+own (a Go module `v1.2.3` inside a binary versioned `1.0.0.0`).
+
+**What would reopen this:** a legitimate case where a file's version resource is known to be
+wrong and the declaration right, which would need an explicit override rather than a silent
+preference for either.

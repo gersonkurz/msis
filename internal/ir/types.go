@@ -11,7 +11,9 @@ type Setup struct {
 	Items    []Item // Top-level items outside features
 	Bundle   *Bundle
 	SBOMs    []SuppliedSBOM // Component SBOMs to compose into the installer's document (#36)
-	VEX      string         // Path to the VEX document annotating this product's SBOM (#37)
+	// Components are facts the script declares about payload files (#64)
+	Components []DeclaredComponent
+	VEX        string // Path to the VEX document annotating this product's SBOM (#37)
 }
 
 // SuppliedSBOM is a CycloneDX document the build supplies for one payload file.
@@ -23,6 +25,22 @@ type Setup struct {
 type SuppliedSBOM struct {
 	Source string // the .cdx.json, relative to the .msis
 	For    string // the install target of the file it describes, e.g. [INSTALLDIR]app.exe
+}
+
+// DeclaredComponent is what the script's author states about one payload file, for the facts
+// msis cannot read from the bytes (#64).
+// Example: <component for="[INSTALLDIR]libfoo.dll" name="libfoo" version="2.3.1" license="MIT"/>
+//
+// It is the short form of a supplied SBOM (<sbom>): msis turns it into one and merges it by the
+// same rules. Every value is the author's declaration, and the document says so.
+type DeclaredComponent struct {
+	For     string // the install target of the file it describes, e.g. [INSTALLDIR]libfoo.dll
+	Name    string // defaults to the file's name
+	Version string
+	Creator string // email address, or a URL when there is none (BSI TR-03183-2 v2.1.0 §5.2.2)
+	License string // an SPDX licence expression
+	PURL    string
+	CPE     string
 }
 
 // Requirement represents a runtime dependency declaration.
