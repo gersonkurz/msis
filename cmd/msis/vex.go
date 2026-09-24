@@ -42,8 +42,7 @@ func emitVEX(artifact string, bom *sbom.Document, src *vex.Source) error {
 	if src == nil {
 		return nil
 	}
-	self, _ := os.Executable()
-	doc, err := vex.Apply(bom, *src, vex.Options{MsisVersion: Version, MsisPath: self})
+	doc, err := vex.Apply(bom, *src, vex.Options{MsisVersion: Version})
 	if err != nil {
 		return fmt.Errorf("evaluating %s: %w", src.Path, err)
 	}

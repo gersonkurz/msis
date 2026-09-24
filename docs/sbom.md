@@ -393,7 +393,7 @@ unknown     assemblies + dependencies: [every payload component]
 
 ## What the rules are, and where they are enforced
 
-Nine rules apply to every document msis writes, and they live in an executable form —
+Ten rules apply to every document msis writes, and they live in an executable form —
 `internal/sbom/conformance` — rather than in prose here, because a rule that lives only in prose
 drifts:
 
@@ -402,6 +402,8 @@ drifts:
 - sorted by defined keys, and byte-identical across runs except `metadata.timestamp` and
   `serialNumber`
 - NTIA fields present or explicitly unknown
+- `metadata.tools` names msis with the SHA-256 of the binary that ran; if msis cannot hash
+  itself, no document is written
 - `compositions` present and referencing real components
 - dependency knowledge state correct: known-empty, unknown and incomplete distinguished
 - every `bom-ref` referenced resolves — including references held inside components

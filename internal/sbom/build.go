@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
@@ -22,7 +23,6 @@ import (
 // them.
 type Options struct {
 	MsisVersion string
-	MsisPath    string // the running binary, hashed into metadata.tools
 
 	// Build is what the build knew, when the document is written during one (#34). Nil for
 	// `/SBOM` against an artifact alone, which is the case that still has to work: the
@@ -61,6 +61,10 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hashing the subject artifact: %w", err)
 	}
+	tool, err := MsisTool(opts.MsisVersion)
+	if err != nil {
+		return nil, err
+	}
 
 	ns := namespaceOf(pkg)
 	root := rootComponent(pkg, ns, subject)
@@ -75,7 +79,7 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 			// timestamp; determinism is preserved by confining variation to this field and
 			// the serial number, and by the canonical diff that excludes exactly those two.
 			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     Tools{Components: []Component{msisTool(opts)}},
+			Tools:     Tools{Components: []Component{tool}},
 			Component: root,
 			Supplier:  supplierOf(pkg.Properties["Manufacturer"]),
 		},
@@ -413,29 +417,37 @@ func supplierOf(name string) *Supplier {
 	return &Supplier{Name: name}
 }
 
-// msisTool identifies what produced the document - and hashes it, because the generator is part
-// of the build chain and an auditor will ask which one ran.
-func msisTool(opts Options) Component {
-	return MsisTool(opts.MsisVersion, opts.MsisPath)
-}
-
 // MsisTool describes the tool that produced a document: what msis is, which version, and the
-// hash of the binary that ran (#29 D7). Exported because the VEX sidecar (#37) is written by a
-// different package and has to name the same producer the same way.
-func MsisTool(version, path string) Component {
-	c := Component{
+// hash of the binary that ran (#29 D7) - the generator is part of the build chain and an auditor
+// will ask which one ran. Exported because the VEX sidecar (#37) is written by a different
+// package and has to name the same producer the same way.
+//
+// The hash is not optional. It used to be dropped silently when the running binary could not be
+// found or read, leaving a document that no longer said which msis produced it (#58); now no
+// document is written, as for a payload file without a digest (D5).
+func MsisTool(version string) (Component, error) {
+	sum, err := selfDigest()
+	if err != nil {
+		return Component{}, fmt.Errorf("hashing the running msis for metadata.tools: %w", err)
+	}
+	return Component{
 		Type:     "application",
 		Name:     "msis",
 		Version:  version,
 		Supplier: &Supplier{Name: "NG Branch Technology GmbH"},
-	}
-	if path != "" {
-		if sum, err := hashFile(path); err == nil {
-			c.Hashes = []Hash{{Alg: "SHA-256", Content: sum}}
-		}
-	}
-	return c
+		Hashes:   []Hash{{Alg: "SHA-256", Content: sum}},
+	}, nil
 }
+
+// selfDigest is the SHA-256 of the running executable, computed once: the binary does not change
+// while it runs, and a build writes several documents.
+var selfDigest = sync.OnceValues(func() (string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return hashFile(self)
+})
 
 // coverageNote states in the document what the inventory does not cover, so a consumer reading
 // only the JSON can tell where it stops.

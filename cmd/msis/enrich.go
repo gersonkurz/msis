@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -194,8 +193,6 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied,
 	statements *vex.Source) error {
 
-	self, _ := os.Executable()
-
 	// The VEX annotates ONE document: the inventory of what is installed. Where a build
 	// produces both an MSI and the bundle wrapping it, that is the MSI - its components are
 	// the files a statement is about, and the wrapper links to it rather than repeating it.
@@ -209,7 +206,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 			// The bundle carries the prerequisites and the chained installers; the MSI it
 			// wraps carries neither. Handing the whole record to both made the MSI claim
 			// the wrapper's payload, and made it depend on itself.
-			opts := sbom.Options{MsisVersion: Version, MsisPath: self,
+			opts := sbom.Options{MsisVersion: Version,
 				Build: rec.For(buildrecord.ScopeArtifactBundle)}
 			var b *burnread.Bundle
 			if b, err = burnread.Read(artifact); err == nil {
@@ -219,7 +216,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 			// Supplied documents describe installed FILES, which only the MSI has. The
 			// wrapper carries the MSI itself and links to its document (#33); repeating the
 			// contents of a file inside that MSI would say the bundle contains them directly.
-			opts := sbom.Options{MsisVersion: Version, MsisPath: self,
+			opts := sbom.Options{MsisVersion: Version,
 				Build: rec.For(buildrecord.ScopeArtifactMSI), Supplied: supplied}
 			var pkg *msiread.Package
 			if pkg, err = msiread.Read(artifact); err == nil {

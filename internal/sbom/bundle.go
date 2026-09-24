@@ -33,6 +33,10 @@ func FromBundle(b *burnread.Bundle, opts Options) (*Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hashing the subject artifact: %w", err)
 	}
+	tool, err := MsisTool(opts.MsisVersion)
+	if err != nil {
+		return nil, err
+	}
 
 	ns := bundleNamespace(b)
 	root := bundleComponent(b, ns, subject)
@@ -44,7 +48,7 @@ func FromBundle(b *burnread.Bundle, opts Options) (*Document, error) {
 		Version:      1,
 		Metadata: Metadata{
 			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     Tools{Components: []Component{msisTool(opts)}},
+			Tools:     Tools{Components: []Component{tool}},
 			Component: root,
 			Supplier:  supplierOf(b.Publisher),
 			Properties: []Property{

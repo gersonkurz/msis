@@ -44,7 +44,6 @@ type Source struct {
 // Options carries what the sidecar needs but the inputs cannot supply.
 type Options struct {
 	MsisVersion string
-	MsisPath    string
 	Now         func() time.Time
 	NewSerial   func() (string, error)
 }
@@ -291,6 +290,10 @@ func sidecar(bom *sbom.Document, src Source, opts Options,
 		Hashes:  subject.Hashes,
 	})
 
+	tool, err := sbom.MsisTool(opts.MsisVersion)
+	if err != nil {
+		return nil, err
+	}
 	doc := &sbom.Document{
 		BOMFormat:    "CycloneDX",
 		SpecVersion:  "1.6",
@@ -298,7 +301,7 @@ func sidecar(bom *sbom.Document, src Source, opts Options,
 		Version:      1,
 		Metadata: sbom.Metadata{
 			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     sbom.Tools{Components: []sbom.Component{sbom.MsisTool(opts.MsisVersion, opts.MsisPath)}},
+			Tools:     sbom.Tools{Components: []sbom.Component{tool}},
 			Component: subject,
 			Supplier:  bom.Metadata.Supplier,
 			// The identity metadata is COPIED from the inventory rather than restated. A

@@ -22,7 +22,8 @@ func good() map[string]any {
 			"timestamp": "2026-09-21T00:00:00Z",
 			"supplier":  map[string]any{"name": "Acme"},
 			"tools": map[string]any{
-				"components": []any{map[string]any{"type": "application", "name": "msis", "version": "1.0"}},
+				"components": []any{map[string]any{"type": "application", "name": "msis", "version": "1.0",
+					"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat("c", 64)}}}},
 			},
 			"component": map[string]any{
 				"type": "application", "bom-ref": "ns/product", "name": "Product", "version": "1.0",
@@ -313,6 +314,22 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			name:    "no tools",
 			mutate:  func(d map[string]any) { delete(d["metadata"].(map[string]any), "tools") },
 			mustSay: "author",
+		},
+		{
+			name: "msis is named without its own digest (#58)",
+			mutate: func(d map[string]any) {
+				tools := d["metadata"].(map[string]any)["tools"].(map[string]any)["components"].([]any)
+				delete(tools[0].(map[string]any), "hashes")
+			},
+			mustSay: "D7",
+		},
+		{
+			name: "the tools do not name msis at all",
+			mutate: func(d map[string]any) {
+				tools := d["metadata"].(map[string]any)["tools"].(map[string]any)["components"].([]any)
+				tools[0].(map[string]any)["name"] = "some-scanner"
+			},
+			mustSay: "D7",
 		},
 		{
 			name: "the subject has no digest, so a BOM-Link could not be checked",

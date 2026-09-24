@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/burnread"
@@ -25,11 +24,7 @@ func runSBOM(path string) error {
 		return err
 	}
 
-	self, _ := os.Executable()
-	doc, err := sbom.FromPackage(pkg, sbom.Options{
-		MsisVersion: Version,
-		MsisPath:    self,
-	})
+	doc, err := sbom.FromPackage(pkg, sbom.Options{MsisVersion: Version})
 	if err != nil {
 		return err
 	}
@@ -83,8 +78,7 @@ func runBundleSBOM(path string) error {
 		return err
 	}
 
-	self, _ := os.Executable()
-	doc, err := sbom.FromBundle(b, sbom.Options{MsisVersion: Version, MsisPath: self})
+	doc, err := sbom.FromBundle(b, sbom.Options{MsisVersion: Version})
 	if err != nil {
 		return err
 	}

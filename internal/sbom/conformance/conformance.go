@@ -349,6 +349,9 @@ func Check(data []byte, want Expected) []error {
 	}
 	if len(doc.Metadata.Tools.Components) == 0 {
 		fail("no metadata.tools (NTIA requires the SBOM's author)")
+	} else if !msisIsHashed(doc.Metadata.Tools.Components) {
+		fail("metadata.tools does not name msis with its SHA-256: the document must say which " +
+			"build of the generator produced it (#29 D7)")
 	}
 	if doc.Metadata.Component.Name == "" {
 		fail("the subject component has no name")
@@ -528,6 +531,16 @@ func compile() (*jsonschema.Schema, error) {
 func hasSHA256(hashes []hash) bool {
 	for _, h := range hashes {
 		if strings.EqualFold(h.Alg, "SHA-256") && len(h.Content) == 64 {
+			return true
+		}
+	}
+	return false
+}
+
+// msisIsHashed reports whether the tools name msis and carry the digest of the binary that ran.
+func msisIsHashed(tools []component) bool {
+	for _, t := range tools {
+		if t.Name == "msis" && hasSHA256(t.Hashes) {
 			return true
 		}
 	}
