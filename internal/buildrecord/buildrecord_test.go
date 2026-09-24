@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The record is what gets published, so the rules about what may leave it are tested here
@@ -267,5 +268,22 @@ func TestScriptIsRecordedByNameOnly(t *testing.T) {
 	}
 	if runtime.GOOS == "windows" && strings.Contains(rec.Script, `\`) {
 		t.Errorf("a path separator reached the script name: %q", rec.Script)
+	}
+}
+
+// #63: the record keeps when the file it read was last written - read from the file system at
+// the moment it is hashed - so the SBOM can use it as BSI's version fallback.
+func TestTheRecordKeepsTheSourcesModificationTime(t *testing.T) {
+	dir, script := scratch(t)
+	path := filepath.Join(dir, "a.txt")
+	put(t, path, "payload\n")
+	when := time.Date(2025, 1, 15, 8, 30, 0, 0, time.UTC) // winter: a DST difference would show
+	if err := os.Chtimes(path, when, when); err != nil {
+		t.Fatal(err)
+	}
+	rec := New(PathMSI, script, nil)
+	rec.AddFile("FILE_ID00000", "a.txt")
+	if len(rec.Files) != 1 || !rec.Files[0].Modified.Equal(when) {
+		t.Fatalf("recorded %+v, want Modified %v", rec.Files, when)
 	}
 }

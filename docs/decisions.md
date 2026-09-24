@@ -518,3 +518,30 @@ state CC0-1.0 directly.
 
 **What would reopen this:** a standard that requires a data licence, or a customer need for a
 default. Either would still have to leave the grant to the document's creator.
+
+## D15 — BSI's version fallback is the source file's modification date, and only the build has it
+
+**Settled in:** [#63](https://github.com/gersonkurz/msis/issues/63), 2026-09-24, product owner's
+decision ("build-time only", over leaving the field out).
+**Implemented by:** `internal/sbom/enrich.go` — `c.Version = f.Modified.UTC().Format(time.RFC3339)`
+**Implemented by:** `internal/sbom/merge.go` — `propertyValueOf(target.Properties, propBuildVersionFrom) == ""`
+
+BSI TR-03183-2 v2.1.0 §5.2.2: a component with no version takes "the modification date of the
+file expressed as date-time according to RFC 3339", from the file's metadata. The artifact does
+carry a date: a cabinet stores each file's date as local time with no zone. Turning that into
+an RFC 3339 instant would mean guessing the zone (and Windows' own conversion applies the
+current daylight-saving bias, not the date's). So msis does not read it.
+
+Under `/BUILD /SBOM` there is a better source. The build record hashes each payload's source file
+where WiX resolves it, and records its last-write time from the file system, an exact instant.
+Enrichment uses it, in UTC, only for a file that has no version of its own, only after the
+SHA-256 check has shown the source is the packaged file, and marks it `msis:build.versionFrom`.
+`/SBOM` on an artifact alone has no source, and leaves the version out.
+
+The date is what BSI asks for, but it is not a meaningful version. It is when the source file
+was written, which for a checked-out tree is the checkout time. That is why it is marked as a
+fallback. A `<component version=>` declaration (D13) is not held to it: D13 compares with the
+version the package records, and this one msis supplied.
+
+**What would reopen this:** a BSI revision that drops the fallback, or one that accepts the
+artifact's own date with an explicit unknown zone.

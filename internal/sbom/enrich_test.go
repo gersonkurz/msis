@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
 	"github.com/gersonkurz/msis/internal/burnread"
@@ -426,5 +427,43 @@ func TestProvenanceForBytesTheArtifactLacksIsReportedNotPublished(t *testing.T) 
 	}
 	if !notedPrereq {
 		t.Error("a prerequisite the artifact does not carry was dropped silently")
+	}
+}
+
+// #63: BSI's version fallback. A payload file with no version of its own takes the modification
+// date of the source file the build read - an exact instant, RFC 3339 in UTC - and says so; a file
+// that has a version keeps it, and a record without the date adds nothing.
+func TestAFileWithoutAVersionTakesItsSourcesModificationDate(t *testing.T) {
+	f := firstFile(t)
+	when := time.Date(2025, 1, 15, 8, 30, 0, 0, time.UTC)
+	rec := recordFor(t, buildrecord.File{FileID: f.ID, Source: "src/a.dll", SHA256: f.SHA256, Modified: when})
+	doc, err := docWith(t, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := componentByRef(doc, refWithName(doc, f.Name))
+	if c.Version != "2025-01-15T08:30:00Z" {
+		t.Errorf("version %q, want the source's modification date", c.Version)
+	}
+	if v := propertyValueOf(c.Properties, propBuildVersionFrom); !strings.Contains(v, "src/a.dll") {
+		t.Errorf("%s = %q, want it to name the source", propBuildVersionFrom, v)
+	}
+
+	pkg := syntheticPackage()
+	pkg.Files[0].Version = "4.2.0.0"
+	doc, err = FromPackage(pkg, Options{MsisVersion: "test", Build: rec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := componentByRef(doc, refWithName(doc, f.Name)); c.Version != "4.2.0.0" || propertyValueOf(c.Properties, propBuildVersionFrom) != "" {
+		t.Errorf("a file with its own version got %q / %q", c.Version, propertyValueOf(c.Properties, propBuildVersionFrom))
+	}
+
+	undated := recordFor(t, buildrecord.File{FileID: f.ID, Source: "src/a.dll", SHA256: f.SHA256})
+	if doc, err = docWith(t, undated); err != nil {
+		t.Fatal(err)
+	}
+	if c := componentByRef(doc, refWithName(doc, f.Name)); c.Version != "" {
+		t.Errorf("no recorded date, but version %q", c.Version)
 	}
 }

@@ -351,6 +351,7 @@ const (
 	propBuildTool          = "msis:build.tool"
 	propBuildSource        = "msis:build.source"
 	propBuildSourceRoot    = "msis:build.sourceRoot"
+	propBuildVersionFrom   = "msis:build.versionFrom"
 	propBuildUnresolved    = "msis:build.unresolved"
 	propBuildCoverage      = "msis:build.coverage"
 	propPrereqType         = "msis:prerequisite.type"

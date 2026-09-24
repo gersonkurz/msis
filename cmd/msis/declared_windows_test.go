@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gersonkurz/msis/internal/msiread"
 )
@@ -185,5 +186,48 @@ func TestADoubleDeclarationStopsEveryRun(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "both ") {
 			t.Errorf("%s: want a refusal on a generate-only run, got %v", name, err)
 		}
+	}
+}
+
+// #63 end to end: BSI's version fallback is a build fact. Under /BUILD /SBOM a payload without a
+// version of its own takes its source file's modification date; the versioned DLL keeps the
+// version the package records; and /SBOM on the same MSI afterwards - with no build, so no
+// source - leaves the text file without one.
+func TestTheVersionFallbackIsTheSourcesModificationDate(t *testing.T) {
+	dir, script := declaredFixture(t, "")
+	when := time.Date(2025, 1, 15, 8, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(filepath.Join(dir, "notes.txt"), when, when); err != nil {
+		t.Fatal(err)
+	}
+	buildWithSBOM(t, script, &cliArgs{})
+	msi := filepath.Join(dir, "declared.msi")
+
+	versions := func() map[string]string {
+		doc, _ := readDoc(t, msi)
+		out := map[string]string{}
+		for _, c := range doc.Components {
+			out[c.Name] = c.Version
+		}
+		return out
+	}
+	built := versions()
+	if built["notes.txt"] != "2025-01-15T08:30:00Z" {
+		t.Errorf("notes.txt version %q, want its source's modification date", built["notes.txt"])
+	}
+	pkg, err := msiread.Read(msi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range pkg.Files {
+		if strings.EqualFold(f.Name, "version.dll") && (f.Version == "" || built["version.dll"] != f.Version) {
+			t.Errorf("version.dll version %q, want the recorded %q", built["version.dll"], f.Version)
+		}
+	}
+
+	if err := runSBOM(msi); err != nil {
+		t.Fatal(err)
+	}
+	if v := versions()["notes.txt"]; v != "" {
+		t.Errorf("an artifact read without its build gave notes.txt version %q", v)
 	}
 }

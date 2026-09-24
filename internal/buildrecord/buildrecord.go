@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Path is which of the four build paths produced a record. They are not variations of one
@@ -93,6 +94,11 @@ type File struct {
 	Source string // the path as authored, slash-separated
 	Root   string // WHICH bind path it resolved in; see BindPath.Name
 	SHA256 string // of the file the build read
+
+	// Modified is when that file was last written, read from the file system when the build
+	// read it (#63): BSI TR-03183-2 v2.1.0 §5.2.2 makes a file's modification date its version
+	// when it has none. Zero when it could not be read.
+	Modified time.Time
 }
 
 // Binary is a file the TEMPLATE named rather than the script - the installer-hook DLL is the
@@ -212,14 +218,16 @@ func (r *Record) AddFile(fileID, source string) {
 			return
 		}
 		r.Files = append(r.Files, File{
-			FileID: fileID, Source: r.relative(source), Root: "absolute", SHA256: sum})
+			FileID: fileID, Source: r.relative(source), Root: "absolute", SHA256: sum,
+			Modified: modified(source)})
 		return
 	}
 
 	rel := filepath.FromSlash(source)
-	if root, sum, ok := r.resolve(rel); ok {
+	if root, path, sum, ok := r.resolve(rel); ok {
 		r.Files = append(r.Files, File{
-			FileID: fileID, Source: filepath.ToSlash(rel), Root: root, SHA256: sum})
+			FileID: fileID, Source: filepath.ToSlash(rel), Root: root, SHA256: sum,
+			Modified: modified(path)})
 		return
 	}
 	r.Unresolved = append(r.Unresolved, fmt.Sprintf(
@@ -232,21 +240,32 @@ func (r *Record) AddFile(fileID, source string) {
 // list is the one that gets packaged. Falling back to the script directory keeps the common
 // case working when a caller supplied no bind paths at all (the unit tests, and any future
 // path that has none).
-func (r *Record) resolve(rel string) (root, sum string, ok bool) {
+func (r *Record) resolve(rel string) (root, path, sum string, ok bool) {
 	for _, bp := range r.bindPaths {
 		if bp.Dir == "" {
 			continue
 		}
-		if s, err := hashFile(filepath.Join(bp.Dir, rel)); err == nil {
-			return bp.Name, s, true
+		p := filepath.Join(bp.Dir, rel)
+		if s, err := hashFile(p); err == nil {
+			return bp.Name, p, s, true
 		}
 	}
 	if len(r.bindPaths) == 0 {
-		if s, err := hashFile(filepath.Join(r.scriptDir, rel)); err == nil {
-			return "script", s, true
+		p := filepath.Join(r.scriptDir, rel)
+		if s, err := hashFile(p); err == nil {
+			return "script", p, s, true
 		}
 	}
-	return "", "", false
+	return "", "", "", false
+}
+
+// modified is a file's last-write time as an instant, or zero when it cannot be read.
+func modified(p string) time.Time {
+	info, err := os.Stat(p)
+	if err != nil {
+		return time.Time{}
+	}
+	return info.ModTime().UTC()
 }
 
 // Locate returns the file a relative source resolves to, by the same bind-path order resolve
@@ -296,7 +315,7 @@ func (r *Record) AddTemplateBinary(rel string) {
 		return
 	}
 	rel = filepath.FromSlash(rel)
-	if root, sum, ok := r.resolve(rel); ok {
+	if root, _, sum, ok := r.resolve(rel); ok {
 		r.Binaries = append(r.Binaries, Binary{
 			Name:   filepath.Base(rel),
 			Source: filepath.ToSlash(rel),
@@ -343,7 +362,7 @@ func (r *Record) AddPrerequisiteFromSource(typ, version, source, digest string) 
 
 	rel := filepath.FromSlash(source)
 	p.Source = filepath.ToSlash(rel)
-	if root, sum, ok := r.resolve(rel); ok {
+	if root, _, sum, ok := r.resolve(rel); ok {
 		p.SHA256, p.Root = sum, root
 	} else {
 		r.Unresolved = append(r.Unresolved, fmt.Sprintf(
@@ -407,7 +426,7 @@ func (r *Record) AddChained(kind, source string) {
 
 	rel := filepath.FromSlash(source)
 	c := Chained{Kind: kind, Source: filepath.ToSlash(rel)}
-	if root, sum, ok := r.resolve(rel); ok {
+	if root, _, sum, ok := r.resolve(rel); ok {
 		c.SHA256, c.Root = sum, root
 	} else {
 		r.Unresolved = append(r.Unresolved, fmt.Sprintf(

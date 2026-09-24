@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
 	"github.com/gersonkurz/msis/internal/contact"
@@ -111,6 +112,14 @@ func enrichFiles(doc *Document, rec *buildrecord.Record) error {
 		}
 
 		c.Properties = append(c.Properties, Property{propBuildSource, f.Source})
+		// BSI TR-03183-2 v2.1.0 §5.2.2: a file with no version of its own takes its modification
+		// date, from the file's metadata (#63). Only the build has that - the source file it read,
+		// just verified to be the bytes that were packaged - so it is a build fact, stated as one.
+		if c.Version == "" && !f.Modified.IsZero() {
+			c.Version = f.Modified.UTC().Format(time.RFC3339)
+			c.Properties = append(c.Properties, Property{propBuildVersionFrom,
+				"the modification date of " + f.Source + ", which has no version of its own (BSI TR-03183-2 v2.1.0 §5.2.2)"})
+		}
 		if f.Root != "" {
 			// WHICH bind path it resolved in, as for a Binary stream. In the ordinary case
 			// that is the script's own directory; when it is not, the source path alone

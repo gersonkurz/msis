@@ -178,7 +178,10 @@ func mergeOne(doc *Document, s Supplied, state *mergeState) error {
 	// file (#64, product owner's decision): a script that is wrong about the file refuses the
 	// build rather than publish a version msis knows is doubtful. Only trailing ".0" groups may
 	// differ - "2.3.1" is the version resource "2.3.1.0".
-	if s.Declared {
+	// D13 compares with the version the PACKAGE records. A version msis filled in from the source
+	// file's modification date (#63, marked msis:build.versionFrom) is msis's own build fact, not
+	// the package's, and a declaration is not held to it.
+	if s.Declared && propertyValueOf(target.Properties, propBuildVersionFrom) == "" {
 		if err := declaredVersionConflict(s, sup.Metadata.Component.str("version"), target.Version, target.Name); err != nil {
 			return err
 		}

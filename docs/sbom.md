@@ -355,6 +355,7 @@ the two have different evidentiary weight.
 | `msis:build.script` | the `.msis`, by name |
 | `msis:build.tool.msis`, `msis:build.tool.wix` | the toolchain that built it |
 | `msis:build.source`, `msis:build.sourceRoot` | where a payload came from, and which bind path it resolved in |
+| `msis:build.versionFrom` | the component's version is BSI's fallback: the modification date of the source file the build read, because the file has no version of its own (D15) |
 | `msis:build.unresolved` | an input the build could not account for — recorded, never omitted |
 | `msis:build.coverage` | how much of the payload carries a source, and what is not reached |
 | `msis:prerequisite.type` | a bundled runtime: `vcredist`, `netfx` |
@@ -467,7 +468,7 @@ CRA-adjacent SBOM specification, read from the guideline's own text
 | Dependencies, and their completeness | ✓ `dependsOn` plus compositions; an unknown graph is stated, not left empty (D11) |
 | Distribution / original licence | ✓ for msis's own components (`tools/sbom`); never guessed for a payload file |
 | Component name | ✓ |
-| Component version | ✓ where the artifact records one (a PE's version resource). BSI's fallback, the file's modification date, is not yet emitted: a cabinet stores local time with no time zone, and turning that into an RFC 3339 instant would mean guessing the offset |
+| Component version | ✓ where the artifact records one (a PE's version resource). Otherwise, under `/BUILD /SBOM`, BSI's fallback: the modification date of the source file the build read, an exact UTC instant, marked `msis:build.versionFrom` (D15). `/SBOM` on an artifact alone has no source file, and leaves it out |
 | Creator of the SBOM | ✓ under `/BUILD /SBOM`: `SBOM_CREATOR` (email or URL) as `metadata.manufacturer`; never inferred |
 | Component creator: the product | ✓ `MANUFACTURER_URL` / `MANUFACTURER_EMAIL` are written into the installer (`ARPURLINFOABOUT`, `ARPCONTACT`; a bundle's `AboutUrl`) and read back from it, so even `/SBOM` on the artifact knows them. In a package msis did not build, only a value that IS a URL or an email address is taken |
 | Component creator, version, licence: payload files | when the script declares them: `<component for= creator= version= license= purl=/>` (see [Tutorial 13](tutorial.md)), or a supplied `<sbom>`; never guessed. A declared version that contradicts the file's recorded version stops the build (D13) |
