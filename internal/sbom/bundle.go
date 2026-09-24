@@ -47,10 +47,11 @@ func FromBundle(b *burnread.Bundle, opts Options) (*Document, error) {
 		SerialNumber: serial,
 		Version:      1,
 		Metadata: Metadata{
-			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     Tools{Components: []Component{tool}},
-			Component: root,
-			Supplier:  supplierOf(b.Publisher),
+			Timestamp:  opts.Now().UTC().Format(time.RFC3339),
+			Lifecycles: []Lifecycle{{Phase: LifecyclePostBuild}},
+			Tools:      Tools{Components: []Component{tool}},
+			Component:  root,
+			Supplier:   supplierOf(b.Publisher),
 			Properties: []Property{
 				{propSubjectArtifact, baseName(b.Path)},
 				{propBundleCode, b.Code},

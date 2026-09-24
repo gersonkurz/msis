@@ -301,9 +301,11 @@ func sidecar(bom *sbom.Document, src Source, opts Options,
 		Version:      1,
 		Metadata: sbom.Metadata{
 			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     sbom.Tools{Components: []sbom.Component{tool}},
-			Component: subject,
-			Supplier:  bom.Metadata.Supplier,
+			// Evaluated against that inventory, so obtained when it was.
+			Lifecycles: bom.Metadata.Lifecycles,
+			Tools:      sbom.Tools{Components: []sbom.Component{tool}},
+			Component:  subject,
+			Supplier:   bom.Metadata.Supplier,
 			// The identity metadata is COPIED from the inventory rather than restated. A
 			// consumer - the index above all - identifies a product by its UpgradeCode,
 			// which Windows Installer defines as the identifier constant across releases;

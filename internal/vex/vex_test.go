@@ -2,6 +2,7 @@ package vex
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -483,5 +484,17 @@ func TestTheSidecarCarriesTheProductsIdentity(t *testing.T) {
 	// and repeating a coverage note it did not produce would be a claim it cannot make.
 	if _, ok := got["msis:coverage"]; ok {
 		t.Error("the inventory's coverage note was copied onto a document that inventoried nothing")
+	}
+}
+
+// #62: the sidecar is evaluated against its inventory, so it carries that inventory's
+// generation context rather than inventing one of its own.
+func TestTheSidecarCarriesTheInventorysGenerationContext(t *testing.T) {
+	bom := inventory("4.1", libDigest)
+	bom.Metadata.Lifecycles = []sbom.Lifecycle{{Phase: sbom.LifecycleBuild}, {Phase: sbom.LifecyclePostBuild}}
+	doc := apply(t, bom, statement("not_affected", map[string]string{
+		sbom.PropAssessedVersion: "4.1", sbom.PropAssessedDigest: libDigest}))
+	if !reflect.DeepEqual(doc.Metadata.Lifecycles, bom.Metadata.Lifecycles) {
+		t.Errorf("sidecar lifecycles %v, want the inventory's %v", doc.Metadata.Lifecycles, bom.Metadata.Lifecycles)
 	}
 }

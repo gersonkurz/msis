@@ -30,7 +30,8 @@ type componentDoc struct {
 	SpecVersion string `json:"specVersion"`
 	Version     int    `json:"version"`
 	Metadata    struct {
-		Component component `json:"component"`
+		Lifecycles []lifecycle `json:"lifecycles"`
+		Component  component   `json:"component"`
 	} `json:"metadata"`
 	Compositions []composition `json:"compositions"`
 }
@@ -49,8 +50,16 @@ func writeComponentDocs(version, dist, binDir, templatesDir string, binArches []
 	if err := os.MkdirAll(out, 0755); err != nil {
 		return err
 	}
+	env, err := readGoEnv()
+	if err != nil {
+		return err
+	}
+	own, err := ownLicense(env)
+	if err != nil {
+		return err
+	}
 	for _, arch := range binArches {
-		doc, err := binaryDoc(version, filepath.Join(binDir, "msis-"+arch+".exe"))
+		doc, err := binaryDoc(version, filepath.Join(binDir, "msis-"+arch+".exe"), env, own)
 		if err != nil {
 			return err
 		}
@@ -59,7 +68,7 @@ func writeComponentDocs(version, dist, binDir, templatesDir string, binArches []
 		}
 	}
 	for _, arch := range arches {
-		doc, err := hookDoc(version, filepath.Join(templatesDir, arch, "msi-simplica.dll"))
+		doc, err := hookDoc(version, filepath.Join(templatesDir, arch, "msi-simplica.dll"), own)
 		if err != nil {
 			return err
 		}
@@ -74,7 +83,7 @@ func writeComponentDocs(version, dist, binDir, templatesDir string, binArches []
 // the toolchain that built it, all read back out of the binary. Go links statically and records
 // every module that contributed code, so the assemblies are complete; build info carries no
 // module graph, so which module depends on which stays unknown.
-func binaryDoc(version, path string) (*componentDoc, error) {
+func binaryDoc(version, path string, env goEnv, own string) (*componentDoc, error) {
 	sum, err := sha256File(path)
 	if err != nil {
 		return nil, err
@@ -83,13 +92,19 @@ func binaryDoc(version, path string) (*componentDoc, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading build info from %s: %w", path, err)
 	}
+	byPath, std, err := moduleLicenses(info, env)
+	if err != nil {
+		return nil, err
+	}
 	parts := moduleComponents(info)
+	licensed(parts, byPath)
 	goVersion := strings.TrimPrefix(info.GoVersion, "go")
 	parts = append(parts, component{
-		Type:    "library",
-		Name:    "stdlib",
-		Version: goVersion,
-		PURL:    "pkg:golang/stdlib@" + goVersion,
+		Type:     "library",
+		Name:     "stdlib",
+		Version:  goVersion,
+		PURL:     "pkg:golang/stdlib@" + goVersion,
+		Licenses: concluded(std),
 	})
 	for i := range parts {
 		parts[i].BOMRef = parts[i].PURL
@@ -101,6 +116,7 @@ func binaryDoc(version, path string) (*componentDoc, error) {
 		Version:    version,
 		PURL:       "pkg:golang/github.com/gersonkurz/msis@v" + version,
 		Hashes:     []hash{{Alg: "SHA-256", Content: sum}},
+		Licenses:   concluded(own),
 		Components: parts,
 	}
 	return newComponentDoc(root, "complete"), nil
@@ -109,7 +125,7 @@ func binaryDoc(version, path string) (*componentDoc, error) {
 // hookDoc describes one hook DLL: the two pinned NuGet libraries it links. It also links the MSVC
 // runtime statically (RuntimeLibrary=MultiThreaded), whose version the DLL does not record, so the
 // assemblies are declared incomplete rather than complete.
-func hookDoc(version, path string) (*componentDoc, error) {
+func hookDoc(version, path, own string) (*componentDoc, error) {
 	sum, err := sha256File(path)
 	if err != nil {
 		return nil, fmt.Errorf("%w\nthe hook DLLs are staged by `just build-hooks`", err)
@@ -126,6 +142,7 @@ func hookDoc(version, path string) (*componentDoc, error) {
 		PURL:        "pkg:generic/msi-simplica@" + version,
 		Description: "Native installer-hook DLL built from native/msi-simplica; the statically linked MSVC runtime is not listed",
 		Hashes:      []hash{{Alg: "SHA-256", Content: sum}},
+		Licenses:    concluded(own),
 		Components:  parts,
 	}
 	return newComponentDoc(root, "incomplete"), nil
@@ -133,6 +150,7 @@ func hookDoc(version, path string) (*componentDoc, error) {
 
 func newComponentDoc(root component, assemblies string) *componentDoc {
 	doc := &componentDoc{BOMFormat: "CycloneDX", SpecVersion: "1.6", Version: 1}
+	doc.Metadata.Lifecycles = postBuild
 	doc.Metadata.Component = root
 	doc.Compositions = []composition{
 		{Aggregate: assemblies, Assemblies: []string{root.BOMRef}},

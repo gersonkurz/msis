@@ -105,12 +105,25 @@ func (v Vulnerability) str(key string) string {
 }
 
 type Metadata struct {
-	Timestamp  string     `json:"timestamp,omitempty"`
-	Tools      Tools      `json:"tools"`
-	Component  Component  `json:"component"`
-	Supplier   *Supplier  `json:"supplier,omitempty"`
-	Properties []Property `json:"properties,omitempty"`
+	Timestamp  string      `json:"timestamp,omitempty"`
+	Lifecycles []Lifecycle `json:"lifecycles,omitempty"`
+	Tools      Tools       `json:"tools"`
+	Component  Component   `json:"component"`
+	Supplier   *Supplier   `json:"supplier,omitempty"`
+	Properties []Property  `json:"properties,omitempty"`
 }
+
+// Lifecycle is when the information in a document was obtained: NTIA's "generation context"
+// (#62). msis reads a built artifact, so every document is `post-build`; one written during
+// `/BUILD /SBOM` also carries `build`, because the build record adds facts only the build had.
+type Lifecycle struct {
+	Phase string `json:"phase"`
+}
+
+const (
+	LifecycleBuild     = "build"
+	LifecyclePostBuild = "post-build"
+)
 
 // Tools uses the 1.6 object form rather than the deprecated array, because a tool expressed as
 // a component can carry its own hash - which is what lets the document say which msis produced

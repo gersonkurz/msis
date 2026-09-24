@@ -27,6 +27,8 @@ func enrich(doc *Document, rec *buildrecord.Record) error {
 		return nil
 	}
 
+	// The document now also holds what the build knew, not only what the artifact says.
+	doc.Metadata.Lifecycles = append([]Lifecycle{{Phase: LifecycleBuild}}, doc.Metadata.Lifecycles...)
 	doc.Metadata.Properties = append(doc.Metadata.Properties,
 		Property{propBuildPath, string(rec.Path)},
 		Property{propBuildScript, rec.Script},

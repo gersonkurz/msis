@@ -37,7 +37,8 @@ var arches = []string{"x64", "x86", "arm64"}
 // nativeComponents are the parts of a release that never appear in a Go module graph: the hook
 // DLL's two pinned NuGet libraries. Their versions live in the .vcxproj, which Go cannot read, so
 // this is the one hand-kept copy in the file - TestNugetVersionsMatchVcxproj reads the project
-// file and fails if they drift.
+// file and fails if they drift. Their licence is the one each package DECLARES in its .nuspec;
+// TestNugetLicencesMatchTheNuspec checks it where the NuGet cache is present.
 var nativeComponents = []component{
 	{
 		Type:        "library",
@@ -45,6 +46,7 @@ var nativeComponents = []component{
 		Version:     "5.0.2",
 		PURL:        "pkg:nuget/WixToolset.WcaUtil@5.0.2",
 		Description: "WiX custom-action utility library, linked into msi-simplica.dll",
+		Licenses:    declared("MS-RL"),
 	},
 	{
 		Type:        "library",
@@ -52,6 +54,7 @@ var nativeComponents = []component{
 		Version:     "5.0.2",
 		PURL:        "pkg:nuget/WixToolset.DUtil@5.0.2",
 		Description: "WiX base utility library, linked into msi-simplica.dll",
+		Licenses:    declared("MS-RL"),
 	},
 }
 
@@ -68,6 +71,8 @@ type component struct {
 	PURL        string `json:"purl,omitempty"`
 	Description string `json:"description,omitempty"`
 	Hashes      []hash `json:"hashes,omitempty"`
+
+	Licenses []licenseChoice `json:"licenses,omitempty"`
 
 	// Components nests what is linked INTO this one; only the component documents use it.
 	Components []component `json:"components,omitempty"`
@@ -88,14 +93,23 @@ type property struct {
 }
 
 type metadata struct {
-	Component component `json:"component"`
-	Tools     []tool    `json:"tools,omitempty"`
+	Lifecycles []lifecycle `json:"lifecycles,omitempty"`
+	Component  component   `json:"component"`
+	Tools      []tool      `json:"tools,omitempty"`
 
 	// Properties carry the build provenance: the commit the artifacts were built from, whether
 	// that tree was clean, and the observed build toolchain. A "+dirty" release cannot be
 	// reproduced, and saying so in the SBOM is the point of having one.
 	Properties []property `json:"properties,omitempty"`
 }
+
+// lifecycle is NTIA's generation context (#62). Everything tools/sbom writes is read from built
+// binaries and packaged artifacts: post-build.
+type lifecycle struct {
+	Phase string `json:"phase"`
+}
+
+var postBuild = []lifecycle{{Phase: "post-build"}}
 
 type bom struct {
 	BOMFormat   string      `json:"bomFormat"`
@@ -212,6 +226,25 @@ func build(version, dist, binDir string) (*bom, error) {
 	if err != nil {
 		return nil, err
 	}
+	// goComponents has already required the three binaries to agree on every module, so one
+	// binary's build info names the licences for all of them.
+	env, err := readGoEnv()
+	if err != nil {
+		return nil, err
+	}
+	info, err := buildinfo.ReadFile(binaries[0].path)
+	if err != nil {
+		return nil, err
+	}
+	byPath, _, err := moduleLicenses(info, env)
+	if err != nil {
+		return nil, err
+	}
+	licensed(mods, byPath)
+	own, err := ownLicense(env)
+	if err != nil {
+		return nil, err
+	}
 
 	components := make([]component, 0, len(artifacts)+len(binaries)+len(mods)+len(nativeComponents)+1)
 	for _, a := range artifacts {
@@ -246,6 +279,7 @@ func build(version, dist, binDir string) (*bom, error) {
 		Version:     version,
 		PURL:        "pkg:generic/msi-simplica@" + version,
 		Description: "Native installer-hook DLL (x86/x64/arm64) built from native/msi-simplica and shipped inside every MSI, where it runs as a custom action",
+		Licenses:    concluded(own),
 	})
 	components = append(components, nativeComponents...)
 
@@ -256,12 +290,14 @@ func build(version, dist, binDir string) (*bom, error) {
 		SpecVersion: "1.6",
 		Version:     1,
 		Metadata: metadata{
+			Lifecycles: postBuild,
 			Component: component{
 				Type:        "application",
 				Name:        "msis",
 				Version:     version,
 				PURL:        "pkg:golang/github.com/gersonkurz/msis@v" + version,
 				Description: "Windows installer generator: .msis scripts to MSI packages via WiX",
+				Licenses:    concluded(own),
 			},
 			Tools: []tool{{
 				Name:    "msis tools/sbom",

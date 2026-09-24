@@ -19,8 +19,9 @@ func good() map[string]any {
 		"serialNumber": "urn:uuid:1b2ca6b9-6b1d-4a4a-9f2a-2c2a0c7d9a11",
 		"version":      1,
 		"metadata": map[string]any{
-			"timestamp": "2026-09-21T00:00:00Z",
-			"supplier":  map[string]any{"name": "Acme"},
+			"timestamp":  "2026-09-21T00:00:00Z",
+			"lifecycles": []any{map[string]any{"phase": "post-build"}},
+			"supplier":   map[string]any{"name": "Acme"},
 			"tools": map[string]any{
 				"components": []any{map[string]any{"type": "application", "name": "msis", "version": "1.0",
 					"hashes": []any{map[string]any{"alg": "SHA-256", "content": strings.Repeat("c", 64)}}}},
@@ -343,6 +344,11 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 					map[string]any{"name": "msis:ntia.unknown", "value": "version: the package records no ProductVersion"}}
 			},
 			mustSay: "supplier",
+		},
+		{
+			name:    "no generation context (#62)",
+			mutate:  func(d map[string]any) { delete(d["metadata"].(map[string]any), "lifecycles") },
+			mustSay: "generation context",
 		},
 		{
 			name:    "no tools",

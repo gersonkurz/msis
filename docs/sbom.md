@@ -296,7 +296,12 @@ resource is optional in the format, `buildinfo` yields the modules that contribu
 rather than a graph with edges, and assembly references are not package-level provenance. Were
 any of them added, none may produce a purl unless identity is actually determined. Today the
 route to what is inside a payload file is a supplied SBOM — msis's own release supplies one for
-`msis.exe`, built from its `buildinfo` by `tools/sbom`.
+`msis.exe`, built from its `buildinfo` by `tools/sbom`. Those component documents also carry
+licences: each linked Go module's and the standard library's are *concluded* from the licence
+text in the module cache and GOROOT, compared **in full** with a reviewed licence text
+(`tools/sbom/licences`, which may differ only in the notice above the terms — title and
+copyright lines — and in the organisation a BSD clause names), and any other text or difference stops the release rather than being guessed; the WiX libraries' are the ones their
+packages *declare* (`MS-RL`). A payload file's licence is never guessed, only carried when supplied.
 
 A supplied SBOM is different — its author determined the identity, and their purls come across
 untouched.
@@ -410,7 +415,10 @@ drifts:
 - sorted by defined keys: components by `bom-ref`, dependencies by `ref` with their members
   sorted, compositions by aggregate, then assemblies, then dependencies, and msis's own
   properties and external references (a supplied component keeps its author's order)
-- NTIA fields present or explicitly unknown (`msis:ntia.unknown` on the subject)
+- NTIA fields present or explicitly unknown (`msis:ntia.unknown` on the subject), including the
+  generation context: `metadata.lifecycles` is `post-build` for a document read from an artifact,
+  and also `build` under `/BUILD /SBOM`, because the build record added what only the build knew;
+  a VEX sidecar carries its inventory's
 - `metadata.tools` names msis with the SHA-256 of the binary that ran; if msis cannot hash
   itself, no document is written
 - `compositions` present and referencing real components

@@ -112,6 +112,38 @@ func TestComponentDocsDescribeTheBytesTheyNameAndValidate(t *testing.T) {
 		t.Errorf("msis-x64: %d components, want %d modules + stdlib", len(root.Components), len(info.Deps))
 	}
 
+	// #62: every linked module and the stdlib carry the licence concluded from their own text,
+	// and the document says when it was obtained.
+	lic := func(c component) string {
+		if len(c.Licenses) != 1 {
+			return ""
+		}
+		return c.Licenses[0].License.Acknowledgement + ":" + c.Licenses[0].License.ID
+	}
+	if got := lic(root); got != "concluded:MIT" {
+		t.Errorf("msis-x64: msis's own licence %q, want concluded:MIT (the repository's LICENSE)", got)
+	}
+	for _, c := range root.Components {
+		if !strings.HasPrefix(lic(c), "concluded:") {
+			t.Errorf("msis-x64: %s carries licence %v, want exactly one concluded licence", c.Name, c.Licenses)
+		}
+	}
+	for name, want := range map[string]string{
+		"stdlib": "concluded:BSD-3-Clause",
+		"github.com/santhosh-tekuri/jsonschema/v6": "concluded:Apache-2.0",
+		"github.com/aymerick/raymond":              "concluded:MIT",
+		"golang.org/x/sys":                         "concluded:BSD-3-Clause",
+	} {
+		for _, c := range root.Components {
+			if c.Name == name && lic(c) != want {
+				t.Errorf("msis-x64: %s licence %q, want %q", name, lic(c), want)
+			}
+		}
+	}
+	if len(doc.Metadata.Lifecycles) != 1 || doc.Metadata.Lifecycles[0].Phase != "post-build" {
+		t.Errorf("msis-x64: lifecycles %v, want [post-build]", doc.Metadata.Lifecycles)
+	}
+
 	// Only the requested binaries are described; every hook DLL always is.
 	if _, err := os.Stat(filepath.Join(componentsDir(dist), binaryDocName("x86"))); !os.IsNotExist(err) {
 		t.Errorf("a document for msis-x86.exe was written although only x64 was asked for (err %v)", err)
@@ -123,6 +155,14 @@ func TestComponentDocsDescribeTheBytesTheyNameAndValidate(t *testing.T) {
 		coverage(name, doc, "incomplete")
 		if got := len(doc.Metadata.Component.Components); got != len(nativeComponents) {
 			t.Errorf("%s: %d libraries, want the %d NuGet packages", name, got, len(nativeComponents))
+		}
+		if got := lic(doc.Metadata.Component); got != "concluded:MIT" {
+			t.Errorf("%s: msi-simplica licence %q, want concluded:MIT", name, got)
+		}
+		for _, c := range doc.Metadata.Component.Components {
+			if got := lic(c); got != "declared:MS-RL" {
+				t.Errorf("%s: %s licence %q, want declared:MS-RL (from its .nuspec)", name, c.Name, got)
+			}
 		}
 	}
 }

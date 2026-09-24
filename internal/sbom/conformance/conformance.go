@@ -347,6 +347,9 @@ func Check(data []byte, want Expected) []error {
 	if doc.Metadata.Timestamp == "" {
 		fail("no metadata.timestamp (NTIA requires one)")
 	}
+	if len(doc.Metadata.Lifecycles) == 0 {
+		fail("no metadata.lifecycles: NTIA's generation context says when the information was obtained (#62)")
+	}
 	if len(doc.Metadata.Tools.Components) == 0 {
 		fail("no metadata.tools (NTIA requires the SBOM's author)")
 	} else if !msisIsHashed(doc.Metadata.Tools.Components) {
@@ -623,8 +626,11 @@ func msisIsHashed(tools []component) bool {
 // never emitted.
 type document struct {
 	Metadata struct {
-		Timestamp string `json:"timestamp"`
-		Tools     struct {
+		Timestamp  string `json:"timestamp"`
+		Lifecycles []struct {
+			Phase string `json:"phase"`
+		} `json:"lifecycles"`
+		Tools struct {
 			Components []component `json:"components"`
 		} `json:"tools"`
 		Component  component  `json:"component"`

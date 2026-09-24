@@ -78,10 +78,11 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 			// The one wall clock in the document. NTIA's minimum elements require a
 			// timestamp; determinism is preserved by confining variation to this field and
 			// the serial number, and by the canonical diff that excludes exactly those two.
-			Timestamp: opts.Now().UTC().Format(time.RFC3339),
-			Tools:     Tools{Components: []Component{tool}},
-			Component: root,
-			Supplier:  supplierOf(pkg.Properties["Manufacturer"]),
+			Timestamp:  opts.Now().UTC().Format(time.RFC3339),
+			Lifecycles: []Lifecycle{{Phase: LifecyclePostBuild}},
+			Tools:      Tools{Components: []Component{tool}},
+			Component:  root,
+			Supplier:   supplierOf(pkg.Properties["Manufacturer"]),
 		},
 	}
 
