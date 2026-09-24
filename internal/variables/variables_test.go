@@ -567,3 +567,43 @@ func TestResolveAllRealCycleThroughTakenBranch(t *testing.T) {
 		t.Errorf("cycle error should name both variables, got: %v", err)
 	}
 }
+
+// #64: the contact variables go into the installer, so a malformed one stops the build.
+func TestCheckContacts(t *testing.T) {
+	ok := Dictionary{"MANUFACTURER_URL": "https://acme.example", "MANUFACTURER_EMAIL": "support@acme.example",
+		"SBOM_CREATOR": "sbom@acme.example"}
+	if err := ok.CheckContacts(); err != nil {
+		t.Errorf("valid contacts refused: %v", err)
+	}
+	if err := (Dictionary{"SBOM_CREATOR": "https://acme.example"}).CheckContacts(); err != nil {
+		t.Errorf("a URL as SBOM_CREATOR refused: %v", err)
+	}
+	if err := (Dictionary{}).CheckContacts(); err != nil {
+		t.Errorf("no contacts at all refused: %v", err)
+	}
+	for name, bad := range map[string]Dictionary{
+		"URL without scheme":     {"MANUFACTURER_URL": "acme.example"},
+		"email with a name":      {"MANUFACTURER_EMAIL": "Acme <support@acme.example>"},
+		"SBOM_CREATOR free text": {"SBOM_CREATOR": "the build team"},
+	} {
+		if err := bad.CheckContacts(); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+// #64's review: the values are trimmed in the dictionary the templates read, so what was checked
+// is what is written into the installer; a whitespace-only value is unset, not truthy.
+func TestCheckContactsNormalisesWhatTheTemplatesRead(t *testing.T) {
+	d := Dictionary{"MANUFACTURER_URL": "  https://acme.example  ", "MANUFACTURER_EMAIL": "   ", "SBOM_CREATOR": "\tsbom@acme.example\n"}
+	if err := d.CheckContacts(); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"MANUFACTURER_URL": "https://acme.example", "MANUFACTURER_EMAIL": "", "SBOM_CREATOR": "sbom@acme.example",
+	} {
+		if d[name] != want {
+			t.Errorf("%s = %q after the check, want %q", name, d[name], want)
+		}
+	}
+}

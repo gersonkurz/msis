@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
+	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/filekind"
 	"github.com/gersonkurz/msis/internal/msiread"
 )
@@ -261,6 +262,17 @@ func rootComponent(pkg *msiread.Package, ns, subject string) Component {
 		c.PURL = "pkg:generic/" + purlEscape(name) + "@" + purlEscape(version)
 	}
 	markNTIAUnknown(&c, "the package records no ProductVersion", "the package records no Manufacturer")
+	// The product creator's contact, as the package records it (#64). ARPURLINFOABOUT and
+	// ARPCONTACT are free text in a package msis did not build, so only a value that IS a URL or
+	// an email address is taken; anything else is not a contact BSI accepts, and is left out.
+	url, email := pkg.Properties["ARPURLINFOABOUT"], pkg.Properties["ARPCONTACT"]
+	if !contact.IsURL(url) {
+		url = ""
+	}
+	if !contact.IsEmail(email) {
+		email = ""
+	}
+	c.Manufacturer = creatorEntity(pkg.Properties["Manufacturer"], url, email)
 	return c
 }
 

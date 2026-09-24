@@ -105,12 +105,13 @@ func (v Vulnerability) str(key string) string {
 }
 
 type Metadata struct {
-	Timestamp  string      `json:"timestamp,omitempty"`
-	Lifecycles []Lifecycle `json:"lifecycles,omitempty"`
-	Tools      Tools       `json:"tools"`
-	Component  Component   `json:"component"`
-	Supplier   *Supplier   `json:"supplier,omitempty"`
-	Properties []Property  `json:"properties,omitempty"`
+	Timestamp    string                `json:"timestamp,omitempty"`
+	Lifecycles   []Lifecycle           `json:"lifecycles,omitempty"`
+	Tools        Tools                 `json:"tools"`
+	Component    Component             `json:"component"`
+	Supplier     *Supplier             `json:"supplier,omitempty"`
+	Manufacturer *OrganizationalEntity `json:"manufacturer,omitempty"` // the SBOM's creator (#64)
+	Properties   []Property            `json:"properties,omitempty"`
 }
 
 // Lifecycle is when the information in a document was obtained: NTIA's "generation context"
@@ -136,16 +137,44 @@ type Supplier struct {
 	Name string `json:"name,omitempty"`
 }
 
+// OrganizationalEntity is a creator as BSI TR-03183-2 v2.1.0 maps it (Tables 8 and 9): the
+// SBOM's creator in metadata.manufacturer, a component's creator in component.manufacturer,
+// each with an email contact or, failing that, a URL (#64).
+type OrganizationalEntity struct {
+	Name    string                  `json:"name,omitempty"`
+	URL     []string                `json:"url,omitempty"`
+	Contact []OrganizationalContact `json:"contact,omitempty"`
+}
+
+type OrganizationalContact struct {
+	Email string `json:"email,omitempty"`
+}
+
+// creatorEntity is an entity from a name and the contacts known for it, or nil when there is
+// no contact: a bare name is already the supplier, and adds nothing BSI asks for. BSI TR-03183-2
+// v2.1.0 gives a creator an email address, and a URL only "if no email address is available"
+// (Tables 8 and 9: url XOR contact), so an email wins and the URL is the fallback.
+func creatorEntity(name, url, email string) *OrganizationalEntity {
+	switch {
+	case email != "":
+		return &OrganizationalEntity{Name: name, Contact: []OrganizationalContact{{Email: email}}}
+	case url != "":
+		return &OrganizationalEntity{Name: name, URL: []string{url}}
+	}
+	return nil
+}
+
 type Component struct {
-	Type        string     `json:"type"`
-	BOMRef      string     `json:"bom-ref,omitempty"`
-	Name        string     `json:"name"`
-	Version     string     `json:"version,omitempty"`
-	Description string     `json:"description,omitempty"`
-	PURL        string     `json:"purl,omitempty"`
-	Supplier    *Supplier  `json:"supplier,omitempty"`
-	Hashes      []Hash     `json:"hashes,omitempty"`
-	Properties  []Property `json:"properties,omitempty"`
+	Type         string                `json:"type"`
+	BOMRef       string                `json:"bom-ref,omitempty"`
+	Name         string                `json:"name"`
+	Version      string                `json:"version,omitempty"`
+	Description  string                `json:"description,omitempty"`
+	PURL         string                `json:"purl,omitempty"`
+	Supplier     *Supplier             `json:"supplier,omitempty"`
+	Manufacturer *OrganizationalEntity `json:"manufacturer,omitempty"` // the component's creator (#64)
+	Hashes       []Hash                `json:"hashes,omitempty"`
+	Properties   []Property            `json:"properties,omitempty"`
 
 	// ExternalReferences carries BOM-Links: a bundle's document points at the document for
 	// each installer it chains rather than repeating that installer's contents.

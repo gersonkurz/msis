@@ -43,6 +43,7 @@ type Bundle struct {
 	Name        string // Arp/@DisplayName
 	Version     string // Registration/@Version
 	Publisher   string // Arp/@Publisher
+	AboutURL    string // Arp/@AboutUrl: the product creator's URL, when the bundle names one (#64)
 	Scope       string // perMachine or perUser
 
 	EngineVersion string // the Burn engine that built it
@@ -218,6 +219,7 @@ func read(path string, raw []byte) (*Bundle, error) {
 		Name:          m.Registration.Arp.DisplayName,
 		Version:       m.Registration.Version,
 		Publisher:     m.Registration.Arp.Publisher,
+		AboutURL:      m.Registration.Arp.AboutURL,
 		Scope:         m.Registration.Scope,
 		EngineVersion: m.EngineVersion,
 	}
@@ -770,6 +772,7 @@ type manifest struct {
 			DisplayName    string `xml:"DisplayName,attr"`
 			DisplayVersion string `xml:"DisplayVersion,attr"`
 			Publisher      string `xml:"Publisher,attr"`
+			AboutURL       string `xml:"AboutUrl,attr"`
 		} `xml:"Arp"`
 	} `xml:"Registration"`
 

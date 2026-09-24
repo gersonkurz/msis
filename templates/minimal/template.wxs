@@ -5,6 +5,9 @@
   -->
   <Package Name="{{PRODUCT_NAME}}" UpgradeCode="{{UPGRADE_CODE}}" Language="{{LCID}}" Codepage="{{CODEPAGE}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" InstallerVersion="500">
     <SummaryInformation Keywords="Installer" Description="{{PRODUCT_NAME}}" Manufacturer="{{MANUFACTURER}}" Codepage="{{CODEPAGE}}" />
+    <!-- The product creator's contact (#64): shown in Programs and Features, and read back by /SBOM. -->
+    {{#if MANUFACTURER_URL}}<Property Id="ARPURLINFOABOUT" Value="{{MANUFACTURER_URL}}" />{{/if}}
+    {{#if MANUFACTURER_EMAIL}}<Property Id="ARPCONTACT" Value="{{MANUFACTURER_EMAIL}}" />{{/if}}
     <Media Id="1" Cabinet="setup.cab" EmbedCab="yes" />
     <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A later version of [ProductName] is already installed." />
 {{{LAUNCH_CONDITION_SEARCHES}}}

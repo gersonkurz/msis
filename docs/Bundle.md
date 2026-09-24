@@ -186,6 +186,7 @@ Attributes:
 | `PRODUCT_NAME` | Display name in bootstrapper UI | Required |
 | `PRODUCT_VERSION` | Version number | Required |
 | `MANUFACTURER` | Company name | Required |
+| `MANUFACTURER_URL` | The product creator's web address. Written as the bundle's `AboutUrl` (Programs and Features) and read back by `/SBOM` as the product creator's URL. Burn has no email field, so `MANUFACTURER_EMAIL` reaches only the MSI (#64) | Empty |
 | `UPGRADE_CODE` | Bundle upgrade code (GUID) | Required |
 | `LICENSE_URL` | URL to license agreement | Required for UI bundle |
 | `LOGO_BOOTSTRAP` | Logo image for bootstrapper UI | `{LOGO_PREFIX}_LogoBootstrap.bmp` |

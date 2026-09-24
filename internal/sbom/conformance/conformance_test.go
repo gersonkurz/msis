@@ -376,6 +376,36 @@ func TestEveryRuleCatchesItsViolation(t *testing.T) {
 			mustSay: "does not define",
 		},
 		{
+			name: "an SBOM creator whose URL is not a URL (#64)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["manufacturer"] = map[string]any{"url": []any{"acme.example"}}
+			},
+			mustSay: "not an absolute http(s) URL",
+		},
+		{
+			name: "a component creator whose email is not an address (#64)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["component"].(map[string]any)["manufacturer"] = map[string]any{
+					"contact": []any{map[string]any{"email": "call us"}}}
+			},
+			mustSay: "not an email address",
+		},
+		{
+			name: "a creator with both a URL and an email (#64: BSI's XOR)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["manufacturer"] = map[string]any{
+					"url": []any{"https://acme.example"}, "contact": []any{map[string]any{"email": "sbom@acme.example"}}}
+			},
+			mustSay: "both a URL and an email address",
+		},
+		{
+			name: "a creator with no contact at all (#64)",
+			mutate: func(d map[string]any) {
+				d["metadata"].(map[string]any)["manufacturer"] = map[string]any{"name": "Acme"}
+			},
+			mustSay: "neither an email address nor a URL",
+		},
+		{
 			name:    "no generation context (#62)",
 			mutate:  func(d map[string]any) { delete(d["metadata"].(map[string]any), "lifecycles") },
 			mustSay: "generation context",

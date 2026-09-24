@@ -599,3 +599,33 @@ func TestBundleLaunchTarget(t *testing.T) {
 		t.Errorf("expected %q in output:\n%s", want, present)
 	}
 }
+
+// #64: every shipped MSI template writes the product creator's contact into the package when the
+// variables are set - where /SBOM reads it back - and writes nothing when they are not.
+func TestEveryMSITemplateWritesTheContactsItIsGiven(t *testing.T) {
+	for _, path := range msiTemplates {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		render := func(vars map[string]interface{}) string {
+			out, err := RenderString(string(content), vars)
+			if err != nil {
+				t.Fatalf("%s: %v", path, err)
+			}
+			return out
+		}
+		set := render(map[string]interface{}{"MANUFACTURER_URL": "https://acme.example", "MANUFACTURER_EMAIL": "support@acme.example"})
+		for _, want := range []string{
+			`<Property Id="ARPURLINFOABOUT" Value="https://acme.example" />`,
+			`<Property Id="ARPCONTACT" Value="support@acme.example" />`,
+		} {
+			if !strings.Contains(set, want) {
+				t.Errorf("%s: missing %s", path, want)
+			}
+		}
+		if unset := render(map[string]interface{}{}); strings.Contains(unset, "ARPURLINFOABOUT") || strings.Contains(unset, "ARPCONTACT") {
+			t.Errorf("%s: writes a contact property although no contact is set", path)
+		}
+	}
+}

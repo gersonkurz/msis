@@ -61,6 +61,10 @@ type Record struct {
 	// puts the document's producer in metadata.tools; this belongs in properties.
 	Toolchain []Tool
 
+	// SBOMCreator is who created the SBOM - an email address or a URL, from the .msis's
+	// SBOM_CREATOR (#64). Empty when the script names nobody.
+	SBOMCreator string
+
 	Files      []File
 	Binaries   []Binary
 	Prereqs    []Prerequisite
@@ -435,12 +439,13 @@ const (
 // which path ran, which script, which toolchain, and what could not be accounted for.
 func (r *Record) For(s Scope) *Record {
 	out := &Record{
-		Path:       r.Path,
-		Script:     r.Script,
-		Toolchain:  r.Toolchain,
-		Unresolved: r.Unresolved,
-		scriptDir:  r.scriptDir,
-		bindPaths:  r.bindPaths,
+		Path:        r.Path,
+		Script:      r.Script,
+		Toolchain:   r.Toolchain,
+		SBOMCreator: r.SBOMCreator,
+		Unresolved:  r.Unresolved,
+		scriptDir:   r.scriptDir,
+		bindPaths:   r.bindPaths,
 	}
 	switch s {
 	case ScopeArtifactMSI:

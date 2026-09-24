@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aymerick/raymond"
+	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/gersonkurz/msis/internal/ir"
 )
 
@@ -413,4 +414,32 @@ func (d Dictionary) CheckDeprecated() []string {
 		}
 	}
 	return warnings
+}
+
+// CheckContacts validates the contact variables (#64). MANUFACTURER_URL and MANUFACTURER_EMAIL are
+// written into the installer (ARPURLINFOABOUT, ARPCONTACT; a bundle's AboutUrl) and read back as
+// the product creator's contact, and SBOM_CREATOR names who created the SBOM; BSI TR-03183-2
+// v2.1.0 asks for an email address or a URL. A malformed value is a build error, not a warning:
+// once it is in the installer, every document read from it inherits it.
+//
+// The values are trimmed IN the dictionary, not only for the check: the templates and the build
+// record read the dictionary, and a value validated as "support@acme.example" but written as
+// " support@acme.example " would be rejected when read back out of the installer, and silently
+// vanish from the SBOM. A value that is only whitespace becomes unset (#64's review).
+func (d Dictionary) CheckContacts() error {
+	for _, name := range []string{"MANUFACTURER_URL", "MANUFACTURER_EMAIL", "SBOM_CREATOR"} {
+		if v, ok := d[name]; ok {
+			d[name] = strings.TrimSpace(v)
+		}
+	}
+	if v := d["MANUFACTURER_URL"]; v != "" && !contact.IsURL(v) {
+		return fmt.Errorf("MANUFACTURER_URL %q is not an absolute http(s) URL", v)
+	}
+	if v := d["MANUFACTURER_EMAIL"]; v != "" && !contact.IsEmail(v) {
+		return fmt.Errorf("MANUFACTURER_EMAIL %q is not a plain email address", v)
+	}
+	if v := d["SBOM_CREATOR"]; v != "" && !contact.IsEmail(v) && !contact.IsURL(v) {
+		return fmt.Errorf("SBOM_CREATOR %q is neither an email address nor an absolute http(s) URL", v)
+	}
+	return nil
 }

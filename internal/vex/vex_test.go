@@ -498,3 +498,14 @@ func TestTheSidecarCarriesTheInventorysGenerationContext(t *testing.T) {
 		t.Errorf("sidecar lifecycles %v, want the inventory's %v", doc.Metadata.Lifecycles, bom.Metadata.Lifecycles)
 	}
 }
+
+// #64: the sidecar was created by the same entity as the inventory it evaluates.
+func TestTheSidecarNamesTheInventorysCreator(t *testing.T) {
+	bom := inventory("4.1", libDigest)
+	bom.Metadata.Manufacturer = &sbom.OrganizationalEntity{Contact: []sbom.OrganizationalContact{{Email: "sbom@acme.example"}}}
+	doc := apply(t, bom, statement("not_affected", map[string]string{
+		sbom.PropAssessedVersion: "4.1", sbom.PropAssessedDigest: libDigest}))
+	if !reflect.DeepEqual(doc.Metadata.Manufacturer, bom.Metadata.Manufacturer) {
+		t.Errorf("sidecar creator %+v, want the inventory's %+v", doc.Metadata.Manufacturer, bom.Metadata.Manufacturer)
+	}
+}

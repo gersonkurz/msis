@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gersonkurz/msis/internal/contact"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -381,6 +382,37 @@ func Check(data []byte, want Expected) []error {
 		!statedUnknown(doc.Metadata.Component, "supplier") {
 		fail("no supplier (NTIA requires one, or an explicit statement that it is unknown)")
 	}
+	// A creator, where one is stated, is reachable: an email address or an absolute URL, as
+	// BSI TR-03183-2 v2.1.0 §5.2.1/§5.2.2 requires (#64).
+	checkCreator := func(what string, e *entity) {
+		if e == nil {
+			return
+		}
+		if len(e.URL) == 0 && len(e.Contact) == 0 {
+			fail("%s names a creator with neither an email address nor a URL", what)
+		}
+		if len(e.URL) > 0 && len(e.Contact) > 0 {
+			fail("%s names a creator with both a URL and an email address; BSI TR-03183-2 v2.1.0 "+
+				"takes the email, and the URL only when there is none", what)
+		}
+		for _, u := range e.URL {
+			if !contact.IsURL(u) {
+				fail("%s gives %q as its creator's URL, which is not an absolute http(s) URL", what, u)
+			}
+		}
+		for _, c := range e.Contact {
+			if !contact.IsEmail(c.Email) {
+				fail("%s gives %q as its creator's email, which is not an email address", what, c.Email)
+			}
+		}
+	}
+	checkCreator("the document", doc.Metadata.Manufacturer)
+	checkCreator("the subject component", doc.Metadata.Component.Manufacturer)
+	for _, c := range components {
+		if c.suppliedFrom() == "" {
+			checkCreator(fmt.Sprintf("component %q", c.BOMRef), c.Manufacturer)
+		}
+	}
 	if !hasSHA512(doc.Metadata.Component.Hashes) {
 		fail("the subject component has no SHA-512 (BSI TR-03183-2 v2.1.0 §5.2.2)")
 	}
@@ -665,9 +697,10 @@ type document struct {
 		Tools struct {
 			Components []component `json:"components"`
 		} `json:"tools"`
-		Component  component  `json:"component"`
-		Properties []property `json:"properties"`
-		Supplier   *struct {
+		Component    component  `json:"component"`
+		Properties   []property `json:"properties"`
+		Manufacturer *entity    `json:"manufacturer"`
+		Supplier     *struct {
 			Name string `json:"name"`
 		} `json:"supplier"`
 	} `json:"metadata"`
@@ -685,12 +718,13 @@ type document struct {
 }
 
 type component struct {
-	BOMRef     string     `json:"bom-ref"`
-	Name       string     `json:"name"`
-	Version    string     `json:"version"`
-	PURL       string     `json:"purl"`
-	Hashes     []hash     `json:"hashes"`
-	Properties []property `json:"properties"`
+	BOMRef       string     `json:"bom-ref"`
+	Name         string     `json:"name"`
+	Version      string     `json:"version"`
+	PURL         string     `json:"purl"`
+	Hashes       []hash     `json:"hashes"`
+	Properties   []property `json:"properties"`
+	Manufacturer *entity    `json:"manufacturer"`
 
 	ExternalReferences []struct {
 		URL string `json:"url"`
@@ -714,6 +748,14 @@ func (d document) allComponents() []component {
 	}
 	walk(d.Components)
 	return out
+}
+
+// entity is a creator: CycloneDX's organizationalEntity, the parts BSI uses.
+type entity struct {
+	URL     []string `json:"url"`
+	Contact []struct {
+		Email string `json:"email"`
+	} `json:"contact"`
 }
 
 type property struct {

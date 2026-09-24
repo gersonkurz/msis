@@ -7,7 +7,7 @@
       setup.exe /install /passive INSTALLDIR="C:\Custom\Path"
   -->
 
-  <Bundle Name="{{PRODUCT_NAME}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" UpgradeCode="{{UPGRADE_CODE}}">
+  <Bundle Name="{{PRODUCT_NAME}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" UpgradeCode="{{UPGRADE_CODE}}"{{#if MANUFACTURER_URL}} AboutUrl="{{MANUFACTURER_URL}}"{{/if}}>
 
     <!-- Default install folder for bundle -->
     <Variable Name="InstallFolder" Type="string" Value="" bal:Overridable="yes"/>

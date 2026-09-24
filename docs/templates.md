@@ -504,7 +504,18 @@ Templates use Handlebars syntax. Key variables available:
 - `{{PRODUCT_NAME}}` - Product display name
 - `{{PRODUCT_VERSION}}` - Version string
 - `{{MANUFACTURER}}` - Company name
+- `{{MANUFACTURER_URL}}` - The product creator's web address: written as `ARPURLINFOABOUT`
+  (Programs and Features' "Help link" for the product), and read back by `/SBOM` as the product
+  creator's URL. Absolute http(s) only; anything else stops the build (#64)
+- `{{MANUFACTURER_EMAIL}}` - The product creator's email address, written as `ARPCONTACT` and read
+  back by `/SBOM` as the creator's contact. A plain address only (#64)
 - `{{UPGRADE_CODE}}` - Upgrade GUID
+
+`SBOM_CREATOR` (an email address or an absolute URL) is not a template variable. It names who
+created the SBOM, and `/BUILD /SBOM` writes it as the document's `metadata.manufacturer`, which is
+BSI TR-03183-2's "creator of the SBOM". It is never inferred from `MANUFACTURER_*`: the entity
+that makes the product and the one that produces its SBOM are often, but not necessarily, the
+same. See [SBOM](sbom.md).
 - `{{PLATFORM}}` - Target platform (x64, x86, arm64)
 
 ### Generated Content

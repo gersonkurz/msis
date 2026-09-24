@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gersonkurz/msis/internal/burnread"
+	"github.com/gersonkurz/msis/internal/contact"
 )
 
 // FromBundle builds a document describing one Burn bundle.
@@ -310,6 +311,10 @@ func bundleComponent(b *burnread.Bundle, ns, subject string) Component {
 		c.PURL = "pkg:generic/" + purlEscape(b.Name) + "@" + purlEscape(b.Version)
 	}
 	markNTIAUnknown(&c, "the bundle records no Version", "the bundle records no Publisher")
+	// Burn records a URL for the product (Arp/@AboutUrl) but no email address (#64).
+	if contact.IsURL(b.AboutURL) {
+		c.Manufacturer = creatorEntity(b.Publisher, b.AboutURL, "")
+	}
 	return c
 }
 

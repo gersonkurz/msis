@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
+	"github.com/gersonkurz/msis/internal/contact"
 )
 
 // Enrichment layers what the build knew onto a document derived from the artifact (#34).
@@ -29,6 +30,15 @@ func enrich(doc *Document, rec *buildrecord.Record) error {
 
 	// The document now also holds what the build knew, not only what the artifact says.
 	doc.Metadata.Lifecycles = append([]Lifecycle{{Phase: LifecycleBuild}}, doc.Metadata.Lifecycles...)
+	// Who created the SBOM (BSI TR-03183-2 v2.1.0 §5.2.1): named by the build, never inferred
+	// from the manufacturer, and validated when the variables were read (#64).
+	if c := rec.SBOMCreator; c != "" {
+		if contact.IsEmail(c) {
+			doc.Metadata.Manufacturer = creatorEntity("", "", c)
+		} else {
+			doc.Metadata.Manufacturer = creatorEntity("", c, "")
+		}
+	}
 	doc.Metadata.Properties = append(doc.Metadata.Properties,
 		Property{propBuildPath, string(rec.Path)},
 		Property{propBuildScript, rec.Script},
