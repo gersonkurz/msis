@@ -761,3 +761,54 @@ That is msis-2.x's default display name, the escaped description round-tripped, 
 SERVICE_WIN32_SHARE_PROCESS, SERVICE_ERROR_CRITICAL and SERVICE_DEMAND_START. The failure
 actions are what the util:ServiceConfig custom action wrote at install time: three
 SC_ACTION_RESTART at 30 s, reset after a day.
+
+## T10 — `preserve="yes"` in a silent package (msis 3.0.3's silent template vs 3.0.6): DONE 2026-09-25
+
+Why: the 3.0.3 regression QA found that the ProAKT 3.6.0.73 Silent Setup MSI, built with msis
+3.0.3, writes its 39 preserved registry values as `[PS_RV_n]` but defines none of those
+properties and has no AppSearch. 3.0.3's silent x86 template dropped the preservation block;
+#19 fixed the template. This probe settles what that does on a machine.
+
+Probe: `testscripts/t10`. The build side (`uv run t10_preserve_probe.py`) builds msis v3.0.3 from
+its tag, with its templates, and msis HEAD with the repo's. It makes four x86 packages of one
+product, carrying the kinds of values ProAKT preserves:
+- two REG_SZ values, `UI=HEADLESS` and `IPPort=8000`;
+- two DWORDs, `Limit=2500000` and `Flag=1`;
+- an empty REG_SZ default, `DeviceID`;
+- a non-preserved control value.
+
+The packages are `base-303-1.0.0`, `reg-303-1.0.1`, `silent-303-1.0.1` and `silent-306-1.0.1`. The
+build side already shows the defect: silent-303 references the 5 properties and defines none;
+silent-306 defines all 5. The VM side (`vm/t10_vm_probe.py`) compares every value's data and
+registry type.
+
+### Executed on 2026-09-25, on the test VM
+
+| Scenario | Result |
+|---|---|
+| fresh 3.0.3 silent | OBSERVED: every preserved value written as empty REG_SZ, `UI`, `IPPort`, `Limit` and `Flag` included; the DWORDs lost their type |
+| fresh 3.0.6 silent | PASS: `HEADLESS`, `8000`, DWORD 2500000, DWORD 1, `''` |
+| upgrade 3.0.3 regular (control) | PASS: the site values `TOUCH`, `9100`, DWORD 1234567, DWORD 0 and `site-device` kept |
+| upgrade 3.0.3 silent | OBSERVED: all 5 site values replaced by empty REG_SZ |
+| upgrade 3.0.6 silent | PASS: all 5 site values kept, types intact |
+
+The control value was `always` in every scenario, so the damage is exactly the preserved
+values. Every msiexec returned 0.
+
+**Field consequence:** a package built with msis 3.0.3's **x86 silent template**
+(`templates/x86/template-silent.wxs`, used for `silent="true"` with `PLATFORM=x86`) empties the
+site's `preserve="yes"` values. These are the values the package references as `[PS_RV_n]`
+without defining them. On a fresh install they are empty instead of the defaults; on an upgrade
+the configured values are replaced by empty strings. DWORDs come back as REG_SZ.
+
+The scope is narrower than "every silent package":
+- At v3.0.3, x64 has no silent template. A silent x64 build falls back to the regular template,
+  which carries the preservation block.
+- Versions before 3.0.3 were not examined.
+- The ProAKT 3.6.0.73 Silent Setup is an x86 silent build with 39 such references.
+
+To check a given MSI, look for `[PS_RV_` in its Registry table with no matching PS_RV Property
+row.
+Anything the product runs after install (ProAKT: PAKTCONF.EXE /POST-INSTALL, AKTCONFIG.EXE) may
+rewrite some of them; this probe does not run those. Packages built from the regular templates
+are not affected.
