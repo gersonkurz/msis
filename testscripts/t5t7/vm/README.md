@@ -1,7 +1,7 @@
 # T5 + T7 — run this on the test VM
 
-Everything needed is in this folder: two MSIs built on the development machine, and
-`manifest.json` saying what each one is expected to remove. This VM needs no repo, no Go, no
+Everything needed is in this folder: six MSIs built on the development machine, and
+`manifest.json` saying what each of the seven scenarios expects. This VM needs no repo, no Go, no
 WiX and no msis.
 
 ## ⚠ Take a VM snapshot first
@@ -33,15 +33,22 @@ python t5t7_vm_probe.py --selftest
 which checks that the verdict rejects every way the run can go wrong — including a deleted
 sentinel. A probe for a destructive feature that cannot fail is worth nothing.
 
-## What it does, per package
+## What it runs
 
-Two packages, the same cleanup elements in different places:
+Seven scenarios, in this order. The first two passed on 2026-09-19; they run again because the
+packages are rebuilt with the current msis. The rest are the four cases that kept #3 open.
 
-- **top.msi** — `<remove-on-uninstall>` at **top level** (T5, issue #15). Until #15 that
-  package failed to build, so the deletion never ran at all.
-- **feat.msi** — the same elements inside a `<feature>` (T7, issue #3).
+| Scenario | Package(s) | What it checks |
+|---|---|---|
+| core | `top.msi` | the cleanup at **top level** (T5, issue #15) |
+| core | `feat.msi` | the cleanup inside a `<feature>` (T7, issue #3) |
+| core | `feat-minimal.msi` | the same, built with the **minimal** template |
+| core | `feat-silentx86.msi` | the same, built with the **silent x86** template; its registry keys are checked in the 32-bit view |
+| upgrade | `upg-1.0.0.msi` → `upg-1.0.1.msi` | a **major upgrade** of a package carrying the cleanup |
+| empty | `feat.msi` | the target folder **already empty** at uninstall |
+| never | `feat.msi` | the target folder **never existed** (the application never ran) |
 
-For each:
+**A core scenario:**
 
 1. **Install**, then check the path the installer remembered for the folder it will delete
    **equals** the intended absolute path. This is the trap both tickets call out: `[APPDATADIR]`
@@ -49,13 +56,31 @@ For each:
    `C:\ProgramData\<INSTALLDIR>\Vendor\logs`, not `C:\ProgramData\Vendor\logs`. "It looks
    absolute" would pass while pointing somewhere else.
 2. **Seed** what a running application would leave behind: a file in the target folder, a file
-   in a **nested subfolder**, a value in the target registry key — plus the sentinels that must
-   survive: a file in the target's **parent**, a file in a **sibling** directory, and a
+   in a **nested subfolder**, a value in the target registry key. Also seed the sentinels that
+   must survive: a file in the target's **parent**, a file in a **sibling** directory, and a
    neighbouring registry key.
 3. **Repair** (`msiexec /f`). Every seeded file must still be there. A repair must never be a
    data-loss event.
 4. **Uninstall.** The target folder and everything beneath it must be gone, the target registry
    key must be gone, and **every sentinel must be untouched**.
+
+**The upgrade:**
+1. Install 1.0.0 and seed.
+2. Install 1.0.1 over it, a major upgrade. Check that 1.0.1 is what is installed, that the
+   remembered path still holds, and that every sentinel is untouched.
+3. Record whether the upgrade **kept or deleted** the application's files and registry value.
+   The runbook asks for what happens, not for a particular answer, so this is an `OBSERVED`
+   line, not a PASS/FAIL.
+4. Re-seed, then uninstall 1.0.1: the target must go, and the sentinels must stay.
+
+**Empty and never:**
+1. Install, and seed only the sentinels.
+2. Empty the target folder, or remove it.
+3. Uninstall. The uninstall must succeed and every sentinel must survive. What becomes of the
+   target folder is recorded.
+
+Everything recorded rather than judged is printed as `OBSERVED` and listed again at the end.
+Those lines go into `todo-testme.md` T7.
 
 ## The sentinels are the point
 
@@ -69,6 +94,7 @@ top-level, #3 for the feature case) rather than adjust the documentation to matc
 ## Files
 
 - `t5t7_vm_probe.py` — the probe; the only thing to run
-- `manifest.json` — what each package is expected to remove, generated with the packages so
-  the two cannot disagree about the intended path
-- `top.msi`, `feat.msi` — the packages under test
+- `manifest.json` — what each scenario expects, generated with the packages so the two cannot
+  disagree about the intended path
+- `top.msi`, `feat.msi`, `feat-minimal.msi`, `feat-silentx86.msi`, `upg-1.0.0.msi`,
+  `upg-1.0.1.msi` — the packages under test

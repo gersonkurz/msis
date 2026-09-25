@@ -474,6 +474,21 @@ defects found in the probe itself before these results were trusted.
 
 The major upgrade is the one with teeth. The other three are "record what happens".
 
+**All four are in the harness since 2026-09-25.** The upgrade is from 1.0.0 to 1.0.1 of one
+product with the regular x64 template (`upg-1.0.0.msi` → `upg-1.0.1.msi`). The two template passes
+are `feat-minimal.msi` and `feat-silentx86.msi`; the latter's registry keys are checked in the
+32-bit view. The two folder cases reuse `feat.msi`. Build with `uv run t5t7_cleanup_probe.py`,
+copy `vm-payload/` to a snapshotted VM, and there run `t5t7_vm_probe.py --selftest`, then
+`t5t7_vm_probe.py` elevated.
+
+The run passes or fails on what must hold whatever happens:
+- every install and uninstall succeeds;
+- the remembered path is exact;
+- every sentinel survives.
+
+What the cases above ask to be recorded is printed as `OBSERVED` and listed again at the end.
+Copy those lines here with the date.
+
 ### The path trap, confirmed
 
 `[APPDATADIR]` already includes the product folder: the MSI's Directory table shows

@@ -1,6 +1,13 @@
 """T5 + T7, build side - build the cleanup packages and stage them for a test VM.
 
-Two tickets, one mechanism, so one probe:
+Two tickets, one mechanism, so one probe. The core - install, seed, repair, uninstall - passed
+on 2026-09-19; this also covers the four cases that kept #3 open (todo-testme.md T7):
+
+  - a MAJOR UPGRADE 1.0.0 -> 1.0.1 of a package carrying the cleanup - does it fire mid-upgrade?
+  - the target folder already EMPTY at uninstall;
+  - the target folder that NEVER EXISTED (the application never ran);
+  - the MINIMAL and SILENT-X86 templates, one core pass each.
+
 
   T5 / issue #15 - <remove-on-uninstall> written at TOP LEVEL. Until #15 that failed to
                    build, so the components never installed and never ran. Giving them a
@@ -54,6 +61,7 @@ PACKAGES = [
         "registry_sibling": r"Software\Vendor\CleanupProbeTopOther",
         # Top-level items are gathered into the synthetic feature #15 added.
         "expect_feature": "MSIS_PACKAGE_ITEMS",
+        "top_level": True,
     },
     {
         "key": "feat",
@@ -65,29 +73,83 @@ PACKAGES = [
         "registry_sibling": r"Software\Vendor\CleanupProbeFeatOther",
         "expect_feature": "FEATURE_00000",
     },
+    {
+        "key": "feat-minimal",
+        "title": "T7 - the minimal template",
+        "product": "Cleanup Probe Minimal",
+        "installdir": "CleanupProbeMin",
+        "upgrade_code": "{2B8E4C61-9D3A-4F17-A5C2-7E0B1D6F3A94}",
+        "registry_target": r"Software\Vendor\CleanupProbeMin",
+        "registry_sibling": r"Software\Vendor\CleanupProbeMinOther",
+        "expect_feature": "FEATURE_00000",
+        "template": "minimal/template.wxs",
+    },
+    {
+        "key": "feat-silentx86",
+        "title": "T7 - the silent x86 template",
+        "product": "Cleanup Probe Silent86",
+        "installdir": "CleanupProbeSil86",
+        "upgrade_code": "{7F1A3D95-2C6E-4B08-9E47-5A0C8B2D1F63}",
+        "registry_target": r"Software\Vendor\CleanupProbeSil86",
+        "registry_sibling": r"Software\Vendor\CleanupProbeSil86Other",
+        "expect_feature": "FEATURE_00000",
+        # x86: installs under Program Files (x86), and its HKLM keys live in the 32-bit view.
+        "platform": "x86",
+        "silent": True,
+    },
+    # The upgrade pair: one product, one UpgradeCode, two versions. Each installs a version.txt
+    # holding its version, so the VM can tell which one is installed.
+    {
+        "key": "upg-1.0.0",
+        "title": "T7 - major upgrade, the old version",
+        "product": "Cleanup Probe Upgrade",
+        "installdir": "CleanupProbeUpg",
+        "upgrade_code": "{5E0C7A38-4B19-4D62-8F3E-1A9D6C2B7E40}",
+        "registry_target": r"Software\Vendor\CleanupProbeUpg",
+        "registry_sibling": r"Software\Vendor\CleanupProbeUpgOther",
+        "expect_feature": "FEATURE_00000",
+        "version": "1.0.0",
+    },
+    {
+        "key": "upg-1.0.1",
+        "title": "T7 - major upgrade, the new version",
+        "product": "Cleanup Probe Upgrade",
+        "installdir": "CleanupProbeUpg",
+        "upgrade_code": "{5E0C7A38-4B19-4D62-8F3E-1A9D6C2B7E40}",
+        "registry_target": r"Software\Vendor\CleanupProbeUpg",
+        "registry_sibling": r"Software\Vendor\CleanupProbeUpgOther",
+        "expect_feature": "FEATURE_00000",
+        "version": "1.0.1",
+    },
 ]
 
 MANUFACTURER = "Probe Co"
 README_FILE = "Payload for the T5/T7 cleanup probe. See todo-testme.md.\n"
 
 
-def msis_source(pkg: dict, top_level: bool) -> str:
+def msis_source(pkg: dict) -> str:
+    top_level = pkg.get("top_level", False)
+    version = pkg.get("version", "1.0.0")
     cleanup = (
         '  <create-folder target="[APPDATADIR]Vendor\\logs"/>\n'
         '  <remove-on-uninstall folder="[APPDATADIR]Vendor\\logs"/>\n'
         f'  <remove-on-uninstall registry="HKLM\\{pkg["registry_target"]}"/>\n'
     )
     inside = "" if top_level else "  " + cleanup.replace("\n  ", "\n    ").rstrip() + "\n"
+    silent = ' silent="yes"' if pkg.get("silent") else ""
+    platform = f'  <set name="PLATFORM" value="{pkg["platform"]}"/>\n' if pkg.get("platform") else ""
+    versioned = (f'    <files source="version-{version}.txt" target="[INSTALLDIR]version.txt"/>\n'
+                 if "version" in pkg else "")
     return f"""<?xml version="1.0" encoding="utf-8"?>
-<setup>
+<setup{silent}>
   <set name="PRODUCT_NAME" value="{pkg['product']}"/>
-  <set name="PRODUCT_VERSION" value="1.0.0"/>
+  <set name="PRODUCT_VERSION" value="{version}"/>
   <set name="MANUFACTURER" value="{MANUFACTURER}"/>
   <set name="UPGRADE_CODE" value="{pkg['upgrade_code']}"/>
   <set name="INSTALLDIR" value="{pkg['installdir']}"/>
-{cleanup if top_level else ''}  <feature name="Main">
+{platform}{cleanup if top_level else ''}  <feature name="Main">
     <files source="readme.txt" target="[INSTALLDIR]"/>
-{inside}  </feature>
+{versioned}{inside}  </feature>
 </setup>
 """
 
@@ -110,6 +172,9 @@ def build(skip_build: bool) -> Path:
         logger.info("building msis from {}", REPO)
         run(["go", "build", "-o", str(msis_exe), "./cmd/msis"], cwd=REPO)
     (HERE / "readme.txt").write_text(README_FILE, encoding="utf-8", newline="\r\n")
+    for pkg in PACKAGES:
+        if "version" in pkg:
+            (HERE / f"version-{pkg['version']}.txt").write_text(pkg["version"], encoding="utf-8")
     return msis_exe
 
 
@@ -117,10 +182,12 @@ def build_package(msis_exe: Path, pkg: dict) -> bool:
     """Write the .msis, build it, and check the cleanup components are referenced."""
     logger.info("=== {} ===", pkg["title"])
     source = HERE / f"{pkg['key']}.msis"
-    source.write_text(msis_source(pkg, pkg["key"] == "top"), encoding="utf-8", newline="\r\n")
+    source.write_text(msis_source(pkg), encoding="utf-8", newline="\r\n")
 
-    run([str(msis_exe), "/BUILD", "/RETAINWXS",
-         f"/TEMPLATEFOLDER:{REPO / 'templates'}", str(source)], cwd=HERE)
+    cmd = [str(msis_exe), "/BUILD", "/RETAINWXS", f"/TEMPLATEFOLDER:{REPO / 'templates'}"]
+    if pkg.get("template"):
+        cmd.append(f"/TEMPLATE:{REPO / 'templates' / pkg['template']}")
+    run(cmd + [str(source)], cwd=HERE)
 
     wxs = (HERE / f"{pkg['key']}.wxs").read_text(encoding="utf-8", errors="replace")
     ok = True
@@ -165,34 +232,58 @@ def feature_refs(wxs: str, feature_id: str) -> list[str]:
     return refs
 
 
-def manifest() -> list[dict]:
-    """What the VM must expect, derived from the same values that wrote the .msis.
+def paths(pkg: dict) -> dict:
+    """Where a package puts things on the VM, from the same values that wrote its .msis.
 
-    Passed as data rather than restated on the VM side: the intended absolute path is the
-    one thing both tickets insist must be asserted by equality, so it must not be possible
-    for the two halves to disagree about it.
+    Passed as data rather than restated on the VM side: the intended absolute path is the one
+    thing both tickets insist must be asserted by equality, so it must not be possible for the
+    two halves to disagree about it.
     """
-    entries = []
-    for pkg in PACKAGES:
-        appdata = f"C:\\ProgramData\\{pkg['installdir']}"
-        target = f"{appdata}\\Vendor\\logs"
-        entries.append({
-            "key": pkg["key"],
-            "title": pkg["title"],
-            "msi": f"{pkg['key']}.msi",
-            "product": pkg["product"],
-            "remembered_key": f"Software\\{MANUFACTURER}\\{pkg['product']}",
-            "remembered_name": "RemoveFolderPath_RemoveOnUninstall_0000",
-            "target_dir": target,
-            "nested_file": f"{target}\\deep\\nested.txt",
-            "target_file": f"{target}\\runtime.log",
-            "parent_sentinel": f"{appdata}\\Vendor\\keep-me.txt",
-            "sibling_sentinel": f"{appdata}\\Vendor\\other\\keep-me.txt",
-            "installed_file": f"C:\\Program Files\\{pkg['installdir']}\\readme.txt",
-            "registry_target": pkg["registry_target"],
-            "registry_sibling": pkg["registry_sibling"],
-        })
-    return entries
+    appdata = f"C:\\ProgramData\\{pkg['installdir']}"
+    target = f"{appdata}\\Vendor\\logs"
+    x86 = pkg.get("platform") == "x86"
+    program_files = "C:\\Program Files (x86)" if x86 else "C:\\Program Files"
+    return {
+        "product": pkg["product"],
+        # A 32-bit package's HKLM keys live in the 32-bit view (WOW6432Node).
+        "view": 32 if x86 else 64,
+        "remembered_key": f"Software\\{MANUFACTURER}\\{pkg['product']}",
+        "remembered_name": "RemoveFolderPath_RemoveOnUninstall_0000",
+        "target_dir": target,
+        "nested_file": f"{target}\\deep\\nested.txt",
+        "target_file": f"{target}\\runtime.log",
+        "parent_sentinel": f"{appdata}\\Vendor\\keep-me.txt",
+        "sibling_sentinel": f"{appdata}\\Vendor\\other\\keep-me.txt",
+        "installed_file": f"{program_files}\\{pkg['installdir']}\\readme.txt",
+        "version_file": f"{program_files}\\{pkg['installdir']}\\version.txt",
+        "registry_target": pkg["registry_target"],
+        "registry_sibling": pkg["registry_sibling"],
+    }
+
+
+def manifest() -> list[dict]:
+    """The scenarios the VM runs, in order."""
+    by_key = {p["key"]: p for p in PACKAGES}
+
+    def core(key: str) -> dict:
+        pkg = by_key[key]
+        return {"kind": "core", "key": key, "title": pkg["title"], "msi": f"{key}.msi", **paths(pkg)}
+
+    feat = by_key["feat"]
+    old, new = by_key["upg-1.0.0"], by_key["upg-1.0.1"]
+    return [
+        core("top"),
+        core("feat"),
+        core("feat-minimal"),
+        core("feat-silentx86"),
+        {"kind": "upgrade", "key": "upgrade", "title": "T7 - a MAJOR UPGRADE 1.0.0 -> 1.0.1",
+         "msi_old": "upg-1.0.0.msi", "msi_new": "upg-1.0.1.msi",
+         "version_old": old["version"], "version_new": new["version"], **paths(new)},
+        {"kind": "empty", "key": "feat-empty",
+         "title": "T7 - the target folder already EMPTY at uninstall", "msi": "feat.msi", **paths(feat)},
+        {"kind": "never", "key": "feat-never",
+         "title": "T7 - the target folder NEVER EXISTED at uninstall", "msi": "feat.msi", **paths(feat)},
+    ]
 
 
 def stage() -> Path:

@@ -6,3 +6,5 @@ readme.txt
 vm-payload/
 *.log
 .venv/
+version-*.txt
+__pycache__/
