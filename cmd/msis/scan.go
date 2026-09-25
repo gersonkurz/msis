@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/cli"
@@ -15,6 +16,9 @@ import (
 // that run writes; on its own it scans the CycloneDX documents named, and nothing else - there
 // is no document to scan in a build that writes none, and an installer is not a document.
 func scanArgsValid(args *cliArgs) error {
+	if args.scanDir != "" && !args.scan {
+		return fmt.Errorf("/SCAN-DIR names where /SCAN keeps its reports; add /SCAN")
+	}
 	if !args.scan || args.sbom {
 		return nil
 	}
@@ -41,10 +45,15 @@ func scanArgsValid(args *cliArgs) error {
 // the document it names was scanned successfully - whichever order the documents come in, and
 // never when that document's own scan failed. A failed scan does not stop the others; the first
 // failure is returned once all are reported.
-func scanDocuments(docs []string) error {
+//
+// dir is /SCAN-DIR: where the reports are kept, or "" to keep each beside its document (#70).
+func scanDocuments(docs []string, dir string) error {
+	if err := distinctReports(docs, dir); err != nil {
+		return err
+	}
 	results := make([]scanResult, 0, len(docs))
 	for _, doc := range docs {
-		results = append(results, scanOne(doc))
+		results = append(results, scanOne(doc, dir))
 	}
 	covered := coveredLinks(results)
 	var first error
@@ -61,6 +70,28 @@ func scanDocuments(docs []string) error {
 	return first
 }
 
+// distinctReports refuses a run in which two documents would be reported to the same file - as
+// /SCAN-DIR can make happen for x64\app.msi.cdx.json and x86\app.msi.cdx.json. The second scan
+// would archive the first report and take its path, and both Scan: lines would name one report.
+// Paths are compared as Windows compares them, ignoring case. Nothing is scanned: the caller
+// gives each group its own /SCAN-DIR, or renames.
+func distinctReports(docs []string, dir string) error {
+	seen := map[string]string{}
+	for _, doc := range docs {
+		out := scan.ReportPath(doc, dir)
+		key := strings.ToLower(out)
+		if abs, err := filepath.Abs(out); err == nil {
+			key = strings.ToLower(abs)
+		}
+		if other, ok := seen[key]; ok {
+			return fmt.Errorf("%s and %s would both be reported to %s, and one report would replace "+
+				"the other; scan them into different directories (/SCAN-DIR)", other, doc, out)
+		}
+		seen[key] = doc
+	}
+	return nil
+}
+
 // scanResult is one document's scan, or why it has none.
 type scanResult struct {
 	doc            string
@@ -70,7 +101,7 @@ type scanResult struct {
 	err            error
 }
 
-func scanOne(doc string) scanResult {
+func scanOne(doc, dir string) scanResult {
 	res := scanResult{doc: doc}
 	data, err := os.ReadFile(doc)
 	if err != nil {
@@ -90,7 +121,8 @@ func scanOne(doc string) scanResult {
 		res.err = err
 		return res
 	}
-	if res.out, res.preserved, err = scan.Write(doc, raw); err != nil {
+	res.out = scan.ReportPath(doc, dir)
+	if res.preserved, err = scan.Write(res.out, raw); err != nil {
 		res.err = err
 		return res
 	}

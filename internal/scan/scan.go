@@ -253,10 +253,15 @@ func vexAnswers(d document, vexDoc []byte) (map[string]string, string) {
 	return out, "applied: statements evaluated against this document"
 }
 
-// ReportPath is where the scan of doc is kept: beside it, as <artifact>.grype.json for
-// <artifact>.cdx.json.
-func ReportPath(doc string) string {
-	return Artifact(doc) + ".grype.json"
+// ReportPath is where the scan of doc is kept: <artifact>.grype.json for <artifact>.cdx.json,
+// beside the document, or in dir when one is given (/SCAN-DIR, #70) - so the report is written
+// where it stays, and the path msis prints is the path it has.
+func ReportPath(doc, dir string) string {
+	name := Artifact(doc) + ".grype.json"
+	if dir == "" {
+		return name
+	}
+	return filepath.Join(dir, filepath.Base(name))
 }
 
 // Artifact is the artifact a document describes: doc without its .cdx.json suffix, matched in
@@ -271,31 +276,34 @@ func Artifact(doc string) string {
 
 var unsafeStamp = regexp.MustCompile(`[^0-9A-Za-z-]`)
 
-// Write keeps raw at ReportPath(doc). A report already there is not overwritten: it is kept as
-// <artifact>.<its own timestamp>.grype.json, as an SBOM is kept by its serial. A scan is a
-// finding at a point in time - the vulnerability database changes daily - so an earlier one is
-// evidence, not clutter. Every uncertainty refuses, as for documents: an unreadable report, one
-// without a timestamp, or an archive name already taken, and nothing is replaced.
-func Write(doc string, raw []byte) (out, preserved string, err error) {
-	out = ReportPath(doc)
+// Write keeps raw at out, a ReportPath, creating its directory. A report already there is not
+// overwritten: it is kept as <artifact>.<its own timestamp>.grype.json, as an SBOM is kept by its
+// serial. A scan is a finding at a point in time - the vulnerability database changes daily - so
+// an earlier one is evidence, not clutter. Every uncertainty refuses, as for documents: an
+// unreadable report, one without a timestamp, or an archive name already taken, and nothing is
+// replaced.
+func Write(out string, raw []byte) (preserved string, err error) {
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return "", err
+	}
 	if old, err := os.ReadFile(out); err == nil {
 		var g grypeReport
 		if err := json.Unmarshal(old, &g); err != nil || g.Descriptor.Timestamp == "" {
-			return "", "", fmt.Errorf("%s exists and is not a grype report msis can date, so it is not replaced", out)
+			return "", fmt.Errorf("%s exists and is not a grype report msis can date, so it is not replaced", out)
 		}
 		stamp := unsafeStamp.ReplaceAllString(g.Descriptor.Timestamp, "-")
 		preserved = strings.TrimSuffix(out, ".grype.json") + "." + stamp + ".grype.json"
 		if _, err := os.Stat(preserved); err == nil {
-			return "", "", fmt.Errorf("%s exists, and so does %s, where it would be kept; nothing is replaced", out, preserved)
+			return "", fmt.Errorf("%s exists, and so does %s, where it would be kept; nothing is replaced", out, preserved)
 		}
 		if err := os.Rename(out, preserved); err != nil {
-			return "", "", fmt.Errorf("keeping the previous report: %w", err)
+			return "", fmt.Errorf("keeping the previous report: %w", err)
 		}
 	} else if !os.IsNotExist(err) {
-		return "", "", fmt.Errorf("reading %s: %w", out, err)
+		return "", fmt.Errorf("reading %s: %w", out, err)
 	}
 	if err := os.WriteFile(out, raw, 0o644); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return out, preserved, nil
+	return preserved, nil
 }

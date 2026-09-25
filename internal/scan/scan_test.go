@@ -105,11 +105,12 @@ func TestVEXAnswersOnlyWhatStillHoldsForThisDocument(t *testing.T) {
 func TestWriteKeepsThePreviousReport(t *testing.T) {
 	dir := t.TempDir()
 	doc := filepath.Join(dir, "app.msi.cdx.json")
-	out, preserved, err := Write(doc, []byte(grypeOut))
+	out := ReportPath(doc, "")
+	preserved, err := Write(out, []byte(grypeOut))
 	if err != nil || out != filepath.Join(dir, "app.msi.grype.json") || preserved != "" {
 		t.Fatalf("first write: %q %q %v", out, preserved, err)
 	}
-	_, preserved, err = Write(doc, []byte(`{"descriptor": {"timestamp": "later"}}`))
+	preserved, err = Write(out, []byte(`{"descriptor": {"timestamp": "later"}}`))
 	want := filepath.Join(dir, "app.msi.2026-09-24T18-00-00-1234567-02-00.grype.json")
 	if err != nil || preserved != want {
 		t.Fatalf("second write kept %q (%v), want %q", preserved, err, want)
@@ -119,10 +120,10 @@ func TestWriteKeepsThePreviousReport(t *testing.T) {
 	}
 
 	// An existing report msis cannot date is not replaced.
-	if err := os.WriteFile(ReportPath(doc), []byte("not json"), 0o644); err != nil {
+	if err := os.WriteFile(out, []byte("not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Write(doc, []byte(grypeOut)); err == nil {
+	if _, err := Write(out, []byte(grypeOut)); err == nil {
 		t.Error("an undatable report was replaced")
 	}
 }
@@ -135,8 +136,28 @@ func TestTheSuffixIsMatchedInAnyCase(t *testing.T) {
 		if got := Artifact(doc); got != want {
 			t.Errorf("Artifact(%q) = %q, want %q", doc, got, want)
 		}
-		if got := ReportPath(doc); got != want+".grype.json" {
+		if got := ReportPath(doc, ""); got != want+".grype.json" {
 			t.Errorf("ReportPath(%q) = %q", doc, got)
 		}
+	}
+}
+
+// #70: with /SCAN-DIR the report is written in that directory, under the document's own
+// artifact name, and Write creates the directory - so the path printed is the path it has.
+func TestAReportDirectoryHoldsTheReport(t *testing.T) {
+	dist, reports := t.TempDir(), filepath.Join(t.TempDir(), "scan")
+	doc := filepath.Join(dist, "app.msi.CDX.JSON")
+	out := ReportPath(doc, reports)
+	if want := filepath.Join(reports, "app.msi.grype.json"); out != want {
+		t.Fatalf("ReportPath = %q, want %q", out, want)
+	}
+	if _, err := Write(out, []byte(grypeOut)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Errorf("the report is not where ReportPath says: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dist, "*.grype.json")); len(left) != 0 {
+		t.Errorf("a report was written beside the document too: %v", left)
 	}
 }

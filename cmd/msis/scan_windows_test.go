@@ -40,10 +40,10 @@ func TestScanRunsGrypeAndKeepsItsReport(t *testing.T) {
 	if err := os.WriteFile(doc, []byte(vulnerableDoc), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := scanDocuments([]string{doc}); err != nil {
+	if err := scanDocuments([]string{doc}, ""); err != nil {
 		t.Fatal(err)
 	}
-	report, err := os.ReadFile(scan.ReportPath(doc))
+	report, err := os.ReadFile(scan.ReportPath(doc, ""))
 	if err != nil {
 		t.Fatalf("no report beside the document: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestScanRunsGrypeAndKeepsItsReport(t *testing.T) {
 		t.Error("the report records the document's directory; grype should be given a relative name")
 	}
 
-	if err := scanDocuments([]string{doc}); err != nil {
+	if err := scanDocuments([]string{doc}, ""); err != nil {
 		t.Fatal(err)
 	}
 	kept, _ := filepath.Glob(filepath.Join(filepath.Dir(doc), "app.msi.*.grype.json"))
@@ -90,7 +90,7 @@ func TestScanWithAThresholdAndAnUpperCaseName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := scanOne(doc)
+	res := scanOne(doc, "")
 	if res.err != nil {
 		t.Fatalf("a findings-only exit failed the scan: %v", res.err)
 	}

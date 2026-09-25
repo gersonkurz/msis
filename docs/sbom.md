@@ -527,6 +527,7 @@ downloads it), on the documents msis wrote, and says what the result covers ([de
 msis /BUILD /SBOM /SCAN setup.msis       scan every document this build wrote
 msis /SBOM /SCAN app.msi app-setup.exe   describe these installers, then scan the documents
 msis /SCAN app.msi.cdx.json              scan documents that already exist
+msis /SCAN /SCAN-DIR:reports app.msi.cdx.json    keep the reports in reports\ instead
 ```
 
 ```
@@ -536,11 +537,14 @@ msis /SCAN app.msi.cdx.json              scan documents that already exist
   VEX: no VEX document beside it
 ```
 
-- **grype's report is kept verbatim**, as `<artifact>.grype.json` beside the document. A
-  previous report is kept, not overwritten, as `<artifact>.<its timestamp>.grype.json`: the
-  vulnerability database changes daily, so an earlier scan is evidence. The report names the
-  local grype database path, which grype always records. msis's own release therefore keeps its
-  reports in `bootstrap/scan/`, not in `dist/`.
+- **grype's report is kept verbatim**, as `<artifact>.grype.json`: beside the document, or in
+  the directory `/SCAN-DIR:DIR` names, which msis creates. The `Scan:` line prints where each
+  report is. Two documents that would share a report name in that directory, such as
+  `x64\app.msi.cdx.json` and `x86\app.msi.cdx.json`, are refused before anything is scanned. A previous report is kept, not overwritten, as
+  `<artifact>.<its timestamp>.grype.json`: the vulnerability database changes daily, so an
+  earlier scan is evidence. The report names the local grype database path, which grype always
+  records. msis's own release therefore writes its reports to `bootstrap/scan/`
+  (`/SCAN-DIR`), not beside the SBOMs in `dist/`, which is what gets uploaded.
 - **What could not be scanned is always stated.** Scanners match on purl and CPE. A payload
   file msis could not identify has neither (D4), so "no findings" over components nobody could
   match is not a clean result. `<component purl= cpe=>` and `<sbom>` are how a script makes its
