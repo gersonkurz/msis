@@ -1867,8 +1867,12 @@ func (c *Context) generateFeatureXML(feature *ir.Feature, sb *strings.Builder, d
 		configurable = " ConfigurableDirectory='INSTALLDIR'"
 	}
 
+	// The name is resolved like every other authored value (#75): msis-2.x translated it
+	// (DescriptionReader.cs), and a <feature name="{{PRODUCT_NAME}}"> reached the MSI as the
+	// literal reference. Escaped, since a title may hold a quote or an ampersand.
+	title := escapeXMLAttr(c.resolveOrWarn(feature.Name, fmt.Sprintf("<feature name=%q>", feature.Name)))
 	sb.WriteString(fmt.Sprintf("%s<Feature Id='%s' Title='%s' Level='%s' AllowAbsent='%s'%s>\n",
-		indent, featureID, feature.Name, level, allowAbsent, configurable))
+		indent, featureID, title, level, allowAbsent, configurable))
 
 	// Component refs (keyed by unique feature ID)
 	if compIDs, ok := c.FeatureComponents[featureID]; ok {

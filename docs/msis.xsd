@@ -252,7 +252,12 @@
         <xs:element name="remove-on-uninstall" type="RemoveOnUninstallType"/>
       </xs:choice>
     </xs:sequence>
-    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="name" type="xs:string" use="required">
+      <xs:annotation><xs:documentation>
+        The feature's title, shown in the installer's feature selection. {{VAR}} references are
+        resolved, /SET overrides included, e.g. name="{{PRODUCT_NAME}}".
+      </xs:documentation></xs:annotation>
+    </xs:attribute>
     <xs:attribute name="enabled" type="msisBoolean" use="optional"/>
     <xs:attribute name="condition" type="xs:string" use="optional"/>
     <xs:attribute name="allowed" type="msisBoolean" use="optional"/>
