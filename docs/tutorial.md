@@ -854,6 +854,16 @@ written two elements:
 > customer chose as an existing directory, will be removed wholesale, including any database
 > or configuration living there. Point it at a directory your package owns, and nothing above
 > it.
+>
+> **Know what a root already contains.** `[APPDATADIR]` is not `C:\ProgramData`. It is
+> `C:\ProgramData\<name>`, where the name is the `APPDATADIR` variable if the script sets one,
+> else `INSTALLDIR` (else `INSTALL_FOLDER`), as in msis-2.x. With `INSTALLDIR` set to `MyApp`,
+> `[APPDATADIR]Vendor\logs` is `C:\ProgramData\MyApp\Vendor\logs`, not
+> `C:\ProgramData\Vendor\logs`. The same holds for `[ROAMINGAPPDATADIR]` and
+> `[LOCALAPPDATADIR]`, and `[INSTALLDIR]` is `C:\Program Files\<INSTALLDIR>`. Only if none of
+> these variables is set does `[APPDATADIR]` mean `C:\ProgramData` itself, and a `folder`
+> under it then names a directory any product may share. Check the resolved path before you
+> ship a recursive delete: the MSI's Directory table records the folder each root names.
 
 Recognized registry roots are `HKLM`, `HKCU`, `HKCR` and `HKU`, or their long forms
 (`HKEY_LOCAL_MACHINE` and so on). **A root msis does not recognize is skipped silently** — the

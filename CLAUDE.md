@@ -102,15 +102,19 @@ artifact; `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; 
 
 | Root Key | WiX Folder | Typical Path |
 |----------|------------|--------------|
-| `INSTALLDIR` | ProgramFiles(64)Folder | C:\Program Files |
-| `APPDATADIR` | CommonAppDataFolder | C:\ProgramData (all users) |
-| `ROAMINGAPPDATADIR` | AppDataFolder | %APPDATA% (per-user roaming) |
-| `LOCALAPPDATADIR` | LocalAppDataFolder | %LOCALAPPDATA% (per-user local) |
+| `INSTALLDIR` | ProgramFiles(64)Folder | `C:\Program Files\<INSTALLDIR>` |
+| `APPDATADIR` | CommonAppDataFolder | `C:\ProgramData\<APPDATADIR, else INSTALLDIR>` (all users) |
+| `ROAMINGAPPDATADIR` | AppDataFolder | `%APPDATA%\<ROAMINGAPPDATADIR, else INSTALLDIR>` (per-user roaming) |
+| `LOCALAPPDATADIR` | LocalAppDataFolder | `%LOCALAPPDATA%\<LOCALAPPDATADIR, else INSTALLDIR>` (per-user local) |
 | `COMMONFILESDIR` | CommonFiles(64)Folder | C:\Program Files\Common Files |
 | `WINDOWSDIR` | WindowsFolder | C:\Windows |
 | `SYSTEMDIR` | System(64)Folder | C:\Windows\System32 |
 
-Paths not matching these roots are treated as `INSTALLDIR` subpaths.
+Paths not matching these roots are treated as `INSTALLDIR` subpaths. The folder a root names comes from the variable of
+the same name; the app-data roots fall back to `INSTALLDIR` (then `INSTALL_FOLDER`), as in
+msis-2.x, so `[APPDATADIR]logs` is `C:\ProgramData\<product folder>\logs`. Only when none of those
+variables is set is `[APPDATADIR]` the bare `C:\ProgramData`, and `[APPDATADIR]logs` then `C:\ProgramData\logs` (`internal/generator/context.go`, the root
+directory setup).
 
 ## WiX 6 / 7 Conventions
 
