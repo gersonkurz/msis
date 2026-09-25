@@ -193,4 +193,20 @@ func TestTopLevelCleanupItemsAreReferenced(t *testing.T) {
 	if !strings.Contains(output.RemoveOnUninstallXML, "RemoveRegistryKey") {
 		t.Errorf("expected a registry cleanup element, got:\n%s", output.RemoveOnUninstallXML)
 	}
+
+	// #76: both run on a real uninstall only. A major upgrade removes the previous version,
+	// and an unconditional cleanup deleted the application's data on every update (VM probe,
+	// 2026-09-25). The standard RemoveRegistryKey takes no condition, so it must not be used.
+	for _, want := range []string{
+		"<util:RemoveFolderEx On='uninstall' Property='REMOVE_FOLDER_REMOVEONUNINSTALL_0000' Condition='NOT UPGRADINGPRODUCTCODE'/>",
+		"On='uninstall' Condition='NOT UPGRADINGPRODUCTCODE'/>",
+		"<util:RemoveRegistryKey ",
+	} {
+		if !strings.Contains(output.RemoveOnUninstallXML, want) {
+			t.Errorf("the cleanup does not carry %q:\n%s", want, output.RemoveOnUninstallXML)
+		}
+	}
+	if strings.Contains(output.RemoveOnUninstallXML, "<RemoveRegistryKey ") {
+		t.Errorf("the unconditional standard RemoveRegistryKey is still emitted:\n%s", output.RemoveOnUninstallXML)
+	}
 }

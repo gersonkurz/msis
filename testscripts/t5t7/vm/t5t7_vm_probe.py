@@ -19,10 +19,12 @@ as much as the deletions: the value of this mechanism over REMOVE_FOLDERS_ON_UNI
 narrower blast radius, and that is the claim under test. A run that removes the target but
 also touches the parent or a sibling is a FAIL, not a detail.
 
-Where the runbook says "record what is observed" - what a major upgrade does to the seeded data,
-what an uninstall does with an empty or missing folder - the probe does not guess the right
-answer: it prints OBSERVED lines, collects them at the end, and leaves the PASS/FAIL to what
-must hold whatever happens (every sentinel survives, every uninstall succeeds).
+Where the runbook says "record what is observed" - what an uninstall does with an empty or
+missing folder - the probe does not guess the right answer: it prints OBSERVED lines, collects
+them at the end, and leaves the PASS/FAIL to what must hold whatever happens (every sentinel
+survives, every uninstall succeeds). The major upgrade was recorded that way until its first
+run showed it DELETED the application's data (2026-09-25, #76); the data must now survive it,
+and that is judged.
 
     uv run t5t7_vm_probe.py --selftest   # checks the verdicts AND the runner; installs nothing
     uv run t5t7_vm_probe.py              # ELEVATED: the real thing
@@ -221,7 +223,8 @@ class UpgradeFacts:
     new_version_installed: str = "1.0.1"
     expected_new: str = "1.0.1"
     remembered_after_upgrade: str = ""
-    # What the upgrade did to the application's data: RECORDED, not judged (see the runbook).
+    # What the upgrade did to the application's data. Recorded as OBSERVED on the first VM run
+    # (2026-09-25: DELETED); since #76 the data must survive, and it is judged.
     target_file_after_upgrade: bool = True
     nested_file_after_upgrade: bool = True
     registry_value_after_upgrade: str = "intact"
@@ -247,7 +250,17 @@ def verdict_upgrade(f: UpgradeFacts) -> tuple[bool, list[tuple[str, str]], list[
     c.check(f.new_version_installed == f.expected_new, f"  and {f.expected_new} is what is installed now",
             f"after the upgrade, version.txt reads {f.new_version_installed!r} - the upgrade did not happen")
     check_path(c, f.remembered_after_upgrade, f.intended_path, "after the upgrade")
-    # Whatever the upgrade does to the application's own folder, it must not reach beyond it.
+    # #76: an update must not delete what the cleanup names - it runs on a real uninstall only.
+    c.check(f.target_file_after_upgrade and f.nested_file_after_upgrade,
+            "the application's files survived the upgrade",
+            "the major upgrade DELETED the application's files in the target folder "
+            f"(runtime.log {'kept' if f.target_file_after_upgrade else 'gone'}, "
+            f"deep\\nested.txt {'kept' if f.nested_file_after_upgrade else 'gone'}) - #76 is not fixed")
+    c.check(f.registry_value_after_upgrade == "intact",
+            "the application's registry value survived the upgrade unchanged",
+            f"after the major upgrade the target registry value is {f.registry_value_after_upgrade} "
+            "- #76 is not fixed")
+    # Nor must the upgrade reach beyond the application's own folder.
     check_neighbours(c, f.neighbours_after_upgrade, "after the upgrade")
 
     c.check(f.uninstall_rc in UNINSTALL_OK, f"uninstalling {f.expected_new} succeeded",
@@ -260,16 +273,7 @@ def verdict_upgrade(f: UpgradeFacts) -> tuple[bool, list[tuple[str, str]], list[
     c.check(f.registry_target_after == "absent", "the target registry key is gone",
             f"the target registry key is {f.registry_target_after}")
     check_neighbours(c, f.neighbours_after_uninstall, "after the uninstall")
-
-    kept = f.target_file_after_upgrade and f.nested_file_after_upgrade
-    observations = [
-        "the major upgrade KEPT the application's files in the target folder" if kept else
-        "the major upgrade DELETED the application's files in the target folder "
-        f"(runtime.log {'kept' if f.target_file_after_upgrade else 'gone'}, "
-        f"deep\\nested.txt {'kept' if f.nested_file_after_upgrade else 'gone'})",
-        f"after the major upgrade the target registry value is {f.registry_value_after_upgrade}",
-    ]
-    return c.ok, c.results, observations
+    return c.ok, c.results, []
 
 
 @dataclass
@@ -522,16 +526,13 @@ def selftest() -> int:
     logger.info("=== selftest: the upgrade verdict ===")
     up = UpgradeFacts(remembered_path=path, intended_path=path, remembered_after_upgrade=path)
     accepts("a clean upgrade run passes", verdict_upgrade(up)[0])
-    lost = replace(up, target_file_after_upgrade=False, nested_file_after_upgrade=False,
-                   registry_value_after_upgrade="missing-key")
-    ok, _, obs = verdict_upgrade(lost)
-    accepts("data lost DURING the upgrade is recorded, not failed (the runbook: record it)", ok)
-    if any("DELETED" in o for o in obs):
-        logger.success("PASS   and the observation says it was deleted")
-    else:
-        logger.error("FAIL   the observation does not say the data was deleted: {}", obs)
-        failures += 1
     for name, facts in {
+        # #76: what the first VM run observed, and what the fix must prevent.
+        "the upgrade deletes the application's files": replace(up, target_file_after_upgrade=False,
+                                                               nested_file_after_upgrade=False),
+        "the upgrade deletes only the nested file": replace(up, nested_file_after_upgrade=False),
+        "the upgrade deletes the application's registry key": replace(up, registry_value_after_upgrade="missing-key"),
+        "the upgrade deletes the application's registry value": replace(up, registry_value_after_upgrade="missing-value"),
         "the old version fails to install": replace(up, old_install_rc=1603),
         "the old version is not what got installed": replace(up, old_version_installed=""),
         "the upgrade fails": replace(up, new_install_rc=1603),
@@ -754,8 +755,8 @@ def probe_core(entry: dict) -> tuple[bool, Facts]:
 
 
 def probe_upgrade(entry: dict) -> tuple[bool, UpgradeFacts]:
-    """Install the old version, seed, upgrade to the new one, record what the upgrade did to
-    the application's data; then re-seed and uninstall the new version."""
+    """Install the old version, seed, upgrade to the new one - the application's data must
+    survive it (#76) - then re-seed and uninstall the new version, which must remove it."""
     old, new = HERE / entry["msi_old"], HERE / entry["msi_new"]
     f = UpgradeFacts(intended_path=entry["target_dir"], expected_old=entry["version_old"],
                      expected_new=entry["version_new"])
@@ -771,7 +772,7 @@ def probe_upgrade(entry: dict) -> tuple[bool, UpgradeFacts]:
     logger.info("seeding runtime data and sentinels")
     report_seeded(seed_runtime(entry) + seed_neighbours(entry))
 
-    logger.info("MAJOR UPGRADE to {} - recording what it does to the application's data", entry["version_new"])
+    logger.info("MAJOR UPGRADE to {} - the application's data must survive it (#76)", entry["version_new"])
     f.new_install_rc = msiexec("/i", new, f"upgrade-{entry['key']}-{entry['version_new']}.log")
     f.new_version_installed = read_text(entry["version_file"])
     f.remembered_after_upgrade = remembered(entry)

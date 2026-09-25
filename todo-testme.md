@@ -440,6 +440,50 @@ around it.
 **Ticket:** [#3](https://github.com/gersonkurz/msis/issues/3). Core executed and passed
 2026-09-19; **four cases remain** before #3 closes. Shares a fixture with T5, which is done.
 
+### Executed on 2026-09-25, second run — the #76 fix: PASS
+
+The VM was rolled back to its snapshot and the harness re-run. All six packages were rebuilt
+with the #76 fix: both cleanups carry `Condition="NOT UPGRADINGPRODUCTCODE"`, checked in both
+upgrade MSIs' `Wix4RemoveFolderEx` and `Wix4RemoveRegistryKeyEx` tables, and no standard
+`RemoveRegistry` row is left. The overall verdict was PASS.
+
+- **Major upgrade 1.0.0 → 1.0.1, now judged:**
+  - `PASS the application's files survived the upgrade` and `PASS the application's registry
+    value survived the upgrade unchanged`;
+  - every sentinel intact after the upgrade;
+  - after the uninstall of 1.0.1: `the target folder is gone`, `the nested file with it`,
+    `the target registry key is gone`, and every sentinel intact.
+- **The four core passes** (top level, feature, minimal, silent x86) passed as in the first run.
+- **The empty and never-existed folder cases:** unchanged. The install creates the target folder;
+  after the uninstall it is gone and the key is absent. The uninstall succeeds, and every
+  sentinel is intact.
+
+This closes the four cases above, and with them #3 and #76.
+
+### Executed on 2026-09-25 — all seven scenarios; the major upgrade found #76
+
+On the snapshotted VM, with the harness at 9fdcfa7 (packages built with msis at 457f8a6), the
+overall verdict was PASS. Every PASS/FAIL check passed:
+- the four core passes: top level, in a feature, the minimal template, and the silent x86
+  template (its registry checked in the 32-bit view);
+- the major upgrade 1.0.0 → 1.0.1;
+- the folder already empty;
+- the folder never created.
+
+The recorded lines:
+
+| Scenario | Observed |
+|---|---|
+| major upgrade 1.0.0 → 1.0.1 (regular x64 template) | **the upgrade DELETED the application's files in the target folder** (runtime.log and deep\nested.txt gone), and the target registry key (missing-key). The neighbours were untouched |
+| folder already empty | the install created the target folder; after the uninstall it is gone, and the target registry key is absent |
+| folder never existed | the install created the target folder; with it removed before the uninstall, the uninstall succeeds, the folder is still gone, and the key is absent |
+
+The upgrade result is a data-loss bug, filed as
+[#76](https://github.com/gersonkurz/msis/issues/76). The cleanup was not gated on
+`NOT UPGRADINGPRODUCTCODE`, so the old version's removal during `RemoveExistingProducts` ran
+it. The fix gates both cleanups (decisions D21), and the harness now JUDGES the upgrade: the
+data must survive it. **Re-run the harness on the VM with the fix** before #3 and #76 close.
+
 ### Executed on 2026-09-19 — the core
 
 Package: the cleanup elements inside a `<feature>`. On the build machine, both

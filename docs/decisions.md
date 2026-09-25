@@ -760,3 +760,40 @@ installer's own hash.
 
 **What would reopen this:** a WiX that lets a package author its PackageCode and dates; or a
 requirement for byte-identical installers, which is the post-processing path #66 describes.
+
+## D21 — `<remove-on-uninstall>` runs on a real uninstall only, not when an upgrade removes the previous version
+
+**Settled in:** [#76](https://github.com/gersonkurz/msis/issues/76), 2026-09-25, product owner's
+decision (fix, not document), on the T7 VM probe's evidence.
+**Implemented by:** `internal/generator/context.go` — `const onRealUninstall = "NOT UPGRADINGPRODUCTCODE"`
+
+The VM probe (`testscripts/t5t7`, todo-testme.md T7) installed 1.0.0 of a package with
+`<remove-on-uninstall folder=... registry=...>`, seeded the application's data, and installed
+1.0.1 over it. **The upgrade deleted the data**: the folder's files and the registry key. The
+templates' `<MajorUpgrade>` removes the previous version completely before installing the new
+one (`RemoveExistingProducts` after `InstallValidate`). The cleanups fired on any removal of
+their component:
+- `util:RemoveFolderEx On='uninstall'`;
+- the standard `RemoveRegistryKey Action='removeOnUninstall'`.
+
+So every update of every such product lost the data it names.
+
+Both cleanups now carry `Condition="NOT UPGRADINGPRODUCTCODE"`, the guard msis's own destructive
+hook actions already use:
+- the folder through `util:RemoveFolderEx`'s `Condition`;
+- the registry key through `util:RemoveRegistryKey On="uninstall"`, which, unlike the standard
+  element, takes a condition.
+
+Both exist in WiX 6 and 7. WiX's util custom actions evaluate the condition with
+`MsiEvaluateCondition` in the running session. When an upgrade removes the old version,
+`UPGRADINGPRODUCTCODE` is set in that session, so the cleanup stays off. A real uninstall runs it
+as before. The components keep their keypaths, so their GUIDs do not change.
+
+**The limit:** Windows Installer removes the old version with the old version's cached package.
+So an upgrade from a version built by an earlier msis still runs that version's unconditional
+cleanup. The protection holds for upgrades from the first fixed version on; the tutorial says
+so. The harness's upgrade scenario judges the data's survival, and must pass on the VM.
+
+**What would reopen this:** a need to clear the data on updates too, which would be an opt-in
+per element, never the default; or a WiX change to how the util custom actions evaluate their
+condition.

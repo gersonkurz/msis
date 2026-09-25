@@ -2175,8 +2175,10 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 			// RemoveRegistryKey needs to be in a Component
 			compID := registryCompID
 			sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
-			sb.WriteString(fmt.Sprintf("            <RemoveRegistryKey Id='%s' Root='%s' Key='%s' Action='removeOnUninstall'/>\n",
-				item.ID, registryRoot, registryKey))
+			// util:RemoveRegistryKey rather than the standard element: the standard one fires
+			// whenever its component is removed, a major upgrade included (#76).
+			sb.WriteString(fmt.Sprintf("            <util:RemoveRegistryKey Id='%s' Root='%s' Key='%s' On='uninstall' Condition='%s'/>\n",
+				item.ID, registryRoot, registryKey, onRealUninstall))
 			// Need a keypath - use a registry value
 			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKCU' Key='Software\\%s\\%s' Name='RemoveOnUninstall_%s' Type='integer' Value='1' KeyPath='yes'/>\n",
 				c.Variables["MANUFACTURER"], c.Variables["PRODUCT_NAME"], item.ID))
@@ -2211,7 +2213,7 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 
 			// Component with RemoveFolderEx; the registry value (resolved folder path) is the keypath.
 			sb.WriteString(fmt.Sprintf("        <Component Id='%s' Guid='*' Directory='INSTALLDIR'>\n", compID))
-			sb.WriteString(fmt.Sprintf("            <util:RemoveFolderEx On='uninstall' Property='%s'/>\n", propID))
+			sb.WriteString(fmt.Sprintf("            <util:RemoveFolderEx On='uninstall' Property='%s' Condition='%s'/>\n", propID, onRealUninstall))
 			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='HKLM' Key='%s' Name='%s' Type='string' Value='%s' KeyPath='yes'/>\n",
 				regKey, regName, item.Folder))
 			sb.WriteString("        </Component>\n")
@@ -2225,6 +2227,15 @@ func (c *Context) generateRemoveOnUninstallXML() string {
 
 	return sb.String()
 }
+
+// onRealUninstall keeps <remove-on-uninstall> to a real uninstall (#76, decisions D21). A major
+// upgrade removes the previous version completely before installing the new one
+// (RemoveExistingProducts after InstallValidate), which removes the cleanup components - and
+// both cleanups fired on any removal of their component, so every update deleted the data they
+// name: observed on a VM, 2026-09-25. In the previous version's session UPGRADINGPRODUCTCODE is
+// set, and WiX's util custom actions evaluate the Condition there (MsiEvaluateCondition), so
+// the cleanup stays off. msis's own destructive hook actions carry the same guard.
+const onRealUninstall = "NOT UPGRADINGPRODUCTCODE"
 
 // parseRegistryPath splits a registry path like "HKLM\Software\MyApp" into root and key.
 func parseRegistryPath(path string) (root, key string) {

@@ -871,6 +871,15 @@ package builds and the key is simply never removed — so check the spelling of 
 segment. The folder path is resolved during installation and recorded, so uninstall removes the
 directory the product actually used even if `INSTALLDIR` was customized.
 
+**It runs on a real uninstall only, not on an update.** A major upgrade removes the previous
+version before it installs the new one. So without a guard, every update would delete what
+`<remove-on-uninstall>` names, and on a VM it did, until 3.0.6 (#76). msis now emits both
+cleanups with `Condition="NOT UPGRADINGPRODUCTCODE"`, so they stay off while an upgrade removes
+the old version. One caveat: Windows Installer removes the old version with **its own** cached
+package, so the protection holds for upgrades *from* a version built with msis 3.0.6 or later.
+Updating a product whose installed version was built with an earlier msis still runs that
+version's cleanup, once.
+
 This is not the same as the installer-hook cleanup (`REMOVE_FOLDERS_ON_UNINSTALL`), which is a
 blanket removal of the whole `INSTALLDIR`/`APPDATADIR` trees performed by the native hook DLL.
 `<remove-on-uninstall>` is the targeted version: it names exactly what goes, it needs no hook

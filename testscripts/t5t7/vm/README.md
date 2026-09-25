@@ -68,9 +68,9 @@ packages are rebuilt with the current msis. The rest are the four cases that kep
 1. Install 1.0.0 and seed.
 2. Install 1.0.1 over it, a major upgrade. Check that 1.0.1 is what is installed, that the
    remembered path still holds, and that every sentinel is untouched.
-3. Record whether the upgrade **kept or deleted** the application's files and registry value.
-   The runbook asks for what happens, not for a particular answer, so this is an `OBSERVED`
-   line, not a PASS/FAIL.
+3. The application's files and registry value **must survive the upgrade**. This is a
+   PASS/FAIL. The first run (2026-09-25) recorded that the upgrade deleted them, which is #76;
+   since the fix, an upgrade that deletes them fails the probe.
 4. Re-seed, then uninstall 1.0.1: the target must go, and the sentinels must stay.
 
 **Empty and never:**
