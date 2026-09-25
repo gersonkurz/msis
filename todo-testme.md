@@ -714,3 +714,32 @@ Write-Output ("install dir present afterwards: {0}" -f (Test-Path 'C:\Program Fi
 The expected output is the table above, with every msiexec exit 0 and the key absent after each
 uninstall.
 
+
+## T9 — a `<service>` in another feature than its executable (issue #77): DONE 2026-09-25
+
+Probe: `testscripts/t77` (build side `uv run t77_service_probe.py`, VM side
+`vm/t77_vm_probe.py`, see its README). Package: feature Complete installs `svcprobe.exe`,
+optional feature Service registers a service (registered, never started). After every step the
+probe checks each copy of the executable (present exactly while its feature is installed,
+contents unchanged) and the service registration (present exactly while Service is installed,
+ImagePath naming its copy).
+
+### Executed on 2026-09-25, first run — msis 19e7dae, the #77 layout: FAIL
+
+Service named Complete's file; msis installed it twice, in two components.
+
+| Scenario | Result |
+|---|---|
+| install both → remove Service | FAIL: the exe missing, Complete still installed |
+| install both → remove Complete | FAIL: the exe missing, the service still registered |
+| Complete → add Service → remove Service | FAIL: the exe missing |
+| Service only → uninstall | PASS |
+
+Every msiexec returned 0. Recorded on #77.
+
+### Executed on 2026-09-25, second run — the #77 fix (D22): PASS
+
+msis now refuses that layout at build time (the build side checks it). The VM ran the layout the
+error proposes: the Service feature installs its own copy under `service\` and registers that.
+All four scenarios PASS: removing either feature leaves the other's copy intact, and the service
+is registered exactly while Service is installed. Every msiexec returned 0.

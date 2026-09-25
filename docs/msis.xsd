@@ -64,7 +64,17 @@
   </xs:complexType>
 
   <xs:complexType name="ServiceType">
-    <xs:attribute name="file-name" type="xs:string" use="required"/>
+    <xs:attribute name="file-name" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>
+          The service executable: a bare file name, or an installed location such as
+          [INSTALLDIR]service\app.exe. It must be installed by the SAME feature as the service,
+          or at a target of its own. A service naming a file another feature installs at the
+          same target is refused, because one file can have only one owning component and
+          removing either feature would delete it (#77).
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
     <xs:attribute name="service-name" type="xs:string" use="required"/>
     <xs:attribute name="service-display-name" type="xs:string" use="optional"/>
     <xs:attribute name="start" type="xs:string" use="optional"/>

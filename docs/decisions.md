@@ -797,3 +797,39 @@ so. The harness's upgrade scenario judges the data's survival, and must pass on 
 **What would reopen this:** a need to clear the data on updates too, which would be an opt-in
 per element, never the default; or a WiX change to how the util custom actions evaluate their
 condition.
+
+## D22 — A `<service>` may not share its executable with another feature: msis refuses the build and names two layouts that work
+
+**Settled in:** [#77](https://github.com/gersonkurz/msis/issues/77), 2026-09-25, product owner's
+decision (refuse, rather than restore msis-2.x's conditions), on the #77 VM probe's evidence.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) checkServiceFileOwnership() error`, `func (c *Context) serviceFileConflict(`
+
+Windows Installer registers a service from the key file of the component carrying its
+`ServiceInstall`, so that component must own the executable, and one file can have only one
+owning component. A `<service>` in feature B naming a file that feature A installs therefore
+cannot have both properties people want from it: the executable installed with A, and the
+service registered only with B.
+
+msis 3.x (801875d) answered by installing the file a second time, in a component of B at the
+same target. The VM probe (`testscripts/t77`) showed what that does. Removing B deleted the
+executable A still needed. Removing A left a registered service pointing at a deleted binary.
+msiexec reported success both times. msis-2.x used the same two components, guarded by
+mutually exclusive `ADDLOCAL >< "feature"` component conditions. A condition that turns false
+does not remove a component already installed, unless the component is transitive and is being
+reinstalled. So by Windows Installer's documented rules, "install A, then add B, then remove B"
+leaves both components installed and loses the file as above. That is reasoned from those
+rules; the 2.x layout was not probed.
+
+So msis refuses the layout wherever a service's executable shares its install target with a
+component of a different feature, whichever order the elements are written in. The error
+proposes the two layouts that are sound:
+- the `<service>` in A, registered whenever A is installed;
+- B installing its own copy at a target of its own (`[INSTALLDIR]service\`) and naming that
+  copy. The probe ran this second layout through every feature change on the VM, and it
+  passed (2026-09-25, todo-testme.md T9).
+
+A bare `file-name` whose file is installed elsewhere (say `[INSTALLDIR]bin\`) still gets its own
+copy at the INSTALLDIR root. That copy shares no target, so it is left alone.
+
+**What would reopen this:** a mechanism that lets one component's service registration follow a
+feature other than the component's own. Windows Installer has none today.

@@ -49,6 +49,9 @@ type Context struct {
 	// Index path is built using feature position in parent (e.g., "0/1/0")
 	featureIDs map[string]string
 
+	// Feature names as written, by feature ID - for error messages
+	featureNames map[string]string
+
 	// Feature component references (keyed by unique feature ID, not name)
 	FeatureComponents map[string][]string // feature ID -> component IDs
 
@@ -121,6 +124,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		DirectoryTrees:         make(map[string]*Directory),
 		ExcludedFolders:        make(map[string]bool),
 		featureIDs:             make(map[string]string),
+		featureNames:           make(map[string]string),
 		FeatureComponents:      make(map[string][]string),
 		targetFileSeen:         make(map[string]int),
 		fileSourcePaths:        make(map[string]string),
@@ -554,6 +558,10 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		c.addPathEnvironment(firstFeatureID)
 	}
 
+	if err := c.checkServiceFileOwnership(); err != nil {
+		return nil, err
+	}
+
 	// All file components exist by now, so a source used in more than one place can be
 	// given per-target GUIDs before anything is rendered (issue #21).
 	c.resolveDuplicateSourceGUIDs()
@@ -709,6 +717,7 @@ func (c *Context) assignFeatureIDs(feature *ir.Feature, parentIndexPath string, 
 	// Generate and store unique ID for this feature
 	featureID := c.NextFeatureID()
 	c.featureIDs[indexPath] = featureID
+	c.featureNames[featureID] = feature.Name
 
 	// Process sub-features
 	for i := range feature.SubFeatures {
@@ -1249,29 +1258,21 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 
 	fileKey := strings.ToLower(svc.FileName)
 
-	// If the service executable is already installed by a component in the
-	// SAME feature, attach the ServiceInstall to that existing component.
-	// This avoids duplicating the file when the service doesn't need
-	// independent feature control.
-	if existingComp, ok := c.fileComponents[fileKey]; ok && featureID != "" {
-		alreadyInFeature := false
-		for _, id := range c.FeatureComponents[featureID] {
-			if id == existingComp.ID {
-				alreadyInFeature = true
-				break
-			}
+	// If the service executable is already installed by a component in the SAME feature
+	// (or the package declares no features, so everything is in WiX's default one),
+	// attach the ServiceInstall to that existing component.
+	if existingComp, ok := c.fileComponents[fileKey]; ok && (featureID == "" || slices.Contains(c.FeatureComponents[featureID], existingComp.ID)) {
+		if existingComp.Service != nil {
+			return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
 		}
-		if alreadyInFeature {
-			existingComp.Service = serviceDef
-			return nil
-		}
+		existingComp.Service = serviceDef
+		return nil
 	}
 
-	// The file is in a different feature (sub-feature) or doesn't exist yet.
-	// Create a new component with its own File + ServiceInstall so the
-	// sub-feature can independently control whether the service is installed.
-	// WiX handles reference counting when multiple components install the
-	// same file.
+	// The file is in a different feature, or not declared at all: the service gets a
+	// component with its own copy at the INSTALLDIR root. That is sound only where the
+	// copy's target is not also another feature's file - checkServiceFileOwnership
+	// refuses the package if it is (#77).
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
 	fileID := c.NextFileID()
@@ -1374,51 +1375,107 @@ func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, re
 		return fmt.Errorf("service %q: file-name %q does not match any installed file (declare it with <files> before the <service> element)", svc.ServiceName, svc.FileName)
 	}
 
-	// Same feature: reuse the existing component instead of duplicating the file.
-	if featureID != "" {
-		for _, id := range c.FeatureComponents[featureID] {
-			if id == existingComp.ID {
-				if existingComp.Service != nil {
-					return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
+	// Another feature's file: the ServiceInstall has to live in the component owning the
+	// executable, and that component belongs to the other feature (#77).
+	if featureID != "" && !slices.Contains(c.FeatureComponents[featureID], existingComp.ID) {
+		return c.serviceFileConflict(svc.ServiceName, fileName, existingFile.SourcePath,
+			c.featuresOf(existingComp.ID), []string{featureID})
+	}
+	if existingComp.Service != nil {
+		return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
+	}
+	existingComp.Service = serviceDef
+	return nil
+}
+
+// checkServiceFileOwnership refuses a service whose executable shares its install target
+// with a component of another feature (#77, D22).
+//
+// A service is registered from the key file of the component carrying its ServiceInstall,
+// so that component must own the executable - and one file can have only one owning
+// component. Two components installing one target in different features install it twice,
+// and removing either feature deletes the file the other still needs: on the test VM,
+// removing an optional Service feature deleted the application, and removing the
+// application left a registered service pointing at a deleted binary, each with msiexec
+// reporting success. It runs once every item is processed, because a <service> can come
+// before the <files> that installs the same target.
+func (c *Context) checkServiceFileOwnership() error {
+	for _, root := range sortedKeysOf(c.DirectoryTrees) {
+		if err := c.checkServiceFilesIn(c.DirectoryTrees[root]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Context) checkServiceFilesIn(dir *Directory) error {
+	for _, svc := range dir.Components {
+		if svc.Service == nil {
+			continue
+		}
+		for _, other := range dir.Components {
+			if other == svc {
+				continue
+			}
+			for _, exe := range svc.Files {
+				for _, f := range other.Files {
+					if !strings.EqualFold(f.Name, exe.Name) {
+						continue
+					}
+					// The same feature(s) install and remove both together; nothing is lost.
+					svcFeatures, otherFeatures := c.featuresOf(svc.ID), c.featuresOf(other.ID)
+					if !slices.Equal(svcFeatures, otherFeatures) {
+						return c.serviceFileConflict(svc.Service.Name, exe.Name, f.SourcePath, otherFeatures, svcFeatures)
+					}
 				}
-				existingComp.Service = serviceDef
-				return nil
 			}
 		}
 	}
-
-	// Different feature: create a sibling component in the same directory so
-	// the service feature keeps independent install control.
-	targetKey := dir.ID + ":" + strings.ToLower(fileName)
-	c.targetFileSeen[targetKey]++
-	occurrence := c.targetFileSeen[targetKey]
-	var shortName string
-	if occurrence > 1 {
-		shortName = generateShortName(fileName, occurrence)
+	for _, name := range sortedKeysOf(dir.Children) {
+		if err := c.checkServiceFilesIn(dir.Children[name]); err != nil {
+			return err
+		}
 	}
-
-	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
-	comp := &Component{
-		ID:   compID,
-		GUID: GenerateGUID(compID),
-		Files: []*File{
-			{
-				ID:         c.NextFileID(),
-				Name:       fileName,
-				ShortName:  shortName,
-				SourcePath: existingFile.SourcePath,
-				KeyPath:    true,
-			},
-		},
-		Service: serviceDef,
-	}
-	c.addComponentToDirectory(dir, comp, featureID)
-
-	if featureID != "" {
-		c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
-	}
-
 	return nil
+}
+
+// featuresOf lists the features referencing a component, in feature-ID order.
+func (c *Context) featuresOf(compID string) []string {
+	var ids []string
+	for _, fid := range sortedKeysOf(c.FeatureComponents) {
+		if slices.Contains(c.FeatureComponents[fid], compID) {
+			ids = append(ids, fid)
+		}
+	}
+	return ids
+}
+
+// serviceFileConflict is #77's error, and says how the script can be written instead.
+//
+// The suggested elements are complete .msis XML, pasteable as they stand: the values are
+// XML-escaped (a source under R&D\ must read R&amp;D\), and the copy's target names the
+// installed file, so a <files> that renamed the executable keeps that name.
+func (c *Context) serviceFileConflict(service, file, source string, fileFeatures, serviceFeatures []string) error {
+	names := func(ids []string) string {
+		quoted := make([]string, len(ids))
+		for i, id := range ids {
+			name, ok := c.featureNames[id]
+			if !ok {
+				name = "items outside any feature"
+			}
+			quoted[i] = fmt.Sprintf("%q", name)
+		}
+		return strings.Join(quoted, " and ")
+	}
+	fileIn, serviceIn := names(fileFeatures), names(serviceFeatures)
+	return fmt.Errorf("service %q: %s is installed by feature %s, but the <service> is in feature %s. "+
+		"A file can belong to only one component, so the executable would be installed twice, and removing either "+
+		"feature would delete the file the other still needs (#77). Either move the <service> into feature %s, "+
+		"which registers the service whenever that feature is installed, or give feature %s a copy of its own at "+
+		"a target of its own and name that copy in file-name, keeping the <service>'s other attributes:\n"+
+		"    <files source=\"%s\" target=\"[INSTALLDIR]service\\%s\"/>\n"+
+		"    <service file-name=\"[INSTALLDIR]service\\%s\"/>",
+		service, file, fileIn, serviceIn, fileIn, serviceIn, escapeXMLAttr(source), escapeXMLAttr(file), escapeXMLAttr(file))
 }
 
 func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {

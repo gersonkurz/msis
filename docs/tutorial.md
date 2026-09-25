@@ -505,6 +505,44 @@ The installer automatically:
 2. Installs/updates the service files
 3. Starts the service after install (if `start="auto"`)
 
+### An optional service
+
+Put the `<service>` in the **same feature** as the `<files>` that installs its executable, as above.
+msis refuses to build a `<service>` in one feature that names an executable another feature
+installs:
+
+```xml
+<!-- refused: two features would own one file -->
+<feature name="Complete">
+  <files source="bin\MyApp.exe" target="[INSTALLDIR]"/>
+</feature>
+<feature name="Service" enabled="false">
+  <service file-name="MyApp.exe" service-name="MyApp"/>
+</feature>
+```
+
+A service is registered from a file owned by the service's own component, and one file can
+have only one owning component. So removing either feature would delete the executable the
+other still needs. On a test machine, msiexec reported success both times (#77).
+
+To keep the service opt-in, have the service feature install **its own copy** at a target of
+its own and name that copy:
+
+```xml
+<feature name="Complete">
+  <files source="bin\MyApp.exe" target="[INSTALLDIR]"/>
+</feature>
+<feature name="Service" enabled="false">
+  <files source="bin\MyApp.exe" target="[INSTALLDIR]service\"/>
+  <service file-name="[INSTALLDIR]service\MyApp.exe" service-name="MyApp"
+           service-display-name="MyApp"/>
+</feature>
+```
+
+Each feature now owns its own file, so either can be added or removed on its own. If the
+executable reads files next to itself, such as a configuration, install those under `service\`
+too.
+
 ---
 
 ## Tutorial 7: Custom Actions (Running Scripts)

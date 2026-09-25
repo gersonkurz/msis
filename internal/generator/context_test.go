@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/parser"
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
@@ -360,30 +361,120 @@ func TestProcessServicePathAnchorsToExistingComponent(t *testing.T) {
 	vars := variables.New()
 	ctx := NewContext(setup, vars, ".")
 
-	output, err := ctx.Generate()
-	if err != nil {
-		t.Fatalf("Generate failed: %v", err)
+	// Another feature's file: installing it a second time for the service is #77.
+	_, err = ctx.Generate()
+	if err == nil || !strings.Contains(err.Error(), "#77") {
+		t.Fatalf("expected the #77 error for a service anchored on another feature's file, got %v", err)
+	}
+}
+
+// #77: the layout the error proposes must build when pasted as it stands - including for an
+// executable the <files> renamed, and one whose source path needs XML escaping.
+func TestServiceFileConflictSuggestionBuilds(t *testing.T) {
+	srcDir := filepath.Join(t.TempDir(), "R&D")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(srcDir, "original.exe")
+	if err := os.WriteFile(exe, []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	complete := ir.Feature{Name: "Complete", Enabled: true, Items: []ir.Item{
+		ir.Files{Source: exe, Target: "[INSTALLDIR]renamed.exe"}}}
+	refused := &ir.Setup{Features: []ir.Feature{complete, {Name: "Service", Enabled: true, Items: []ir.Item{
+		ir.Service{FileName: "renamed.exe", ServiceName: "MySvc", ServiceDisplayName: "My Service"}}}}}
+	_, err := NewContext(refused, variables.New(), ".").Generate()
+	if err == nil {
+		t.Fatal("expected the #77 error")
 	}
 
-	// The ServiceInstall must live inside the 'server' directory.
-	serverDirStart := strings.Index(output.DirectoryXML, "Name='server'")
-	if serverDirStart < 0 {
-		t.Fatalf("expected a 'server' directory, got:\n%s", output.DirectoryXML)
+	// The suggestion is the indented lines after the explanation.
+	var snippet []string
+	for _, line := range strings.Split(err.Error(), "\n")[1:] {
+		snippet = append(snippet, strings.TrimSpace(line))
 	}
-	svcPos := strings.Index(output.DirectoryXML, "ServiceInstall")
-	if svcPos < 0 {
-		t.Fatalf("expected 'ServiceInstall' in output, got:\n%s", output.DirectoryXML)
+	suggested := strings.Replace(strings.Join(snippet, "\n"), "<service ",
+		`<service service-name="MySvc" service-display-name="My Service" `, 1)
+	script := `<setup><feature name="Complete"><files source="` + strings.ReplaceAll(exe, "&", "&amp;") +
+		`" target="[INSTALLDIR]renamed.exe"/></feature><feature name="Service">` + suggested + `</feature></setup>`
+	setup, perr := parser.ParseBytes([]byte(script))
+	if perr != nil {
+		t.Fatalf("the suggested elements do not parse:\n%s\n%v", suggested, perr)
 	}
-	if svcPos < serverDirStart {
-		t.Errorf("ServiceInstall appears before the server directory, so it was emitted at the INSTALLDIR root:\n%s", output.DirectoryXML)
+	output, gerr := NewContext(setup, variables.New(), ".").Generate()
+	if gerr != nil {
+		t.Fatalf("the suggested layout does not generate:\n%s\n%v", suggested, gerr)
 	}
-	// Cross-feature: the service component duplicates the file in server dir.
-	if strings.Count(output.DirectoryXML, "Name='myservice.exe'") != 2 {
-		t.Errorf("expected the service component to install the file next to the original, got:\n%s", output.DirectoryXML)
+	if got := strings.Count(output.DirectoryXML, "Name='renamed.exe'"); got != 2 {
+		t.Errorf("%d renamed.exe entries, want the application's and the service's copy:\n%s", got, output.DirectoryXML)
 	}
-	// A path must never be emitted as a File/@Name (invalid WiX).
-	if strings.Contains(output.DirectoryXML, "Name='server\\myservice.exe'") {
-		t.Errorf("file-name path leaked verbatim into File/@Name:\n%s", output.DirectoryXML)
+	if svc := strings.Index(output.DirectoryXML, "<ServiceInstall "); svc < strings.Index(output.DirectoryXML, "Name='service'") {
+		t.Errorf("the ServiceInstall is not in the service's own directory:\n%s", output.DirectoryXML)
+	}
+}
+
+// #77: a service's executable must not share its install target with another feature's
+// component, whichever way the script reaches that; a copy at a target of its own is fine.
+func TestServiceFileOwnership(t *testing.T) {
+	tmpDir := t.TempDir()
+	exe := filepath.Join(tmpDir, "MyService.exe")
+	if err := os.WriteFile(exe, []byte("exe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := func(target string) ir.Item { return ir.Files{Source: exe, Target: target} }
+	service := func(fileName string) ir.Item {
+		return ir.Service{FileName: fileName, ServiceName: "MySvc", ServiceDisplayName: "My Service"}
+	}
+	feature := func(name string, items ...ir.Item) ir.Feature {
+		return ir.Feature{Name: name, Enabled: true, Items: items}
+	}
+
+	cases := []struct {
+		name      string
+		setup     ir.Setup
+		wantErr   bool
+		wantFiles int // Name='MyService.exe' entries when it builds
+	}{
+		{"bare file-name, another feature's file at the same target (chimera)", ir.Setup{Features: []ir.Feature{
+			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("MyService.exe"))}}, true, 0},
+		{"the <service> written before the <files> installing the same target", ir.Setup{Features: []ir.Feature{
+			feature("Service", service("MyService.exe")), feature("Complete", files("[INSTALLDIR]"))}}, true, 0},
+		{"anchored file-name on another feature's file", ir.Setup{Features: []ir.Feature{
+			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("[INSTALLDIR]MyService.exe"))}}, true, 0},
+		{"bare file-name, the other feature's file elsewhere: the copy has a target of its own", ir.Setup{Features: []ir.Feature{
+			feature("Complete", files("[INSTALLDIR]bin\\")), feature("Service", service("MyService.exe"))}}, false, 2},
+		{"the remedy the error proposes: the service feature's own copy", ir.Setup{Features: []ir.Feature{
+			feature("Complete", files("[INSTALLDIR]")),
+			feature("Service", files("[INSTALLDIR]service\\"), service("[INSTALLDIR]service\\MyService.exe"))}}, false, 2},
+		{"the same feature: the service attaches to the file's component", ir.Setup{Features: []ir.Feature{
+			feature("Complete", files("[INSTALLDIR]"), service("MyService.exe"))}}, false, 1},
+		{"no features at all: WiX's default feature holds both, so the service attaches", ir.Setup{
+			Items: []ir.Item{files("[INSTALLDIR]"), service("MyService.exe")}}, false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output, err := NewContext(&tc.setup, variables.New(), ".").Generate()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected the #77 error, got a build:\n%s", output.DirectoryXML)
+				}
+				for _, want := range []string{"#77", `"Complete"`, `"Service"`, `file-name="[INSTALLDIR]service\MyService.exe"`} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error lacks %q:\n%v", want, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Generate failed: %v", err)
+			}
+			if got := strings.Count(output.DirectoryXML, "Name='MyService.exe'"); got != tc.wantFiles {
+				t.Errorf("%d MyService.exe entries, want %d:\n%s", got, tc.wantFiles, output.DirectoryXML)
+			}
+			if got := strings.Count(output.DirectoryXML, "<ServiceInstall "); got != 1 {
+				t.Errorf("%d ServiceInstall elements, want 1:\n%s", got, output.DirectoryXML)
+			}
+		})
 	}
 }
 

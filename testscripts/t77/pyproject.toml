@@ -1,0 +1,9 @@
+[project]
+name = "t77-service-probe"
+version = "1.0.0"
+description = "VM probe for #77 - does changing features lose the service executable"
+requires-python = ">=3.14"
+dependencies = ["loguru>=0.7.3"]
+
+[tool.uv]
+package = false
