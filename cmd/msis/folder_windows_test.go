@@ -3,11 +3,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
@@ -140,5 +142,24 @@ func TestWixStreamsAreAttributedToTheirPackage(t *testing.T) {
 	}
 	if streams == 0 {
 		t.Fatal("the fixture's package has no WiX streams to attribute")
+	}
+}
+
+// #74 with the real wix: the component count the build prints is the one count of the document
+// it wrote - the product included - not the number of top-level entries.
+func TestTheBuildPrintsTheDocumentsOwnComponentCount(t *testing.T) {
+	dir, script := folderFixture(t, "")
+	out := capture(t, func() error { buildWithSBOM(t, script, &cliArgs{}); return nil })
+	_, data := readDoc(t, filepath.Join(dir, "folder.msi"))
+	want, err := sbom.CountComponents(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, _ := readDoc(t, filepath.Join(dir, "folder.msi"))
+	if want <= len(doc.Components) {
+		t.Fatalf("the fixture does not tell the counts apart: %d total, %d top-level", want, len(doc.Components))
+	}
+	if !strings.Contains(out, fmt.Sprintf("(%d components, enriched", want)) {
+		t.Errorf("the build does not print the document's count %d:\n%s", want, out)
 	}
 }

@@ -36,7 +36,7 @@ func runSBOM(path string) error {
 
 	fmt.Printf("  %s %s\n", cli.Success("Wrote:"), cli.Filename(out))
 	fmt.Printf("  %s components, serial %s\n",
-		cli.Number(fmt.Sprintf("%d", len(doc.Components))), doc.SerialNumber)
+		cli.Number(fmt.Sprintf("%d", doc.ComponentCount())), doc.SerialNumber)
 	if preserved != "" {
 		// A document already referenced by a bundle's SBOM cannot simply be replaced: the
 		// link addresses its serial number, and reissuing the parent does not repair one a
@@ -115,7 +115,7 @@ func runBundleSBOM(path string) error {
 
 	fmt.Printf("  %s %s\n", cli.Success("Wrote:"), cli.Filename(out))
 	fmt.Printf("  %s components, serial %s\n",
-		cli.Number(fmt.Sprintf("%d", len(doc.Components))), doc.SerialNumber)
+		cli.Number(fmt.Sprintf("%d", doc.ComponentCount())), doc.SerialNumber)
 	if preserved != "" {
 		fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 	}

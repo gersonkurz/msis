@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/wix"
 )
 
@@ -260,7 +261,11 @@ func main() {
 	if err := os.WriteFile(*out, append(data, '\n'), 0644); err != nil {
 		fatal(err)
 	}
-	fmt.Printf("Wrote %s: %d components\n", *out, len(doc.Components))
+	total, err := sbom.CountComponents(data) // the one count everything prints (#74)
+	if err != nil {
+		fatal(err)
+	}
+	fmt.Printf("Wrote %s: %d components\n", *out, total)
 }
 
 func fatal(err error) {

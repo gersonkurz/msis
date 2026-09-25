@@ -261,7 +261,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 		}
 		fmt.Printf("  %s %s (%s components, enriched from the %s build)\n",
 			cli.Success("SBOM:"), cli.Filename(out),
-			cli.Number(fmt.Sprintf("%d", len(doc.Components))), rec.Path)
+			cli.Number(fmt.Sprintf("%d", doc.ComponentCount())), rec.Path)
 		if preserved != "" {
 			fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 		}

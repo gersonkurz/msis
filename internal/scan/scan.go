@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/sbom"
 	"github.com/gersonkurz/msis/internal/vex"
 )
 
@@ -122,6 +123,7 @@ type grypeReport struct {
 
 type docComponent struct {
 	BOMRef             string `json:"bom-ref"`
+	Name               string `json:"name"`
 	PURL               string `json:"purl"`
 	CPE                string `json:"cpe"`
 	ExternalReferences []struct {
@@ -153,10 +155,15 @@ func Analyze(doc, grype, vexDoc []byte) (Report, error) {
 		return Report{}, fmt.Errorf("reading grype's report: %w", err)
 	}
 
-	var r Report
+	// The total is sbom.CountComponents, the one count everything prints (#74); the walk below
+	// visits the same components - the subject under the same condition - for what is only here.
+	total, err := sbom.CountComponents(doc)
+	if err != nil {
+		return Report{}, fmt.Errorf("reading the scanned document: %w", err)
+	}
+	r := Report{Components: total}
 	var walk func(c docComponent)
 	walk = func(c docComponent) {
-		r.Components++
 		if c.PURL == "" && c.CPE == "" {
 			r.Unidentified++
 		}
@@ -169,7 +176,9 @@ func Analyze(doc, grype, vexDoc []byte) (Report, error) {
 			walk(n)
 		}
 	}
-	walk(d.Metadata.Component)
+	if s := d.Metadata.Component; s.BOMRef != "" || s.Name != "" {
+		walk(s)
+	}
 	for _, c := range d.Components {
 		walk(c)
 	}

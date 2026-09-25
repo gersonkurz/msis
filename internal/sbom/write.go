@@ -180,3 +180,47 @@ func CanonicalForDiff(data []byte) ([]byte, error) {
 	}
 	return append(out, '\n'), nil
 }
+
+// CountComponents is how many components a document describes: its subject (the product), every
+// component, and every component nested inside another - a supplied document's libraries (#36).
+// It is THE count: the build, /SBOM, /SCAN and the release tooling all print this one, so they
+// cannot disagree about the same document again (#74). It reads the JSON as written.
+func CountComponents(data []byte) (int, error) {
+	type node struct {
+		BOMRef     string `json:"bom-ref"`
+		Name       string `json:"name"`
+		Components []node `json:"components"`
+	}
+	var d struct {
+		Metadata struct {
+			Component *node `json:"component"`
+		} `json:"metadata"`
+		Components []node `json:"components"`
+	}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return 0, err
+	}
+	var count func([]node) int
+	count = func(ns []node) int {
+		n := len(ns)
+		for _, c := range ns {
+			n += count(c.Components)
+		}
+		return n
+	}
+	n := count(d.Components)
+	if s := d.Metadata.Component; s != nil && (s.BOMRef != "" || s.Name != "") {
+		n += 1 + count(s.Components)
+	}
+	return n, nil
+}
+
+// ComponentCount is CountComponents for a document not yet written; 0 if it cannot be rendered.
+func (d *Document) ComponentCount() int {
+	data, err := Marshal(d)
+	if err != nil {
+		return 0
+	}
+	n, _ := CountComponents(data)
+	return n
+}

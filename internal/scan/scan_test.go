@@ -161,3 +161,26 @@ func TestAReportDirectoryHoldsTheReport(t *testing.T) {
 		t.Errorf("a report was written beside the document too: %v", left)
 	}
 }
+
+// #74's review: the scan's own coverage walk visits exactly what sbom.CountComponents counts, so
+// "N of M components" cannot disagree with itself - an absent or empty subject is neither
+// counted nor walked, and a subject naming only itself is both, with its nested components.
+func TestTheCoverageWalkAgreesWithTheCount(t *testing.T) {
+	for _, tc := range []struct {
+		doc                      string
+		components, unidentified int
+	}{
+		{`{"components": [{"name": "a"}, {"name": "b", "purl": "pkg:generic/b@1"}]}`, 2, 1},
+		{`{"metadata": {"component": {}}, "components": [{"name": "a"}]}`, 1, 1},
+		{`{"metadata": {"component": {"name": "P", "components": [{"name": "c", "cpe": "cpe:/a:x:c:1"}, {"name": "d"}]}},
+		   "components": [{"name": "a", "purl": "pkg:generic/a@1"}]}`, 4, 2},
+	} {
+		r, err := Analyze([]byte(tc.doc), []byte(`{"matches": []}`), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Components != tc.components || r.Unidentified != tc.unidentified {
+			t.Errorf("%s: %d of %d unidentified, want %d of %d", tc.doc, r.Unidentified, r.Components, tc.unidentified, tc.components)
+		}
+	}
+}
