@@ -32,6 +32,12 @@ func TestCheckInstallerHookUsage(t *testing.T) {
 		if !has(w, danger) || has(w, foldersNoEffect) {
 			t.Errorf("expected danger warning only, got %v", w)
 		}
+		// The warning says what to do instead, not only that it is dangerous.
+		for _, remedy := range []string{`<remove-on-uninstall folder=`, "RETAIN_FILES_ON_UNINSTALL"} {
+			if !has(w, remedy) {
+				t.Errorf("the danger warning does not name %s: %v", remedy, w)
+			}
+		}
 	})
 
 	t.Run("folders without hooks: danger + no-effect", func(t *testing.T) {
@@ -103,6 +109,9 @@ func TestCheckInstallerHookUsageRegistry(t *testing.T) {
 		w := Dictionary{"REMOVE_REGISTRY_TREE": `HKLM\Software\X`, "USE_INSTALLER_HOOKS": "True"}.CheckInstallerHookUsage()
 		if !has(w, danger) || has(w, noEffect) {
 			t.Errorf("expected registry danger only, got %v", w)
+		}
+		if !has(w, `<remove-on-uninstall registry=`) {
+			t.Errorf("the danger warning does not name <remove-on-uninstall registry=>: %v", w)
 		}
 	})
 	t.Run("active without hooks: danger + no-effect", func(t *testing.T) {

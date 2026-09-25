@@ -86,8 +86,11 @@ DLL** that honors it (older DLLs ignore it); MSIS warns if it is set while folde
 
 MSIS emits warnings when generating the package:
 
-- `REMOVE_FOLDERS_ON_UNINSTALL=True` → always warns it recursively deletes `INSTALLDIR`/`APPDATADIR`.
-- `REMOVE_REGISTRY_TREE` active → warns it recursively deletes the listed registry trees.
+- `REMOVE_FOLDERS_ON_UNINSTALL=True` → always warns it recursively deletes `INSTALLDIR`/`APPDATADIR`,
+  and names what to do instead: `<remove-on-uninstall folder=...>` for each folder that should go
+  (just that tree, on a real uninstall only), or `RETAIN_FILES_ON_UNINSTALL` for files to spare.
+- `REMOVE_REGISTRY_TREE` active → warns it recursively deletes the listed registry trees, and names
+  `<remove-on-uninstall registry=...>` for deleting only the product's own key.
 - Either set without `USE_INSTALLER_HOOKS=True`, or `RETAIN_FILES_ON_UNINSTALL` set while cleanup is
   inactive → a "no effect" warning.
 - `USE_INSTALLER_HOOKS=True` with the hook DLL missing for the target platform → the build **fails**

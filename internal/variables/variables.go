@@ -355,11 +355,16 @@ func (d Dictionary) CheckInstallerHookUsage() []string {
 	cleanupActive := removeFolders && useHooks
 
 	var warnings []string
+	// Each danger warning ends with what to do instead: saying only that something is dangerous
+	// leaves the author with nothing to change.
 	if removeFolders {
 		warnings = append(warnings, "REMOVE_FOLDERS_ON_UNINSTALL=True recursively deletes the INSTALLDIR "+
 			"and APPDATADIR trees on full uninstall, including files your application created at runtime "+
-			"(databases, logs, config). RETAIN_FILES_ON_UNINSTALL can exempt specific files, but only when "+
-			"built against an updated hook DLL that honors it.")
+			"(databases, logs, config). To delete only what should go, set it to False and name each folder "+
+			"with <remove-on-uninstall folder=\"[APPDATADIR]logs\"/>, which removes just that tree and only on a "+
+			"real uninstall, never an upgrade. To keep the setting but spare some files, list them in "+
+			"RETAIN_FILES_ON_UNINSTALL (\"[APPDATADIR]data\\app.db;...\"); the hook DLL shipped with msis "+
+			"implements it, a custom DLL_ENTRY may not.")
 	}
 	if removeFolders && !useHooks {
 		warnings = append(warnings, "REMOVE_FOLDERS_ON_UNINSTALL has no effect unless USE_INSTALLER_HOOKS=True "+
@@ -367,7 +372,10 @@ func (d Dictionary) CheckInstallerHookUsage() []string {
 	}
 	if registryActive {
 		warnings = append(warnings, "REMOVE_REGISTRY_TREE recursively deletes the listed registry trees on "+
-			"full uninstall. This can remove state not owned by the MSI.")
+			"full uninstall, including keys and values the MSI never wrote (another product's, or settings "+
+			"the site made). To delete only your product's key, remove REMOVE_REGISTRY_TREE and name the key "+
+			"with <remove-on-uninstall registry=\"HKLM\\Software\\Vendor\\Product\"/>, which removes just that "+
+			"key and only on a real uninstall, never an upgrade.")
 	}
 	if registryActive && !useHooks {
 		warnings = append(warnings, "REMOVE_REGISTRY_TREE has no effect unless USE_INSTALLER_HOOKS=True.")
