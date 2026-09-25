@@ -13,6 +13,7 @@
 //
 //	sbom -components ...   the per-file documents msis's own installers compose (components.go)
 //	sbom -gate ...         fail if a release SBOM's coverage fell below the baseline (gate.go)
+//	sbom -summary ...      the release's last lines: what to upload, what the scan covered (summary.go)
 //	sbom -wix-packages     check the pinned WiX extension package facts against nuget.org (wixpackages.go)
 package main
 
@@ -189,6 +190,8 @@ func main() {
 		compArch  = flag.String("arches", strings.Join(arches, ","), "with -components: the msis binaries to describe")
 		templates = flag.String("templates", "templates", "with -components: the folder holding the staged hook DLLs")
 		doGate    = flag.Bool("gate", false, "after packaging: fail if a release SBOM's coverage fell below the baseline (gate.go)")
+		doSummary = flag.Bool("summary", false, "last in a release: what it produced, what to upload, what the scan covered (summary.go)")
+		scanDir   = flag.String("scan", "bootstrap/scan", "with -summary: where the release's scan reports are")
 		doWixPins = flag.Bool("wix-packages", false, "network: check the pinned WiX extension package facts against nuget.org (wixpackages.go)")
 	)
 	flag.Parse()
@@ -227,6 +230,14 @@ func main() {
 			fatal(err)
 		}
 		fmt.Println("SBOM coverage is at or above the baseline")
+		return
+	}
+	if *doSummary {
+		lines, err := releaseSummary(*version, *dist, *scanDir)
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Println(strings.Join(lines, "\n"))
 		return
 	}
 	if *doSeal {

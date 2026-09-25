@@ -373,6 +373,13 @@ sbom-scan:
 sbom-scan:
     @command -v grype >/dev/null || { echo "grype is not on PATH: this release is not scanned (a report, never a gate)"; exit 0; }; docs=$(ls {{bootstrap_dir}}/dist/msis-{{version}}*.cdx.json | grep -v '\.vex\.cdx\.json$'); ./{{bootstrap_dir}}/msis-x64.exe /SCAN /SCAN-DIR:{{bootstrap_dir}}/scan $docs || echo "the scan did not complete; the release is not gated on it"; exit 0
 
+# The last lines a release prints (#71): what it produced, exactly what to upload (the
+# installers, their SBOMs and the release SBOM - product owner's decision, 2026-09-25), and
+# whether the scan ran. Private, and run only by release/release-all AFTER the gate: `just`
+# stops at a failing gate, so reaching this means it passed, which the summary states.
+_release-summary:
+    go run ./tools/sbom -summary -version {{version}} -dist {{bootstrap_dir}}/dist -scan {{bootstrap_dir}}/scan
+
 # What the WiX extension packages declare - authors, repository, licence file - is pinned in
 # internal/wix/extensions.go (#67, decisions D18): the extension cache a build reads keeps only
 # the DLL. This compares every pin with nuget.org (network), and GATES `release` and
@@ -426,26 +433,26 @@ repin:
 # returned, so `release` announced success and `release-all` carried on after a failure (#53).
 # Build release MSI package (x64 only)
 [unix]
-release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan
+release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan _release-summary
     @echo "Preparing x64 release build..."
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
     @echo "Building x64 MSI package..."
     cd {{bootstrap_dir}} && ./msis.exe {{msis_flags}} --template=../templates/minimal/template.wxs setup.msis
-    @echo "Release build complete: {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
+    @echo "Packaged {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi; the gate, the scan and the summary follow"
 
 [windows]
-release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan
+release: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-windows-x64 (sbom-components "x64") && sbom-gate sbom-scan _release-summary
     @echo "Preparing x64 release build..."
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
     @echo "Building x64 MSI package..."
     Set-Location {{bootstrap_dir}}; & .\msis.exe {{msis_flags}} --template=..\templates\minimal\template.wxs setup.msis; exit $LASTEXITCODE
-    @echo "Release build complete: {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi"
+    @echo "Packaged {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi; the gate, the scan and the summary follow"
 
 # Build release for x86, x64, and arm64, then create bundle
 [unix]
-release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan
+release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan _release-summary
     @echo "=== Building x64 MSI ==="
     cp {{bootstrap_dir}}/{{binary}}-x64.exe {{bootstrap_dir}}/msis.exe
     cp {{bootstrap_dir}}/dist/components/msis-x64.exe.cdx.json {{bootstrap_dir}}/dist/components/msis.exe.cdx.json
@@ -460,14 +467,14 @@ release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap b
     cd {{bootstrap_dir}} && ./{{binary}}-x64.exe {{msis_flags}} --template=../templates/minimal/template.wxs /SET:PLATFORM=arm64 setup.msis
     @echo "=== Building Bundle ==="
     cd {{bootstrap_dir}} && ./{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis
-    @echo "=== All release builds complete ==="
+    @echo "=== Packaging complete; the seal, the release SBOM, the gate, the scan and the summary follow ==="
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-x64.msi"
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-x86.msi"
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-arm64.msi"
     @echo "  - {{bootstrap_dir}}/dist/msis-{{version}}-setup.exe"
 
 [windows]
-release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan
+release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap build-hooks build-all sbom-capture sbom-components && sbom-seal sbom sbom-gate sbom-scan _release-summary
     @echo "=== Building x64 MSI ==="
     Copy-Item {{bootstrap_dir}}\{{binary}}-x64.exe {{bootstrap_dir}}\msis.exe
     Copy-Item {{bootstrap_dir}}\dist\components\msis-x64.exe.cdx.json {{bootstrap_dir}}\dist\components\msis.exe.cdx.json
@@ -482,7 +489,7 @@ release-all: require-clean-tree repin-check wix-packages-check clean-bootstrap b
     Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} --template=..\templates\minimal\template.wxs /SET:PLATFORM=arm64 setup.msis; exit $LASTEXITCODE
     @echo "=== Building Bundle ==="
     Set-Location {{bootstrap_dir}}; & .\{{binary}}-x64.exe {{msis_flags}} setup-bundle.msis; exit $LASTEXITCODE
-    @echo "=== All release builds complete ==="
+    @echo "=== Packaging complete; the seal, the release SBOM, the gate, the scan and the summary follow ==="
     @echo "  - {{bootstrap_dir}}\dist\msis-{{version}}-x64.msi"
     @echo "  - {{bootstrap_dir}}\dist\msis-{{version}}-x86.msi"
     @echo "  - {{bootstrap_dir}}\dist\msis-{{version}}-arm64.msi"
