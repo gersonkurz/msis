@@ -494,9 +494,18 @@ For background services that run without user interaction:
 
 | Attribute | Values | Description |
 |-----------|--------|-------------|
-| `start` | `auto`, `demand`, `disabled` | When the service starts |
-| `service-type` | `ownProcess`, `shareProcess` | Process model (usually `ownProcess`) |
-| `error-control` | `ignore`, `normal`, `critical` | What happens if the service fails to start |
+| `service-display-name` | text | The name the Services console shows; default: `service-name` |
+| `description` | text | The description the Services console shows; default: the display name |
+| `start` | `auto`, `demand`, `disabled` | When the service starts; default `auto` |
+| `service-type` | `ownProcess`, `shareProcess` | Process model; default `ownProcess` |
+| `error-control` | `ignore`, `normal`, `critical` | What happens if the service fails to start; default `normal` |
+| `restart` | `yes`, `no` | `yes`: restart the service 30 seconds after each failure, with no limit; the failure count resets after a day without failures; default `no` |
+
+These defaults are msis-2.x's. Before 3.0.6, msis 3.x had four problems (#78):
+- leaving out `service-display-name` made the build fail;
+- setting `description` made the build fail;
+- `service-type` and `error-control` were silently ignored;
+- `restart` was silently ignored.
 
 ### Service Lifecycle
 

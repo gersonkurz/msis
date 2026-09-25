@@ -2,6 +2,7 @@
 package generator
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -188,6 +189,7 @@ type Service struct {
 	Start             string
 	Type              string
 	ErrorControl      string
+	Restart           bool // restart on failure, as msis-2.x's restart="yes"
 	FileName          string
 	StartAfterInstall bool // true (default): start service on install
 }
@@ -1240,17 +1242,20 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 
 	startAfterInstall := strings.ToLower(svc.StartAfterInstall) != "no"
 
+	// msis-2.x's defaults (SetupItem/Service.cs): the display name is the service name, the
+	// description the display name (#78).
 	serviceDef := &Service{
 		ID:                svcID,
 		Name:              svc.ServiceName,
-		DisplayName:       svc.ServiceDisplayName,
-		Description:       svc.Description,
+		DisplayName:       cmp.Or(svc.ServiceDisplayName, svc.ServiceName),
 		Start:             start,
-		Type:              svc.ServiceType,
-		ErrorControl:      svc.ErrorControl,
+		Type:              cmp.Or(svc.ServiceType, "ownProcess"),
+		ErrorControl:      cmp.Or(svc.ErrorControl, "normal"),
+		Restart:           svc.Restart,
 		FileName:          svc.FileName,
 		StartAfterInstall: startAfterInstall,
 	}
+	serviceDef.Description = cmp.Or(svc.Description, serviceDef.DisplayName)
 
 	if relPath, anchored := serviceFileRelPath(svc.FileName); anchored {
 		return c.processAnchoredService(svc, serviceDef, relPath, featureID)
@@ -1779,18 +1784,21 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 			startType = "disabled"
 		}
 
-		sb.WriteString(fmt.Sprintf("%s    <ServiceInstall Id='%s' Name='%s' DisplayName='%s' Start='%s' Type='ownProcess' ErrorControl='normal'>\n",
-			indent, svc.ID, svc.Name, svc.DisplayName, startType))
-		if svc.Description != "" {
-			sb.WriteString(fmt.Sprintf("%s        <Description>%s</Description>\n", indent, svc.Description))
+		name := escapeXMLAttr(svc.Name)
+		fmt.Fprintf(sb, "%s    <ServiceInstall Id='%s' Name='%s' DisplayName='%s' Description='%s' Start='%s' Type='%s' ErrorControl='%s'>\n",
+			indent, svc.ID, name, escapeXMLAttr(svc.DisplayName), escapeXMLAttr(svc.Description), startType,
+			escapeXMLAttr(svc.Type), escapeXMLAttr(svc.ErrorControl))
+		if svc.Restart {
+			// msis-2.x's restart="yes", value for value (SetupItem/Service.cs, the RM4V case).
+			fmt.Fprintf(sb, "%s        <util:ServiceConfig FirstFailureActionType='restart' SecondFailureActionType='restart' ThirdFailureActionType='restart' RestartServiceDelayInSeconds='30' ResetPeriodInDays='1'/>\n", indent)
 		}
-		sb.WriteString(fmt.Sprintf("%s    </ServiceInstall>\n", indent))
+		fmt.Fprintf(sb, "%s    </ServiceInstall>\n", indent)
 		if svc.StartAfterInstall {
-			sb.WriteString(fmt.Sprintf("%s    <ServiceControl Id='%s_ctrl' Name='%s' Start='install' Stop='both' Remove='uninstall' Wait='yes'/>\n",
-				indent, svc.ID, svc.Name))
+			fmt.Fprintf(sb, "%s    <ServiceControl Id='%s_ctrl' Name='%s' Start='install' Stop='both' Remove='uninstall' Wait='yes'/>\n",
+				indent, svc.ID, name)
 		} else {
-			sb.WriteString(fmt.Sprintf("%s    <ServiceControl Id='%s_ctrl' Name='%s' Stop='both' Remove='uninstall' Wait='yes'/>\n",
-				indent, svc.ID, svc.Name))
+			fmt.Fprintf(sb, "%s    <ServiceControl Id='%s_ctrl' Name='%s' Stop='both' Remove='uninstall' Wait='yes'/>\n",
+				indent, svc.ID, name)
 		}
 	}
 

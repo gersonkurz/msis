@@ -13,6 +13,10 @@ three things against what that step must leave behind:
   - the service registration (HKLM\\SYSTEM\\CurrentControlSet\\Services\\<name>), present
     exactly while Service is installed, with an ImagePath naming the service's copy.
 
+Whenever the service is registered, its configuration is checked too (#78): the display name
+(msis-2.x's default, the service name), description, type, error control, start type and the
+failure actions restart="yes" sets - read from the same registry key, against the manifest.
+
 Before #77's fix msis installed ONE path from two components; on this VM (2026-09-25) removing
 either feature deleted the executable the other still needed. That layout is now refused at
 build time, which the build side checks.
@@ -28,6 +32,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import struct
 import subprocess
 import sys
 import winreg
@@ -83,7 +88,34 @@ def verdict(steps: list[tuple[str, bool, bool]], observed: list[tuple[int, str, 
     return failures
 
 
+def config_failures(label: str, expected: dict, observed: dict) -> list[str]:
+    """What the registered service's configuration gets wrong (#78). Pure, for --selftest.
+
+    observed holds the same keys as expected, read from the service's registry key; a value
+    that is not there is None.
+    """
+    return [f"{label}: the service's {key} is {observed.get(key)!r}, expected {want!r}"
+            for key, want in expected.items() if observed.get(key) != want]
+
+
 def selftest() -> int:
+    bad = 0
+    want = {"DisplayName": "svc", "Type": 0x20,
+            "FailureActions": {"reset_seconds": 86400, "actions": [[1, 30000]] * 3}}
+    for name, observed, n in (
+        ("#78: the configuration as set", dict(want), 0),
+        ("#78: service-type dropped (ownProcess)", {**want, "Type": 0x10}, 1),
+        ("#78: restart dropped (no failure actions)", {**want, "FailureActions": None}, 1),
+        ("#78: a different restart delay", {**want, "FailureActions": {"reset_seconds": 86400,
+                                                                      "actions": [[1, 60000]] * 3}}, 1),
+    ):
+        got = len(config_failures("step", want, observed))
+        bad += got != n
+        print(f"{'PASS' if got == n else 'FAIL'}  selftest: {name} -> {got} failure(s), expected {n}")
+    return selftest_verdict(bad)
+
+
+def selftest_verdict(bad: int) -> int:
     steps = [(label, c, s) for label, _, c, s in SCENARIOS["both, then remove Complete"]]
     good = [(0, "intact", "intact", "registered"), (0, "missing", "intact", "registered"),
             (0, "missing", "missing", "absent")]
@@ -99,7 +131,6 @@ def selftest() -> int:
         "an msiexec failure": ([(1603, "intact", "intact", "registered"), good[1], good[2]], 1),
         "a copy left after uninstall": ([good[0], good[1], (0, "missing", "intact", "absent")], 1),
     }
-    bad = 0
     for name, (observed, want) in cases.items():
         got = len(verdict(steps, observed))
         ok = got == want
@@ -126,6 +157,28 @@ def service_state(name: str, exe: str) -> str:
     return "registered" if exe.lower() in str(image).lower() else "elsewhere"
 
 
+def service_config(name: str, keys: list[str]) -> dict:
+    """The named values of the service's registry key; FailureActions decoded.
+
+    FailureActions is SERVICE_FAILURE_ACTIONS as the SCM stores it: DWORD reset period (s),
+    two DWORD placeholders for the reboot message and command, DWORD action count, a DWORD
+    placeholder for the array, then one (DWORD type, DWORD delay ms) pair per action.
+    """
+    out: dict = {}
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, rf"SYSTEM\CurrentControlSet\Services\{name}") as key:
+        for k in keys:
+            try:
+                value, _ = winreg.QueryValueEx(key, k)
+            except FileNotFoundError:
+                value = None
+            if k == "FailureActions" and value is not None:
+                reset, _, _, count = struct.unpack_from("<4I", value, 0)
+                actions = [list(struct.unpack_from("<2I", value, 20 + 8 * i)) for i in range(count)]
+                value = {"reset_seconds": reset, "actions": actions}
+            out[k] = value
+    return out
+
+
 def msiexec(args: list[str], log: Path) -> int:
     cmd = ["msiexec", *args, "/qn", "/norestart", "/l*v", str(log)]
     print(f"    $ {' '.join(cmd)}")
@@ -149,14 +202,19 @@ def main() -> int:
     for n, (title, steps) in enumerate(SCENARIOS.items()):
         print(f"\n=== {title} ===")
         subprocess.run(["msiexec", "/x", msi, "/qn", "/norestart"])  # start clean; 1605 is fine
-        observed = []
+        observed, config = [], []
+        want = m["service_config"]
         for i, (label, args, _, _) in enumerate(steps):
             rc = msiexec([a.format(**fmt) for a in args], HERE / f"s{n}-{i}.log")
             obs = (rc, file_state(m["app_exe"], m["exe_text"]), file_state(m["service_exe"], m["exe_text"]),
                    service_state(m["service_name"], m["service_exe"]))
             print(f"  {label}: rc={obs[0]} app={obs[1]} service-exe={obs[2]} service={obs[3]}")
             observed.append(obs)
-        failures = verdict([(label, c, s) for label, _, c, s in steps], observed)
+            if obs[3] == "registered":
+                got = service_config(m["service_name"], list(want))
+                print(f"    service configuration: {got}")
+                config += config_failures(label, want, got)
+        failures = verdict([(label, c, s) for label, _, c, s in steps], observed) + config
         for f in failures:
             print(f"  FAIL {f}")
         print(f"  {'FAIL' if failures else 'PASS'} {title}")

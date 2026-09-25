@@ -76,12 +76,27 @@
       </xs:annotation>
     </xs:attribute>
     <xs:attribute name="service-name" type="xs:string" use="required"/>
-    <xs:attribute name="service-display-name" type="xs:string" use="optional"/>
+    <xs:attribute name="service-display-name" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>Default: service-name.</xs:documentation></xs:annotation>
+    </xs:attribute>
     <xs:attribute name="start" type="xs:string" use="optional"/>
-    <xs:attribute name="description" type="xs:string" use="optional"/>
-    <xs:attribute name="service-type" type="xs:string" use="optional"/>
-    <xs:attribute name="error-control" type="xs:string" use="optional"/>
-    <xs:attribute name="restart" type="xs:string" use="optional"/>
+    <xs:attribute name="description" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>Default: the display name.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="service-type" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>ownProcess (default) or shareProcess.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="error-control" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>ignore, normal (default) or critical.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="restart" type="msisBoolean" use="optional">
+      <xs:annotation><xs:documentation>
+        Restart the service 30 seconds after each failure, with no limit. The three configured
+        failure actions are all restarts, and Windows repeats the last one for any later
+        failure; the failure count resets after a day without failures (msis-2.x's values).
+        Default: no.
+      </xs:documentation></xs:annotation>
+    </xs:attribute>
     <xs:attribute name="start-after-install" type="xs:string" use="optional"/>
   </xs:complexType>
 

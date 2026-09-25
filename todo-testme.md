@@ -743,3 +743,21 @@ msis now refuses that layout at build time (the build side checks it). The VM ra
 error proposes: the Service feature installs its own copy under `service\` and registers that.
 All four scenarios PASS: removing either feature leaves the other's copy intact, and the service
 is registered exactly while Service is installed. Every msiexec returned 0.
+
+### Executed on 2026-09-25, third run — the #78 attributes on the installed service: PASS
+
+The proposed layout's `<service>` now also sets `description` (containing `&`),
+`service-type="shareProcess"`, `error-control="critical"` and `restart="yes"`, and leaves the
+display name out. All four scenarios PASS again. At every step where the service is registered,
+its registry key reads:
+
+```
+{'DisplayName': 'msisSvcProbe77', 'Description': 'Probe for #77 & #78', 'Type': 32,
+ 'ErrorControl': 3, 'Start': 3,
+ 'FailureActions': {'reset_seconds': 86400, 'actions': [[1, 30000], [1, 30000], [1, 30000]]}}
+```
+
+That is msis-2.x's default display name, the escaped description round-tripped, and
+SERVICE_WIN32_SHARE_PROCESS, SERVICE_ERROR_CRITICAL and SERVICE_DEMAND_START. The failure
+actions are what the util:ServiceConfig custom action wrote at install time: three
+SC_ACTION_RESTART at 30 s, reset after a day.

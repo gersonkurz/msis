@@ -40,3 +40,15 @@ After every step: the application's copy is present exactly while Complete is in
 service's copy is present, and the service registered with an ImagePath naming it, exactly while
 Service is installed; both copies keep their contents. The msiexec verbose logs
 (`s<scenario>-<step>.log`) stay beside the script.
+
+Whenever the service is registered, its configuration is read back from its registry key and
+compared with the manifest (#78). It checks:
+- the display name, which is left out of the script, so msis-2.x's default (the service name)
+  applies;
+- the description;
+- the service type (`shareProcess`), the error control (`critical`) and the start type;
+- the failure actions `restart="yes"` sets: three restart actions of 30 s each (Windows
+  repeats the last one for any later failure, so it restarts after every failure), and a
+  failure count reset after a day without failures.
+
+Each step prints the configuration it read.

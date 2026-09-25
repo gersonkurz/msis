@@ -12,6 +12,10 @@ to write it instead; this probe checks both halves:
      its own and registers that - is built and staged for the VM, which changes features and
      checks both copies and the service registration after every step.
 
+The proposed layout's <service> also sets every attribute #78 made msis honour: description,
+service-type, error-control and restart, with the display name left to msis-2.x's default. The
+VM reads the installed service's configuration back from the registry.
+
 This half needs no elevation and installs nothing:
 
     uv run t77_service_probe.py        # build msis + the packages, stage vm-payload/
@@ -64,10 +68,15 @@ REJECTED = HEAD + f"""  <feature name="Service" enabled="false">
 </setup>
 """
 
-# What the #77 error proposes: the Service feature's own copy, at a target of its own.
+# What the #77 error proposes: the Service feature's own copy, at a target of its own. Its
+# <service> also carries every attribute #78 fixed - no display name, so msis-2.x's default
+# applies - and the VM checks what the installed service's configuration says about each.
+DESCRIPTION = "Probe for #77 & #78"
 PROPOSED = HEAD + f"""  <feature name="Service" enabled="false">
     <files source="{EXE}" target="[INSTALLDIR]service\\"/>
-    <service file-name="[INSTALLDIR]service\\{EXE}" {SERVICE_ATTRS}/>
+    <service file-name="[INSTALLDIR]service\\{EXE}" service-name="{SERVICE}" start="demand"
+             start-after-install="no" description="Probe for #77 &amp; #78" service-type="shareProcess"
+             error-control="critical" restart="yes"/>
   </feature>
 </setup>
 """
@@ -130,6 +139,18 @@ def main() -> int:
         "app_exe": f"{root}\\{EXE}",
         "service_exe": f"{root}\\service\\{EXE}",
         "exe_text": EXE_TEXT,
+        # What the installed service's configuration must say (#78): the registry values under
+        # HKLM\SYSTEM\CurrentControlSet\Services\<name>, and restart="yes" as msis-2.x set it -
+        # three restart actions, 30 s each (Windows repeats the last for any later failure), the
+        # failure count reset after a day without failures.
+        "service_config": {
+            "DisplayName": SERVICE,
+            "Description": DESCRIPTION,
+            "Type": 0x20,  # SERVICE_WIN32_SHARE_PROCESS
+            "ErrorControl": 3,  # SERVICE_ERROR_CRITICAL
+            "Start": 3,  # SERVICE_DEMAND_START
+            "FailureActions": {"reset_seconds": 86400, "actions": [[1, 30000]] * 3},  # SC_ACTION_RESTART
+        },
     }
     wxs = (HERE / "svc.wxs").read_text(encoding="utf-8", errors="replace")
     for title, fid in (("Complete", manifest["complete"]), ("Service", manifest["service"])):

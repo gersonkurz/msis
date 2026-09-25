@@ -145,7 +145,7 @@ type Service struct {
 	Description        string
 	ServiceType        string // ownProcess, shareProcess
 	ErrorControl       string // ignore, normal, critical
-	Restart            string
+	Restart            bool   // restart the service on failure (util:ServiceConfig)
 	StartAfterInstall  string // yes (default), no
 }
 

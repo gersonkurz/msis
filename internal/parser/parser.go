@@ -1105,7 +1105,7 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 				Description:        raw.Service.Description,
 				ServiceType:        raw.Service.ServiceType,
 				ErrorControl:       raw.Service.ErrorControl,
-				Restart:            raw.Service.Restart,
+				Restart:            parseMsisBool(raw.Service.Restart),
 				StartAfterInstall:  raw.Service.StartAfterInstall,
 			})
 
