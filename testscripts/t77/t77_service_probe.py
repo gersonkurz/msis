@@ -3,11 +3,12 @@
 A <service> in a different feature from the <files> installing its executable made msis install
 that file a second time, in a component of the service's feature: two components owning one
 file. On the test VM (2026-09-25) removing either feature deleted the executable the other
-still needed, with msiexec reporting success. msis now refuses that layout and names two ways
-to write it instead; this probe checks both halves:
+still needed, with msiexec reporting success. The layout is deprecated (D22): msis still builds
+it as before with a warning naming two ways to write it instead, /STRICT refuses it, and msis 4
+will. This probe checks both halves:
 
   1. the #77 layout (chimera's: Complete installs the exe, optional Service registers it) must
-     FAIL to build, with the #77 error;
+     build with the #77 deprecation warning, and FAIL to build under /STRICT;
   2. the layout the error proposes - the Service feature installs its own copy at a target of
      its own and registers that - is built and staged for the VM, which changes features and
      checks both copies and the service registration after every step.
@@ -62,7 +63,7 @@ SERVICE_ATTRS = (f'service-name="{SERVICE}" service-display-name="{SERVICE}" sta
                  'start-after-install="no"')
 
 # The #77 layout: the service names the Complete feature's file.
-REJECTED = HEAD + f"""  <feature name="Service" enabled="false">
+DEPRECATED = HEAD + f"""  <feature name="Service" enabled="false">
     <service file-name="{EXE}" {SERVICE_ATTRS}/>
   </feature>
 </setup>
@@ -82,8 +83,8 @@ PROPOSED = HEAD + f"""  <feature name="Service" enabled="false">
 """
 
 
-def msis(msis_exe: Path, name: str) -> subprocess.CompletedProcess:
-    cmd = [str(msis_exe), "/BUILD", "/RETAINWXS", f"/TEMPLATEFOLDER:{REPO / 'templates'}", f"{name}.msis"]
+def msis(msis_exe: Path, name: str, *extra: str) -> subprocess.CompletedProcess:
+    cmd = [str(msis_exe), "/BUILD", "/RETAINWXS", f"/TEMPLATEFOLDER:{REPO / 'templates'}", *extra, f"{name}.msis"]
     logger.debug("$ {}", " ".join(cmd))
     proc = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, errors="replace")
     for line in (proc.stdout + proc.stderr).splitlines():
@@ -109,15 +110,21 @@ def main() -> int:
     # Only when it differs: a scanner tends to hold a fresh .exe open, and rewriting it fails.
     if not payload_exe.exists() or payload_exe.read_text(encoding="utf-8") != EXE_TEXT:
         payload_exe.write_text(EXE_TEXT, encoding="utf-8")
-    for name, text in (("rejected", REJECTED), ("svc", PROPOSED)):
+    for name, text in (("deprecated", DEPRECATED), ("svc", PROPOSED)):
         (HERE / f"{name}.msis").write_text(text, encoding="utf-8", newline="\r\n")
 
-    rejected = msis(msis_exe, "rejected")
-    if rejected.returncode == 0 or "#77" not in rejected.stdout + rejected.stderr:
-        logger.error("FAIL the #77 layout built (exit {}) - this msis still installs the exe twice",
-                     rejected.returncode)
+    warned = msis(msis_exe, "deprecated")
+    out = warned.stdout + warned.stderr
+    if warned.returncode != 0 or "#77" not in out or "deprecated" not in out:
+        logger.error("FAIL the #77 layout did not build with the deprecation warning (exit {})",
+                     warned.returncode)
         return 1
-    logger.success("PASS the #77 layout is refused with the #77 error")
+    logger.success("PASS the #77 layout builds, with the #77 deprecation warning")
+    strict = msis(msis_exe, "deprecated", "/STRICT")
+    if strict.returncode == 0 or "#77" not in strict.stdout + strict.stderr:
+        logger.error("FAIL /STRICT built the #77 layout (exit {})", strict.returncode)
+        return 1
+    logger.success("PASS /STRICT refuses the #77 layout")
 
     if msis(msis_exe, "svc").returncode != 0:
         logger.error("FAIL the layout the #77 error proposes does not build; see t77-build.log")

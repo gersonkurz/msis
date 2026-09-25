@@ -19,11 +19,11 @@ Copy the whole output back.
 
 ## Background
 
-Before #77's fix, a `<service>` in a different feature from the `<files>` installing its
-executable made msis install that file twice, in two components. On this VM (2026-09-25)
-removing either feature deleted the executable the other still needed, and msiexec reported
-success every time. msis now refuses that layout at build time (the build side checks this),
-and its error proposes two ways to write it instead. This package is the one that keeps the
+A `<service>` in a different feature from the `<files>` installing its executable makes msis
+install that file twice, in two components. On this VM (2026-09-25) removing either feature
+deleted the executable the other still needed, and msiexec reported success every time. That
+layout is deprecated (#77, D22): msis still builds it with a warning, `/STRICT` refuses it, and
+msis 4 will (the build side checks both). The warning proposes two ways to write it instead. This package is the one that keeps the
 service optional: feature **Complete** installs `svcprobe.exe`; feature **Service** installs its
 **own copy** under `service\` and registers that copy.
 

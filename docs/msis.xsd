@@ -68,10 +68,11 @@
       <xs:annotation>
         <xs:documentation>
           The service executable: a bare file name, or an installed location such as
-          [INSTALLDIR]service\app.exe. It must be installed by the SAME feature as the service,
-          or at a target of its own. A service naming a file another feature installs at the
-          same target is refused, because one file can have only one owning component and
-          removing either feature would delete it (#77).
+          [INSTALLDIR]service\app.exe. It should be installed by the SAME feature as the
+          service, or at a target of its own. A service naming a file another feature installs
+          at the same target is deprecated: one file can have only one owning component, so
+          the file is installed twice and removing either feature deletes it (#77). msis warns;
+          /STRICT refuses it, and msis 4 will.
         </xs:documentation>
       </xs:annotation>
     </xs:attribute>

@@ -49,6 +49,7 @@ type cliArgs struct {
 	scan            bool              // /SCAN: run grype on the SBOM (#69)
 	scanDir         string            // /SCAN-DIR:PATH: where /SCAN keeps its reports (#70)
 	standalone      bool              // Skip auto-bundling, use launch conditions only
+	strict          bool              // Refuse deprecated layouts instead of warning (#77, D22)
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
 	wixVersion      string            // /WIX-VERSION:VER override for /SETUP-WIX
@@ -329,6 +330,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 	// Milestone 3.3 - WXS generation
 	ctx := generator.NewContext(setup, vars, workDir)
+	ctx.Strict = args.strict
 	output, err := ctx.Generate()
 	if err != nil {
 		return fmt.Errorf("generating WXS: %w", err)
@@ -919,6 +921,7 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.scan, "scan", false, "")
 	fs.StringVar(&args.scanDir, "scan-dir", "", "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
+	fs.BoolVar(&args.strict, "strict", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
 	fs.BoolVar(&args.setupWix, "setup-wix", false, "")
 	fs.StringVar(&args.wixVersion, "wix-version", "", "")
@@ -1022,6 +1025,7 @@ func printUsage() {
 	fmt.Printf("  %s  Overlay folder for private assets (takes precedence)\n", cli.Info("/CUSTOMTEMPLATES:PATH"))
 	fmt.Printf("  %s            Parse and validate only, no output\n", cli.Info("/DRY-RUN"))
 	fmt.Printf("  %s         Skip auto-bundling, use launch conditions only\n", cli.Info("/STANDALONE"))
+	fmt.Printf("  %s             Refuse deprecated layouts instead of warning (msis 4 will)\n", cli.Info("/STRICT"))
 	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
 	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
 	fmt.Printf("  %s With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))

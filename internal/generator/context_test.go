@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -361,10 +362,34 @@ func TestProcessServicePathAnchorsToExistingComponent(t *testing.T) {
 	vars := variables.New()
 	ctx := NewContext(setup, vars, ".")
 
-	// Another feature's file: installing it a second time for the service is #77.
-	_, err = ctx.Generate()
-	if err == nil || !strings.Contains(err.Error(), "#77") {
-		t.Fatalf("expected the #77 error for a service anchored on another feature's file, got %v", err)
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	// The ServiceInstall must live inside the 'server' directory.
+	serverDirStart := strings.Index(output.DirectoryXML, "Name='server'")
+	if serverDirStart < 0 {
+		t.Fatalf("expected a 'server' directory, got:\n%s", output.DirectoryXML)
+	}
+	svcPos := strings.Index(output.DirectoryXML, "ServiceInstall")
+	if svcPos < 0 {
+		t.Fatalf("expected 'ServiceInstall' in output, got:\n%s", output.DirectoryXML)
+	}
+	if svcPos < serverDirStart {
+		t.Errorf("ServiceInstall appears before the server directory, so it was emitted at the INSTALLDIR root:\n%s", output.DirectoryXML)
+	}
+	// Cross-feature: the service component duplicates the file in server dir - the deprecated
+	// #77 layout, built as msis 3.0.5 built it, and warned about.
+	if strings.Count(output.DirectoryXML, "Name='myservice.exe'") != 2 {
+		t.Errorf("expected the service component to install the file next to the original, got:\n%s", output.DirectoryXML)
+	}
+	if !slices.ContainsFunc(output.Warnings, func(w string) bool { return strings.Contains(w, "#77") }) {
+		t.Errorf("no #77 warning, got %q", output.Warnings)
+	}
+	// A path must never be emitted as a File/@Name (invalid WiX).
+	if strings.Contains(output.DirectoryXML, "Name='server\\myservice.exe'") {
+		t.Errorf("file-name path leaked verbatim into File/@Name:\n%s", output.DirectoryXML)
 	}
 }
 
@@ -383,9 +408,11 @@ func TestServiceFileConflictSuggestionBuilds(t *testing.T) {
 		ir.Files{Source: exe, Target: "[INSTALLDIR]renamed.exe"}}}
 	refused := &ir.Setup{Features: []ir.Feature{complete, {Name: "Service", Enabled: true, Items: []ir.Item{
 		ir.Service{FileName: "renamed.exe", ServiceName: "MySvc", ServiceDisplayName: "My Service"}}}}}
-	_, err := NewContext(refused, variables.New(), ".").Generate()
+	ctx := NewContext(refused, variables.New(), ".")
+	ctx.Strict = true
+	_, err := ctx.Generate()
 	if err == nil {
-		t.Fatal("expected the #77 error")
+		t.Fatal("expected the #77 error under Strict")
 	}
 
 	// The suggestion is the indented lines after the explanation.
@@ -413,8 +440,9 @@ func TestServiceFileConflictSuggestionBuilds(t *testing.T) {
 	}
 }
 
-// #77: a service's executable must not share its install target with another feature's
-// component, whichever way the script reaches that; a copy at a target of its own is fine.
+// #77 (D22): a service's executable sharing its install target with another feature's
+// component, whichever way the script reaches that, builds as msis 3.0.5 built it with a
+// deprecation warning, and is refused under Strict. A copy at a target of its own is fine.
 func TestServiceFileOwnership(t *testing.T) {
 	tmpDir := t.TempDir()
 	exe := filepath.Join(tmpDir, "MyService.exe")
@@ -430,17 +458,17 @@ func TestServiceFileOwnership(t *testing.T) {
 	}
 
 	cases := []struct {
-		name      string
-		setup     ir.Setup
-		wantErr   bool
-		wantFiles int // Name='MyService.exe' entries when it builds
+		name       string
+		setup      ir.Setup
+		deprecated bool
+		wantFiles  int // Name='MyService.exe' entries in the default (warning) build
 	}{
 		{"bare file-name, another feature's file at the same target (chimera)", ir.Setup{Features: []ir.Feature{
-			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("MyService.exe"))}}, true, 0},
+			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("MyService.exe"))}}, true, 2},
 		{"the <service> written before the <files> installing the same target", ir.Setup{Features: []ir.Feature{
-			feature("Service", service("MyService.exe")), feature("Complete", files("[INSTALLDIR]"))}}, true, 0},
+			feature("Service", service("MyService.exe")), feature("Complete", files("[INSTALLDIR]"))}}, true, 2},
 		{"anchored file-name on another feature's file", ir.Setup{Features: []ir.Feature{
-			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("[INSTALLDIR]MyService.exe"))}}, true, 0},
+			feature("Complete", files("[INSTALLDIR]")), feature("Service", service("[INSTALLDIR]MyService.exe"))}}, true, 2},
 		{"bare file-name, the other feature's file elsewhere: the copy has a target of its own", ir.Setup{Features: []ir.Feature{
 			feature("Complete", files("[INSTALLDIR]bin\\")), feature("Service", service("MyService.exe"))}}, false, 2},
 		{"the remedy the error proposes: the service feature's own copy", ir.Setup{Features: []ir.Feature{
@@ -451,20 +479,11 @@ func TestServiceFileOwnership(t *testing.T) {
 		{"no features at all: WiX's default feature holds both, so the service attaches", ir.Setup{
 			Items: []ir.Item{files("[INSTALLDIR]"), service("MyService.exe")}}, false, 1},
 	}
+	// What the #77 message must say, as a warning or as the Strict error.
+	message := []string{"#77", "deprecated", "/STRICT", `"Complete"`, `"Service"`, `file-name="[INSTALLDIR]service\MyService.exe"`}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := NewContext(&tc.setup, variables.New(), ".").Generate()
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("expected the #77 error, got a build:\n%s", output.DirectoryXML)
-				}
-				for _, want := range []string{"#77", `"Complete"`, `"Service"`, `file-name="[INSTALLDIR]service\MyService.exe"`} {
-					if !strings.Contains(err.Error(), want) {
-						t.Errorf("error lacks %q:\n%v", want, err)
-					}
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("Generate failed: %v", err)
 			}
@@ -473,6 +492,40 @@ func TestServiceFileOwnership(t *testing.T) {
 			}
 			if got := strings.Count(output.DirectoryXML, "<ServiceInstall "); got != 1 {
 				t.Errorf("%d ServiceInstall elements, want 1:\n%s", got, output.DirectoryXML)
+			}
+			var warnings []string
+			for _, w := range output.Warnings {
+				if strings.Contains(w, "#77") {
+					warnings = append(warnings, w)
+				}
+			}
+			if want := map[bool]int{true: 1, false: 0}[tc.deprecated]; len(warnings) != want {
+				t.Errorf("%d #77 warnings, want %d: %q", len(warnings), want, output.Warnings)
+			}
+			for _, w := range warnings {
+				for _, want := range message {
+					if !strings.Contains(w, want) {
+						t.Errorf("warning lacks %q:\n%s", want, w)
+					}
+				}
+			}
+
+			strict := NewContext(&tc.setup, variables.New(), ".")
+			strict.Strict = true
+			_, err = strict.Generate()
+			if !tc.deprecated {
+				if err != nil {
+					t.Errorf("Strict refused a sound layout: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("Strict built the #77 layout")
+			}
+			for _, want := range message {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Strict error lacks %q:\n%v", want, err)
+				}
 			}
 		})
 	}

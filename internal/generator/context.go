@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -24,6 +25,10 @@ type Context struct {
 	Setup     *ir.Setup
 	Variables variables.Dictionary
 	WorkDir   string // Directory containing the .msis file
+
+	// Strict refuses what is deprecated instead of warning about it (/STRICT): today the #77
+	// layout, a service sharing its executable with another feature (D22).
+	Strict bool
 
 	// warnings collects build-time diagnostics, surfaced on GeneratedOutput and
 	// printed by main.go.
@@ -1380,21 +1385,48 @@ func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, re
 		return fmt.Errorf("service %q: file-name %q does not match any installed file (declare it with <files> before the <service> element)", svc.ServiceName, svc.FileName)
 	}
 
-	// Another feature's file: the ServiceInstall has to live in the component owning the
-	// executable, and that component belongs to the other feature (#77).
-	if featureID != "" && !slices.Contains(c.FeatureComponents[featureID], existingComp.ID) {
-		return c.serviceFileConflict(svc.ServiceName, fileName, existingFile.SourcePath,
-			c.featuresOf(existingComp.ID), []string{featureID})
+	// Same feature (or no features at all): the service attaches to the file's component.
+	if featureID == "" || slices.Contains(c.FeatureComponents[featureID], existingComp.ID) {
+		if existingComp.Service != nil {
+			return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
+		}
+		existingComp.Service = serviceDef
+		return nil
 	}
-	if existingComp.Service != nil {
-		return fmt.Errorf("service %q: component for %q already carries service %q", svc.ServiceName, svc.FileName, existingComp.Service.Name)
+
+	// Another feature's file: a sibling component installing the same file, as msis 3.0.5 did.
+	// That is the deprecated #77 layout; checkServiceFileOwnership warns about it, or refuses
+	// it under Strict.
+	targetKey := dir.ID + ":" + strings.ToLower(fileName)
+	c.targetFileSeen[targetKey]++
+	occurrence := c.targetFileSeen[targetKey]
+	var shortName string
+	if occurrence > 1 {
+		shortName = generateShortName(fileName, occurrence)
 	}
-	existingComp.Service = serviceDef
+
+	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
+	comp := &Component{
+		ID:   compID,
+		GUID: GenerateGUID(compID),
+		Files: []*File{
+			{
+				ID:         c.NextFileID(),
+				Name:       fileName,
+				ShortName:  shortName,
+				SourcePath: existingFile.SourcePath,
+				KeyPath:    true,
+			},
+		},
+		Service: serviceDef,
+	}
+	c.addComponentToDirectory(dir, comp, featureID)
+	c.FeatureComponents[featureID] = append(c.FeatureComponents[featureID], compID)
 	return nil
 }
 
-// checkServiceFileOwnership refuses a service whose executable shares its install target
-// with a component of another feature (#77, D22).
+// checkServiceFileOwnership reports a service whose executable shares its install target
+// with a component of another feature (#77, D22): a warning, or under Strict an error.
 //
 // A service is registered from the key file of the component carrying its ServiceInstall,
 // so that component must own the executable - and one file can have only one owning
@@ -1402,8 +1434,9 @@ func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, re
 // and removing either feature deletes the file the other still needs: on the test VM,
 // removing an optional Service feature deleted the application, and removing the
 // application left a registered service pointing at a deleted binary, each with msiexec
-// reporting success. It runs once every item is processed, because a <service> can come
-// before the <files> that installs the same target.
+// reporting success. Scripts in the field build this layout, so it is deprecated rather than
+// refused: msis 4 will refuse it, and Strict refuses it now. It runs once every item is
+// processed, because a <service> can come before the <files> that installs the same target.
 func (c *Context) checkServiceFileOwnership() error {
 	for _, root := range sortedKeysOf(c.DirectoryTrees) {
 		if err := c.checkServiceFilesIn(c.DirectoryTrees[root]); err != nil {
@@ -1418,22 +1451,11 @@ func (c *Context) checkServiceFilesIn(dir *Directory) error {
 		if svc.Service == nil {
 			continue
 		}
-		for _, other := range dir.Components {
-			if other == svc {
-				continue
+		if msg := c.serviceFileConflict(dir, svc); msg != "" {
+			if c.Strict {
+				return errors.New(msg)
 			}
-			for _, exe := range svc.Files {
-				for _, f := range other.Files {
-					if !strings.EqualFold(f.Name, exe.Name) {
-						continue
-					}
-					// The same feature(s) install and remove both together; nothing is lost.
-					svcFeatures, otherFeatures := c.featuresOf(svc.ID), c.featuresOf(other.ID)
-					if !slices.Equal(svcFeatures, otherFeatures) {
-						return c.serviceFileConflict(svc.Service.Name, exe.Name, f.SourcePath, otherFeatures, svcFeatures)
-					}
-				}
-			}
+			c.warn("%s", msg)
 		}
 	}
 	for _, name := range sortedKeysOf(dir.Children) {
@@ -1455,12 +1477,35 @@ func (c *Context) featuresOf(compID string) []string {
 	return ids
 }
 
-// serviceFileConflict is #77's error, and says how the script can be written instead.
+// serviceFileConflict is #77's message for a service component whose executable another
+// feature's component in the same directory also installs, or "" when there is none. It says
+// how the script can be written instead.
 //
 // The suggested elements are complete .msis XML, pasteable as they stand: the values are
 // XML-escaped (a source under R&D\ must read R&amp;D\), and the copy's target names the
 // installed file, so a <files> that renamed the executable keeps that name.
-func (c *Context) serviceFileConflict(service, file, source string, fileFeatures, serviceFeatures []string) error {
+func (c *Context) serviceFileConflict(dir *Directory, svc *Component) string {
+	for _, other := range dir.Components {
+		if other == svc {
+			continue
+		}
+		for _, exe := range svc.Files {
+			for _, f := range other.Files {
+				if !strings.EqualFold(f.Name, exe.Name) {
+					continue
+				}
+				// The same feature(s) install and remove both together; nothing is lost.
+				svcFeatures, otherFeatures := c.featuresOf(svc.ID), c.featuresOf(other.ID)
+				if !slices.Equal(svcFeatures, otherFeatures) {
+					return c.serviceFileConflictMessage(svc.Service.Name, exe.Name, f.SourcePath, otherFeatures, svcFeatures)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (c *Context) serviceFileConflictMessage(service, file, source string, fileFeatures, serviceFeatures []string) string {
 	names := func(ids []string) string {
 		quoted := make([]string, len(ids))
 		for i, id := range ids {
@@ -1473,9 +1518,10 @@ func (c *Context) serviceFileConflict(service, file, source string, fileFeatures
 		return strings.Join(quoted, " and ")
 	}
 	fileIn, serviceIn := names(fileFeatures), names(serviceFeatures)
-	return fmt.Errorf("service %q: %s is installed by feature %s, but the <service> is in feature %s. "+
-		"A file can belong to only one component, so the executable would be installed twice, and removing either "+
-		"feature would delete the file the other still needs (#77). Either move the <service> into feature %s, "+
+	return fmt.Sprintf("service %q: %s is installed by feature %s, but the <service> is in feature %s, so the "+
+		"executable is installed a second time for it. A file can belong to only one component: removing either "+
+		"feature from an installed product deletes the file the other still needs (#77). This layout is deprecated: "+
+		"msis 4 will refuse it, and /STRICT refuses it now. Either move the <service> into feature %s, "+
 		"which registers the service whenever that feature is installed, or give feature %s a copy of its own at "+
 		"a target of its own and name that copy in file-name, keeping the <service>'s other attributes:\n"+
 		"    <files source=\"%s\" target=\"[INSTALLDIR]service\\%s\"/>\n"+

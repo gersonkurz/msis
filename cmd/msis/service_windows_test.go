@@ -11,6 +11,31 @@ import (
 	"github.com/gersonkurz/msis/internal/msiread"
 )
 
+// #77 (D22): the deprecated layout - a <service> naming another feature's executable - builds by
+// default, as scripts in the field need it to, and /STRICT refuses it. This checks the CLI switch
+// reaches the generator; the generator tests cover the layouts.
+func TestStrictRefusesTheDeprecatedServiceLayout(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "svc.exe"), "never executed\n")
+	script := scriptFor(t, dir, "svc.msi", `<?xml version='1.0' encoding='utf-8'?>
+<setup>
+    <set name="PRODUCT_NAME" value="Deprecated Layout"/>
+    <set name="PRODUCT_VERSION" value="1.0.0"/>
+    <set name="MANUFACTURER" value="Probe"/>
+    <set name="UPGRADE_CODE" value="{2C7A9E51-4D3B-4A86-8F10-6B2E9D5C7A34}"/>
+    <set name="BUILD_TARGET" value="{{TARGET}}"/>
+    <feature name="Complete"><files source="svc.exe" target="[INSTALLDIR]"/></feature>
+    <feature name="Service"><service file-name="svc.exe" service-name="svcD"/></feature>
+</setup>`)
+	if err := processFile(script, &cliArgs{templateFolder: repoTemplates(t), setOverrides: map[string]string{}}); err != nil {
+		t.Fatalf("the deprecated layout does not build by default: %v", err)
+	}
+	err := processFile(script, &cliArgs{strict: true, templateFolder: repoTemplates(t), setOverrides: map[string]string{}})
+	if err == nil || !strings.Contains(err.Error(), "#77") {
+		t.Fatalf("/STRICT did not refuse the deprecated layout: %v", err)
+	}
+}
+
 // #78: every <service> attribute msis-2.x honoured reaches the package, with 2.x's defaults. Two
 // of them used to break the build outright - an omitted service-display-name emitted an
 // empty DisplayName (WIX0006), a description a child element WiX does not have (WIX0005) - and

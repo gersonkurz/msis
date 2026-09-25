@@ -17,9 +17,9 @@ Whenever the service is registered, its configuration is checked too (#78): the 
 (msis-2.x's default, the service name), description, type, error control, start type and the
 failure actions restart="yes" sets - read from the same registry key, against the manifest.
 
-Before #77's fix msis installed ONE path from two components; on this VM (2026-09-25) removing
-either feature deleted the executable the other still needed. That layout is now refused at
-build time, which the build side checks.
+The layout #77 deprecates installs ONE path from two components; on this VM (2026-09-25)
+removing either feature deleted the executable the other still needed. msis warns about it and
+/STRICT refuses it, which the build side checks.
 
     python t77_vm_probe.py --selftest   # checks the verdict; installs nothing
     python t77_vm_probe.py              # ELEVATED: the real thing

@@ -798,11 +798,13 @@ so. The harness's upgrade scenario judges the data's survival, and must pass on 
 per element, never the default; or a WiX change to how the util custom actions evaluate their
 condition.
 
-## D22 — A `<service>` may not share its executable with another feature: msis refuses the build and names two layouts that work
+## D22 — A `<service>` sharing its executable with another feature is deprecated: msis warns, `/STRICT` refuses, msis 4 will refuse
 
 **Settled in:** [#77](https://github.com/gersonkurz/msis/issues/77), 2026-09-25, product owner's
-decision (refuse, rather than restore msis-2.x's conditions), on the #77 VM probe's evidence.
-**Implemented by:** `internal/generator/context.go` — `func (c *Context) checkServiceFileOwnership() error`, `func (c *Context) serviceFileConflict(`
+decision, on the #77 VM probe's evidence and the 3.0.3 regression QA. First settled as "refuse"
+(7a65687), revised the same day to "deprecate" once the QA showed the teams' shipping scripts
+use the layout.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) checkServiceFileOwnership() error`, `func (c *Context) serviceFileConflict(`, `Strict bool`
 
 Windows Installer registers a service from the key file of the component carrying its
 `ServiceInstall`, so that component must own the executable, and one file can have only one
@@ -820,16 +822,29 @@ reinstalled. So by Windows Installer's documented rules, "install A, then add B,
 leaves both components installed and loses the file as above. That is reasoned from those
 rules; the 2.x layout was not probed.
 
-So msis refuses the layout wherever a service's executable shares its install target with a
-component of a different feature, whichever order the elements are written in. The error
-proposes the two layouts that are sound:
+**Why it is not refused.** The 3.0.3 regression QA found the layout in the shipping scripts of
+two products: five of ProAKT 3.6.0.73's six scripts with a service, and NG1 2.4.0. Refusing it would
+stop builds that work today. The hazard is also narrower than it sounds. It needs a
+maintenance-mode feature change on an installed product. A first install is unaffected, and so
+is a major upgrade, which removes the old version completely first. Those products set
+`ARPNOMODIFY`, which disables Change in Programs and Features and in the MSI's own maintenance
+dialog. For them, only `msiexec REMOVE=`/`ADDLOCAL=` from a command line reaches it.
+
+So msis builds the layout exactly as 3.0.5 did: the same components, the same GUIDs, checked
+against the 3.0.3-built ProAKT reference. It prints a warning for each service it finds. The
+warning names the hazard, says the layout is deprecated, that msis 4 will refuse it and that
+`/STRICT` refuses it now, and proposes the two layouts that are sound:
 - the `<service>` in A, registered whenever A is installed;
 - B installing its own copy at a target of its own (`[INSTALLDIR]service\`) and naming that
   copy. The probe ran this second layout through every feature change on the VM, and it
   passed (2026-09-25, todo-testme.md T9).
 
-A bare `file-name` whose file is installed elsewhere (say `[INSTALLDIR]bin\`) still gets its own
-copy at the INSTALLDIR root. That copy shares no target, so it is left alone.
+The check covers every way a script reaches the layout: a bare or anchored `file-name`, and a
+`<service>` written before the `<files>` that installs the same target. A bare `file-name` whose
+file is installed elsewhere (say `[INSTALLDIR]bin\`) still gets its own copy at the INSTALLDIR
+root; that copy shares no target, so it is left alone. With no features declared, the service
+attaches to the file's component, since WiX's default feature holds both.
 
-**What would reopen this:** a mechanism that lets one component's service registration follow a
-feature other than the component's own. Windows Installer has none today.
+**What would reopen this:** msis 4, which refuses the layout outright; or a mechanism that
+lets one component's service registration follow a feature other than the component's own.
+Windows Installer has none today.

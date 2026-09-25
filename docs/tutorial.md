@@ -517,11 +517,10 @@ The installer automatically:
 ### An optional service
 
 Put the `<service>` in the **same feature** as the `<files>` that installs its executable, as above.
-msis refuses to build a `<service>` in one feature that names an executable another feature
-installs:
+Naming an executable that **another** feature installs is deprecated:
 
 ```xml
-<!-- refused: two features would own one file -->
+<!-- deprecated: two features own one file (msis warns; /STRICT and msis 4 refuse it) -->
 <feature name="Complete">
   <files source="bin\MyApp.exe" target="[INSTALLDIR]"/>
 </feature>
@@ -531,8 +530,10 @@ installs:
 ```
 
 A service is registered from a file owned by the service's own component, and one file can
-have only one owning component. So removing either feature would delete the executable the
-other still needs. On a test machine, msiexec reported success both times (#77).
+have only one owning component. So msis installs the executable a second time for the Service
+feature, and removing either feature from an installed product deletes the file the other
+still needs. On a test machine, msiexec reported success both times (#77). msis still builds
+this, as earlier versions did, and warns. `/STRICT` refuses it, and msis 4 will.
 
 To keep the service opt-in, have the service feature install **its own copy** at a target of
 its own and name that copy:
