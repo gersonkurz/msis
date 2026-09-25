@@ -1,5 +1,5 @@
 ﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-    <Package Name="{{PRODUCT_NAME}}" UpgradeCode="{{UPGRADE_CODE}}" Language="{{LCID}}" Codepage="{{CODEPAGE}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" InstallerVersion="301">
+    <Package Name="{{PRODUCT_NAME}}" UpgradeCode="{{UPGRADE_CODE}}"{{#if PRODUCT_CODE}} ProductCode="{{PRODUCT_CODE}}"{{/if}} Language="{{LCID}}" Codepage="{{CODEPAGE}}" Version="{{PRODUCT_VERSION}}" Manufacturer="{{MANUFACTURER}}" InstallerVersion="301">
         <SummaryInformation Keywords="Installer" Description="{{PRODUCT_NAME}}" Manufacturer="{{MANUFACTURER}}" Codepage="{{CODEPAGE}}" />
         <!-- The product creator's contact (#64): shown in Programs and Features, and read back by /SBOM. -->
         {{#if MANUFACTURER_URL}}<Property Id="ARPURLINFOABOUT" Value="{{MANUFACTURER_URL}}" />{{/if}}

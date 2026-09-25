@@ -256,25 +256,23 @@ func runWix(workDir string, args []string) error {
 
 // getLocalizationFile returns the absolute path to the WiX localization file.
 func (b *Builder) getLocalizationFile() string {
-	if b.Language == "" {
+	return LocalizationFile(b.TemplateFolder, b.Language)
+}
+
+// LocalizationFile is the -loc file a build for language uses: <templates>/wixlib/<lang>.wxl, as
+// written or lower-cased, or "" when there is none. The ProductCode (#66) hashes the same file
+// the build reads, so both ask here.
+func LocalizationFile(templateFolder, language string) string {
+	if language == "" {
 		return ""
 	}
-
-	// Template folder should already be absolute, but ensure it
-	absTemplateFolder, _ := filepath.Abs(b.TemplateFolder)
-
-	// Look in template folder's wixlib directory
-	locFile := filepath.Join(absTemplateFolder, "wixlib", b.Language+".wxl")
-	if _, err := os.Stat(locFile); err == nil {
-		return locFile
+	absTemplateFolder, _ := filepath.Abs(templateFolder)
+	for _, name := range []string{language, strings.ToLower(language)} {
+		locFile := filepath.Join(absTemplateFolder, "wixlib", name+".wxl")
+		if _, err := os.Stat(locFile); err == nil {
+			return locFile
+		}
 	}
-
-	// Try lowercase
-	locFile = filepath.Join(absTemplateFolder, "wixlib", strings.ToLower(b.Language)+".wxl")
-	if _, err := os.Stat(locFile); err == nil {
-		return locFile
-	}
-
 	return ""
 }
 

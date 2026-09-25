@@ -698,3 +698,65 @@ not become one.
 **What would reopen this:** a grype that reads CycloneDX VEX and evaluates it with the same care;
 a need for a CI gate on findings, which would be an opt-in threshold and never the default; a
 second scanner.
+
+## D20 — Two builds of one script are identical except for documented fields; the ProductCode is derived from the package's inputs
+
+**Settled in:** [#66](https://github.com/gersonkurz/msis/issues/66), 2026-09-25. Product owner's
+decisions: identical except documented fields, not byte-identical; a ProductCode derived from
+the inputs, content included.
+**Implemented by:** `cmd/msis/productcode.go` — `func productCode(wxs string`, `func referencedFiles(wxs string)`
+
+The experiment recorded on #66: the same script built twice (WiX 7.0.0). The WXS msis generates
+was byte-identical. The MSIs differed in exactly four fields across all tables, streams and the
+summary information:
+- the ProductCode, which the templates did not set;
+- the PackageCode;
+- the create and last-saved times.
+
+With those four forced equal, two more remained: a FILETIME in the compound file's directory,
+and the payload files' dates inside the cabinet, which WiX copies from the source files.
+
+**What msis makes reproducible.** The ProductCode, since `Package/@ProductCode` is authorable.
+Unless the script sets `PRODUCT_CODE`, msis renders the WXS with a placeholder and hashes
+everything the package is built from:
+- the UpgradeCode, version and platform;
+- the msis and WiX versions, and the version of each WiX extension, resolved as the build
+  resolves them;
+- the WXS itself;
+- the SHA-256 of every file the WXS references, found through the bind paths as WiX finds them:
+  each `Source` and `SourceFile`, and the file-valued WixVariables (bitmaps, icons, licence
+  text);
+- the `-loc` file.
+
+The GUID is marked name-based (version 8). Identical inputs give the same code, and any change
+gives a new one, so a rebuild with a changed file at the same version still major-upgrades, as
+before.
+
+In these cases msis leaves the code to WiX (random, as before), and the build says why:
+- a file the WXS references cannot be resolved;
+- an extension msis cannot resolve;
+- the WXS uses WiX's preprocessor (an `<?include?>`, a `<?define?>`, any `$(...)`), which can
+  add inputs the hash never sees. The check reads the decoded document, as WiX does, so a
+  character reference such as `&#36;(env.X)` counts too; WiX's escaped `$$` is a plain dollar and
+  does not.
+
+The placeholder attribute is then removed however the template spells it. A template that uses
+`{{PRODUCT_CODE}}` anywhere else stops the build instead. A code that cannot see an input
+must not stay the same when that input changes. That would put two different packages under
+one ProductCode, and Windows Installer refuses the plain install of the second one.
+
+**What stays different, documented, not fixed:**
+- the PackageCode;
+- the two summary times;
+- the container FILETIME;
+- the cabinet's file dates.
+
+WiX 7 offers no attribute for the first three (`<SummaryInformation>` accepts only Codepage,
+Comments, Description, Keywords and Manufacturer; the binder calls `CreateGuid()` and
+`DateTime.Now`). The last two are below WiX. Making them equal means msis rewriting WiX's
+output after the build, which the product owner chose not to do. Every payload file's bytes and
+hash are identical across builds, so an SBOM verifies an installer's contents without the
+installer's own hash.
+
+**What would reopen this:** a WiX that lets a package author its PackageCode and dates; or a
+requirement for byte-identical installers, which is the post-processing path #66 describes.

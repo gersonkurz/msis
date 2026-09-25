@@ -396,6 +396,13 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 		return nil
 	}
 
+	// #66: unless the script sets PRODUCT_CODE, the WXS is rendered with a placeholder and the
+	// code derived from everything the package is built from (applyProductCode).
+	deriveProductCode := vars["PRODUCT_CODE"] == ""
+	if deriveProductCode {
+		vars["PRODUCT_CODE"] = productCodePlaceholder
+	}
+
 	// Milestone 3.4 - Template rendering
 	renderer := template.NewRenderer(vars, templateFolder, customTemplates, output)
 
@@ -441,6 +448,24 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 	// Determine output filename
 	wxsFile := wxsPath(filename, vars)
+
+	if deriveProductCode {
+		var said string
+		// wix runs from the .wxs's directory, as an absolute path (wix.Builder), so that is the
+		// directory its extensions resolve from.
+		wixDir := filepath.Dir(wxsFile)
+		if abs, err := filepath.Abs(wixDir); err == nil {
+			wixDir = abs
+		}
+		wxsContent, said, err = applyProductCode(wxsContent, vars, rec, templateFolder, wixDir)
+		if err != nil {
+			return err
+		}
+		delete(vars, "PRODUCT_CODE")
+		if said != "" {
+			fmt.Printf("  %s\n", said)
+		}
+	}
 
 	if err := writeWxs(wxsFile, wxsContent); err != nil {
 		return fmt.Errorf("writing WXS file: %w", err)

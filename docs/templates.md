@@ -510,6 +510,11 @@ Templates use Handlebars syntax. Key variables available:
 - `{{MANUFACTURER_EMAIL}}` - The product creator's email address, written as `ARPCONTACT` and read
   back by `/SBOM` as the creator's contact. A plain address only (#64)
 - `{{UPGRADE_CODE}}` - Upgrade GUID
+- `{{PRODUCT_CODE}}` - The package's ProductCode. Unless the script sets one, msis derives it
+  from everything the package is built from, so two builds of one script get the same code and
+  any change - a file, the version - gets a new one (#66, decisions D20). The shipped MSI
+  templates write it as `<Package ProductCode=...>` inside `{{#if PRODUCT_CODE}}`; a custom
+  template without it leaves the code to WiX, as before
 
 `SBOM_DATA_LICENSE` (an SPDX licence expression, e.g. `CC0-1.0`) is the licence the SBOM
 document itself is offered under, written as its `metadata.licenses` under `/BUILD /SBOM`
