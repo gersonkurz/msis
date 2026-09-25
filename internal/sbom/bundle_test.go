@@ -690,3 +690,22 @@ func TestTwoBundleDocumentsDifferOnlyInTimestampAndSerial(t *testing.T) {
 		t.Errorf("two documents for one bundle differ beyond the timestamp and serial:\n%s\n%s", a, c)
 	}
 }
+
+// #72: a multi-arch bundle chains packages that share one product name; each is named by the
+// file the bundle carries, with the product name beside it, and failing that by its package id.
+func TestAChainedPackageIsNamedByItsFile(t *testing.T) {
+	for _, tc := range []struct {
+		c    Component
+		want string
+	}{
+		{Component{Name: "MSIS", Properties: []Property{{propBSIFilename, "msis-3.0.6-x64.msi"}, {propPackageID, "MainPackage_x64"}}},
+			"msis-3.0.6-x64.msi (MSIS)"},
+		{Component{Name: "MSIS", Properties: []Property{{propPackageID, "MainPackage_arm64"}}}, "MainPackage_arm64 (MSIS)"},
+		{Component{Name: "app.msi", Properties: []Property{{propBSIFilename, "app.msi"}}}, "app.msi"},
+		{Component{Name: "MSIS"}, "MSIS"},
+	} {
+		if got := PackageLabel(tc.c); got != tc.want {
+			t.Errorf("PackageLabel = %q, want %q", got, tc.want)
+		}
+	}
+}

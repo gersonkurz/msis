@@ -64,9 +64,9 @@ func printBOMLinks(doc *sbom.Document) {
 		linked, why := sbom.BOMLink(c)
 		switch {
 		case linked != "":
-			fmt.Printf("  %s %s -> %s\n", cli.Success("Linked:"), c.Name, linked)
+			fmt.Printf("  %s %s -> %s\n", cli.Success("Linked:"), sbom.PackageLabel(c), linked)
 		case why != "":
-			fmt.Printf("  %s %s: %s\n", cli.Info("No link:"), c.Name, why)
+			fmt.Printf("  %s %s: %s\n", cli.Info("No link:"), sbom.PackageLabel(c), why)
 		}
 	}
 }

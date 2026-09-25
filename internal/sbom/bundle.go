@@ -714,3 +714,21 @@ func BOMLink(c Component) (link, why string) {
 	}
 	return link, why
 }
+
+// PackageLabel names a bundle's chained package so a reader can tell it from its siblings
+// (#72): a multi-arch bundle chains three MSIs that all carry the same product name. The file
+// the bundle carries, else the package id, then the name - with the name beside it when it
+// adds something.
+func PackageLabel(c Component) string {
+	label := propertyValueOf(c.Properties, propBSIFilename)
+	if label == "" {
+		label = propertyValueOf(c.Properties, propPackageID)
+	}
+	switch {
+	case label == "":
+		return c.Name
+	case c.Name != "" && c.Name != label:
+		return label + " (" + c.Name + ")"
+	}
+	return label
+}

@@ -462,6 +462,11 @@ func TestAutoBundleRecordsItsPrerequisitesAndLinksTheMSI(t *testing.T) {
 	if !strings.Contains(out, "Linked:") {
 		t.Errorf("the build did not report the BOM-Link to the MSI's document:\n%s", out)
 	}
+	// ... naming the package by the file the bundle carries, not only by its product name,
+	// which every package of a multi-arch bundle shares (#72).
+	if !strings.Contains(out, "Linked: app.msi (") {
+		t.Errorf("the link line does not name the chained file:\n%s", out)
+	}
 
 	msi := filepath.Join(dir, "app.msi")
 	exe := filepath.Join(dir, "app.exe")
