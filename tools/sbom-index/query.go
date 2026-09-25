@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -102,7 +104,7 @@ func Run(db *sql.DB, q Query, args map[string]string) ([]string, [][]string, err
 	if len(missing) > 0 {
 		return nil, nil, fmt.Errorf("query %q needs %s", q.Name, strings.Join(missing, ", "))
 	}
-	for name := range args {
+	for _, name := range slices.Sorted(maps.Keys(args)) { // the first unknown one is named: in a defined order (#73)
 		if !contains(q.Params, name) {
 			return nil, nil, fmt.Errorf("query %q takes no parameter %q; it takes %s",
 				q.Name, name, strings.Join(q.Params, ", "))

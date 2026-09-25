@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -451,8 +453,10 @@ func (c *Context) findDirectoryWithCustomID(dir *Directory, customID string) *Di
 	if dir.CustomID == customID {
 		return dir
 	}
-	for _, child := range dir.Children {
-		if found := c.findDirectoryWithCustomID(child, customID); found != nil {
+	// In a defined order (#73): today each level above the CustomID directory has one child, but
+	// with siblings a map range would make the result random.
+	for _, name := range slices.Sorted(maps.Keys(dir.Children)) {
+		if found := c.findDirectoryWithCustomID(dir.Children[name], customID); found != nil {
 			return found
 		}
 	}
@@ -1142,21 +1146,22 @@ func (c *Context) markDirectoryFeature(dir *Directory, featureID string) {
 // resolveEnvValue translates msis directory roots in environment variable values
 // to their WiX directory property equivalents.
 // e.g. "[APPDATADIR]NGBT\Logs" -> "[CommonAppDataFolder]NGBT\Logs"
+//
+// Every root in the value is translated, in a fixed order (#73): the first version ranged a map
+// and returned after the first root it happened to find, so a value naming two roots had a
+// random one translated and the other left as is in the WXS. No WiX property contains an msis
+// root in brackets, so the replacements cannot interact and their order does not matter.
 func resolveEnvValue(value string) string {
-	rootMap := map[string]string{
-		"INSTALLDIR":        "INSTALLDIR",
-		"APPDATADIR":        "CommonAppDataFolder",
-		"ROAMINGAPPDATADIR": "AppDataFolder",
-		"LOCALAPPDATADIR":   "LocalAppDataFolder",
-		"COMMONFILESDIR":    "CommonFiles64Folder",
-		"WINDOWSDIR":        "WindowsFolder",
-		"SYSTEMDIR":         "System64Folder",
-	}
-	for msisRoot, wixProp := range rootMap {
-		bracket := "[" + msisRoot + "]"
-		if strings.Contains(value, bracket) {
-			return strings.ReplaceAll(value, bracket, "["+wixProp+"]")
-		}
+	for _, r := range [...]struct{ msisRoot, wixProp string }{
+		{"INSTALLDIR", "INSTALLDIR"},
+		{"APPDATADIR", "CommonAppDataFolder"},
+		{"ROAMINGAPPDATADIR", "AppDataFolder"},
+		{"LOCALAPPDATADIR", "LocalAppDataFolder"},
+		{"COMMONFILESDIR", "CommonFiles64Folder"},
+		{"WINDOWSDIR", "WindowsFolder"},
+		{"SYSTEMDIR", "System64Folder"},
+	} {
+		value = strings.ReplaceAll(value, "["+r.msisRoot+"]", "["+r.wixProp+"]")
 	}
 	return value
 }

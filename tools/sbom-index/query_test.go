@@ -417,3 +417,14 @@ func index(cols []string, name string) int {
 	}
 	return -1
 }
+
+// #73: with several parameters a query does not take, the one named is the first by name, not
+// whichever a map range yields - the same message on every run. The check precedes the
+// database, so none is needed.
+func TestAnUnknownParameterIsNamedInADefinedOrder(t *testing.T) {
+	_, _, err := Run(nil, Query{Name: "q", Params: []string{"sha256"}}, map[string]string{"sha256": "x",
+		"zeta": "1", "mu": "1", "alpha": "1", "omega": "1", "gamma": "1", "beta": "1"})
+	if err == nil || !strings.Contains(err.Error(), `takes no parameter "alpha"`) {
+		t.Errorf("got %v, want the first unknown parameter by name, alpha", err)
+	}
+}

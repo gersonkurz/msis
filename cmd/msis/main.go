@@ -6,10 +6,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/gersonkurz/msis/internal/buildrecord"
@@ -235,8 +237,10 @@ func processFile(filename string, args *cliArgs) error {
 	vars := variables.New()
 	vars.LoadFromSetup(setup)
 
-	// Apply /SET: command-line overrides
-	for name, value := range args.setOverrides {
+	// Apply /SET: command-line overrides, by name: the map's own order is random, and output must
+	// be the same on every run (#73).
+	for _, name := range slices.Sorted(maps.Keys(args.setOverrides)) {
+		value := args.setOverrides[name]
 		vars.Set(name, value)
 		fmt.Printf("  Override: %s=%s\n", cli.Info(name), cli.Filename(value))
 	}

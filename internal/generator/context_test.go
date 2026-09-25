@@ -209,6 +209,9 @@ func TestResolveEnvValue(t *testing.T) {
 		{"[ROAMINGAPPDATADIR]app\\config", "[AppDataFolder]app\\config"},
 		{"[WINDOWSDIR]Temp", "[WindowsFolder]Temp"},
 		{"[SYSTEMDIR]drivers", "[System64Folder]drivers"},
+		// #73: every root in the value, not the first one a map range found.
+		{"[APPDATADIR]x;[LOCALAPPDATADIR]y;[SYSTEMDIR]z", "[CommonAppDataFolder]x;[LocalAppDataFolder]y;[System64Folder]z"},
+		{"[ROAMINGAPPDATADIR]a;[APPDATADIR]b;[ROAMINGAPPDATADIR]c", "[AppDataFolder]a;[CommonAppDataFolder]b;[AppDataFolder]c"},
 	}
 	for _, tt := range tests {
 		got := resolveEnvValue(tt.input)

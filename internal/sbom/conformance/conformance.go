@@ -487,6 +487,8 @@ func Check(data []byte, want Expected) []error {
 		}
 	}
 
+	// Several rules range maps; the report is the same on every run (#73).
+	sort.SliceStable(problems, func(i, j int) bool { return problems[i].Error() < problems[j].Error() })
 	return problems
 }
 

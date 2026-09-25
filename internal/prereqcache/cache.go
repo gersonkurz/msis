@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -329,12 +330,14 @@ func getAvailableVersionsHint(prereqType string) string {
 		for v := range versions {
 			available = append(available, v)
 		}
+		sort.Strings(available) // map order is random (#73)
 		return fmt.Sprintf("available %s versions with auto-download: %s", prereqType, strings.Join(available, ", "))
 	}
 	var types []string
 	for t := range DownloadURLs {
 		types = append(types, t)
 	}
+	sort.Strings(types)
 	return fmt.Sprintf("unknown type '%s'; available types: %s", prereqType, strings.Join(types, ", "))
 }
 

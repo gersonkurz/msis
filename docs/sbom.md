@@ -139,7 +139,7 @@ msis /SBOM setup.exe      # then the bundle, which links to app.msi.cdx.json
 ```
   Wrote: setup.exe.cdx.json
   9 components, serial urn:uuid:df94d55a-…
-  Linked: MsiReadFixture -> urn:cdx:101548c5-edb5-4081-a240-4cc6a3b4eff5/1
+  Linked: fixture.msi (MsiReadFixture) -> urn:cdx:101548c5-edb5-4081-a240-4cc6a3b4eff5/1
   No link: external.exe: the bundle does not carry this payload, so no document
            can be matched to the bytes that will actually be installed
 ```

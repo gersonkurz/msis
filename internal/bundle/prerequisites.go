@@ -3,6 +3,7 @@ package bundle
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -199,6 +200,7 @@ func ValidatePrerequisite(prereqType, version string) error {
 		for v := range versions {
 			available = append(available, v)
 		}
+		sort.Strings(available) // map order is random (#73)
 		return fmt.Errorf("unknown %s version '%s'; available versions: %s", prereqType, version, strings.Join(available, ", "))
 	}
 	// Unknown type
@@ -206,6 +208,7 @@ func ValidatePrerequisite(prereqType, version string) error {
 	for t := range Prerequisites {
 		types = append(types, t)
 	}
+	sort.Strings(types)
 	return fmt.Errorf("unknown prerequisite type '%s'; available types: %s", prereqType, strings.Join(types, ", "))
 }
 
