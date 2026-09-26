@@ -1533,13 +1533,21 @@ func (c *Context) serviceFileConflict(dir *Directory, svc *Component) string {
 	return ""
 }
 
-// featureNamesOf names features for a message: quoted script names, joined with "and".
+// featureNamesOf names features for a message: quoted, joined with "and", and resolved as the
+// package's Title shows them (#84) - a <feature name="{{PRODUCT_NAME}}"> is "ProAKT Standard"
+// to whoever reads the warning. Quietly: an unresolvable name is warned about where the Title
+// is written, and is quoted here as written.
 func (c *Context) featureNamesOf(ids []string) string {
 	quoted := make([]string, len(ids))
 	for i, id := range ids {
 		name, ok := c.featureNames[id]
-		if !ok {
+		switch {
+		case !ok:
 			name = "items outside any feature"
+		default:
+			if resolved, err := c.Variables.Resolve(name); err == nil {
+				name = resolved
+			}
 		}
 		quoted[i] = fmt.Sprintf("%q", name)
 	}

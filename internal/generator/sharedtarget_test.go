@@ -102,3 +102,50 @@ func TestSharedFileTargets(t *testing.T) {
 		})
 	}
 }
+
+// #84: the deprecation warnings (#77, #79) name a feature as the package's Title shows it,
+// resolved, not as the script wrote it - probuiknoba saw "{{PRODUCT_NAME}}" in the #77 one.
+func TestDeprecationWarningsNameResolvedFeatures(t *testing.T) {
+	dir := t.TempDir()
+	n := filepath.FromSlash
+	for _, rel := range []string{"a/svc.exe", "b/config.json", "c/config.json"} {
+		path := filepath.Join(dir, n(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(rel), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vars := variables.New()
+	vars["PRODUCT_NAME"] = "ProAKT Standard"
+	setup := &ir.Setup{Features: []ir.Feature{
+		{Name: "{{PRODUCT_NAME}}", Enabled: true, Items: []ir.Item{
+			ir.Files{Source: n("a/svc.exe"), Target: "[INSTALLDIR]"},
+			ir.Files{Source: n("b/config.json"), Target: "[INSTALLDIR]"},
+		}},
+		{Name: "Install as service", Enabled: true, Items: []ir.Item{
+			ir.Service{FileName: "svc.exe", ServiceName: "PASERVER"},
+			ir.Files{Source: n("c/config.json"), Target: "[INSTALLDIR]"},
+		}},
+	}}
+	output, err := NewContext(setup, vars, dir).Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, w := range output.Warnings {
+		for _, issue := range []string{"#77", "#79"} {
+			if !strings.Contains(w, issue) {
+				continue
+			}
+			found[issue] = true
+			if strings.Contains(w, "{{") || !strings.Contains(w, `"ProAKT Standard"`) {
+				t.Errorf("the %s warning does not name the resolved feature:\n%s", issue, w)
+			}
+		}
+	}
+	if !found["#77"] || !found["#79"] {
+		t.Errorf("expected a #77 and a #79 warning, got %q", output.Warnings)
+	}
+}

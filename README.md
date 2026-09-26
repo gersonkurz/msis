@@ -270,8 +270,9 @@ NG1 2.4, with the risky cases run on a test VM (`todo-testme.md`).
 removed later are deprecated: they build as before, warn, `/STRICT` refuses them, and msis 4
 will. One is a `<service>` in another feature than its executable ([#77](../../issues/77), D22);
 the other is two features installing one file ([#79](../../issues/79), D24). Each warning says
-how to rewrite it. Two `<files>` for one target in the same feature stay allowed and silent. The
-installer-hook danger warnings now name what to use instead.
+how to rewrite it, naming each feature as the package's Title shows it ([#84](../../issues/84)).
+Two `<files>` for one target in the same feature stay allowed and silent. The installer-hook
+danger warnings now name what to use instead.
 
 **Fixes:**
 - Every prerequisite download is pinned to a URL and SHA-256 and verified on every cache reuse
