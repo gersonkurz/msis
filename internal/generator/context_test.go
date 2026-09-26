@@ -330,10 +330,10 @@ func TestProcessServicePathAnchorsToExistingComponent(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-	if err := os.WriteFile(tmpDir+"\\myservice.exe", []byte("exe"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "myservice.exe"), []byte("exe"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
-	if err := os.WriteFile(tmpDir+"\\helper.dll", []byte("dll"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "helper.dll"), []byte("dll"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
@@ -538,7 +538,7 @@ func TestProcessServiceTutorialSixForm(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-	exePath := tmpDir + "\\MyService.exe"
+	exePath := filepath.Join(tmpDir, "MyService.exe")
 	if err := os.WriteFile(exePath, []byte("exe"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestProcessServicePathSameFeatureAttachesInPlace(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-	if err := os.WriteFile(tmpDir+"\\myservice.exe", []byte("exe"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, "myservice.exe"), []byte("exe"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
