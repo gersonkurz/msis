@@ -1,8 +1,10 @@
 package generator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,31 +123,145 @@ func guidsByDestination(ctx *Context) map[string]string {
 	return out
 }
 
-// TestSingleUseSourceKeepsItsHistoricGUID is the compatibility half of issue #21, and the
-// reason the fix is safe to ship: a source file installed to one place must keep exactly the
-// GUID msis has always given it, or every installed product sees its components change
-// identity on upgrade.
-//
-// The value below was read out of the build before the fix and is pinned deliberately. An
-// assertion against GenerateGUID(source) would pass no matter how the scheme changed, which is
-// the one thing this test exists to prevent.
-func TestSingleUseSourceKeepsItsHistoricGUID(t *testing.T) {
+// TestFileGUIDIsProductAndDestination pins the identity scheme (#81, decisions D23): a file
+// component's GUID is the product's UpgradeCode plus where it installs, and its id is where it
+// installs. The values are pinned deliberately - an assertion against GenerateGUID(...) would
+// pass however the scheme changed, and a change moves every component of every package.
+func TestFileGUIDIsProductAndDestination(t *testing.T) {
 	const (
-		componentID  = "CID_62d0a0ae93133a7a"
-		historicGUID = "62d0a0ae-9313-3a7a-ad1a-08cff7ba0fcd"
+		componentID = "CID_6e8a60f5c40b3b03"
+		guid        = "9418f85d-a1d5-17da-9288-2e55a366b723"
 	)
-
-	output := generateFiles(t, ir.Files{Source: "app.txt", Target: "[INSTALLDIR]"})
-
-	guids := componentGUIDs(output)
-	got, ok := guids[componentID]
-	if !ok {
-		t.Fatalf("component %s is gone; the id scheme changed, which moves component identity "+
-			"for every installed product (have: %v)", componentID, guids)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if got != historicGUID {
-		t.Errorf("GUID for a single-use source changed from %s to %s - every package in the "+
-			"field would see this component change identity on upgrade", historicGUID, got)
+	vars := variables.New()
+	vars["UPGRADE_CODE"] = "{11111111-2222-3333-4444-555555555555}"
+	setup := &ir.Setup{Features: []ir.Feature{{Name: "Main", Items: []ir.Item{ir.Files{Source: "app.txt", Target: "[INSTALLDIR]"}}}}}
+	output, err := NewContext(setup, vars, dir).Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := componentGUIDs(output); got[componentID] != guid {
+		t.Errorf("component %s should have GUID %s; the identity scheme changed, which moves every "+
+			"component of every package (have: %v)", componentID, guid, got)
+	}
+}
+
+// buildIn generates a package from absolute <files> sources in dir - the NG1 CI shape (#81) -
+// under the given UpgradeCode, and returns its GUIDs by destination plus its component ids.
+func buildIn(t *testing.T, dir, upgradeCode string, features ...ir.Feature) (map[string]string, []string) {
+	t.Helper()
+	for i := range features {
+		for j, item := range features[i].Items {
+			f := item.(ir.Files)
+			path := filepath.Join(dir, f.Source)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(f.Source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f.Source = path
+			features[i].Items[j] = f
+		}
+	}
+	vars := variables.New()
+	vars["UPGRADE_CODE"] = upgradeCode
+	ctx := NewContext(&ir.Setup{Features: features}, vars, dir)
+	output, err := ctx.Generate()
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	ids := sortedKeysOf(componentGUIDs(output))
+	return guidsByDestination(ctx), ids
+}
+
+func features(items ...[]ir.Item) []ir.Feature {
+	out := make([]ir.Feature, len(items))
+	for i, it := range items {
+		out[i] = ir.Feature{Name: fmt.Sprintf("F%d", i), Items: it}
+	}
+	return out
+}
+
+// TestFileGUIDsDoNotDependOnTheBuildFolder is #81: the same script built from two folders, with
+// absolute sources, gave every component a new GUID - NG1's reference and a local build differed
+// in all 10,565 - because the GUID hashed the absolute source path.
+func TestFileGUIDsDoNotDependOnTheBuildFolder(t *testing.T) {
+	const code = "{11111111-2222-3333-4444-555555555555}"
+	shape := func() []ir.Feature {
+		return features([]ir.Item{
+			ir.Files{Source: `out\conf\fastcgi.conf`, Target: `[INSTALLDIR]conf`},
+			ir.Files{Source: `out\app.exe`, Target: "[INSTALLDIR]"},
+		})
+	}
+	ciGUIDs, ciIDs := buildIn(t, filepath.Join(t.TempDir(), "ng1-2.4.0-banking"), code, shape()...)
+	localGUIDs, localIDs := buildIn(t, filepath.Join(t.TempDir(), "Downloads", "ng1"), code, shape()...)
+	if len(ciGUIDs) != 2 || !sameMap(ciGUIDs, localGUIDs) {
+		t.Errorf("the build folder changed the GUIDs:\n%v\nvs\n%v", ciGUIDs, localGUIDs)
+	}
+	if !slices.Equal(ciIDs, localIDs) {
+		t.Errorf("the build folder changed the component ids: %v vs %v", ciIDs, localIDs)
+	}
+}
+
+// TestFileGUIDsAreScopedToTheProduct: two products installing the same destination (each into
+// its own INSTALLDIR) must not share a component - Windows Installer would refcount one
+// component across both, at two different paths.
+func TestFileGUIDsAreScopedToTheProduct(t *testing.T) {
+	shape := func() []ir.Feature {
+		return features([]ir.Item{ir.Files{Source: "app.txt", Target: "[INSTALLDIR]"}})
+	}
+	a, _ := buildIn(t, t.TempDir(), "{11111111-1111-1111-1111-111111111111}", shape()...)
+	b, _ := buildIn(t, t.TempDir(), "{22222222-2222-2222-2222-222222222222}", shape()...)
+	if a[`installdir\app.txt`] == "" || a[`installdir\app.txt`] == b[`installdir\app.txt`] {
+		t.Errorf("two products share the GUID of \x60installdir\\app.txt: %v / %v", a, b)
+	}
+}
+
+// TestSharedDestinationGetsDistinctStableGUIDs is the #79 shape: two features install different
+// sources to ONE destination. Each component needs its own GUID (WIX0369 otherwise), and which
+// GUID belongs to which source must not depend on the order the features are written in.
+func TestSharedDestinationGetsDistinctStableGUIDs(t *testing.T) {
+	const code = "{11111111-2222-3333-4444-555555555555}"
+	standard := []ir.Item{ir.Files{Source: `a\config.json`, Target: "[INSTALLDIR]"}}
+	variant := []ir.Item{ir.Files{Source: `b\config.json`, Target: "[INSTALLDIR]"}}
+	dir := t.TempDir()
+	guidsOf := func(fs ...ir.Feature) map[string]string {
+		vars := variables.New()
+		vars["UPGRADE_CODE"] = code
+		for i := range fs {
+			for j, item := range fs[i].Items {
+				f := item.(ir.Files)
+				path := filepath.Join(dir, f.Source)
+				_ = os.MkdirAll(filepath.Dir(path), 0o755)
+				if err := os.WriteFile(path, []byte(f.Source), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				fs[i].Items[j] = f
+			}
+		}
+		ctx := NewContext(&ir.Setup{Features: fs}, vars, dir)
+		if _, err := ctx.Generate(); err != nil {
+			t.Fatal(err)
+		}
+		bySource := map[string]string{}
+		for _, placed := range ctx.fileComponentsBySource {
+			for _, p := range placed {
+				bySource[strings.ToLower(p.comp.Files[0].SourcePath)] = p.comp.GUID
+			}
+		}
+		return bySource
+	}
+	forward := guidsOf(features(standard, variant)...)
+	reversed := guidsOf(features(variant, standard)...)
+	if len(forward) != 2 || forward[`a\config.json`] == forward[`b\config.json`] {
+		t.Errorf("the two components at one destination should have distinct GUIDs: %v", forward)
+	}
+	if !sameMap(forward, reversed) {
+		t.Errorf("reordering the features moved the GUIDs between sources:\n%v\nvs\n%v", forward, reversed)
 	}
 }
 

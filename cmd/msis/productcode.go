@@ -30,8 +30,9 @@ var fileWixVariables = map[string]bool{
 
 // productCode derives the ProductCode for a package from everything it is built from (#66,
 // decisions D20): the UpgradeCode, version and platform; msis's, WiX's and the extensions'
-// versions; the WXS as rendered with the placeholder; and the SHA-256 of every file that WXS
-// references, resolved through the bind paths as WiX resolves them, and of the -loc file.
+// versions; the WXS as rendered with the placeholder, with every file it references replaced by
+// that file's SHA-256 - resolved through the bind paths as WiX resolves them - so where the
+// sources sit is not an input (#81); and the SHA-256 of the -loc file.
 // Identical inputs give the same code, any change gives a new one - so two builds of one
 // script match, and a rebuild with a changed file still major-upgrades.
 //
@@ -45,12 +46,7 @@ func productCode(wxs string, vars variables.Dictionary, rec *buildrecord.Record,
 	if err != nil {
 		return "", "the WXS " + err.Error()
 	}
-	h := sha256.New()
-	fmt.Fprintf(h, "msis product code v1\x00%s\x00%s\x00%s\x00", vars.UpgradeCode(), vars["PRODUCT_VERSION"], vars.Platform())
-	for _, t := range toolchain {
-		fmt.Fprintf(h, "%s\x00", t)
-	}
-	fmt.Fprintf(h, "%d\x00%s", len(wxs), wxs)
+	sums := make(map[string]string, len(refs))
 	for _, ref := range refs {
 		path, ok := rec.Locate(ref)
 		if !ok {
@@ -60,7 +56,15 @@ func productCode(wxs string, vars variables.Dictionary, rec *buildrecord.Record,
 		if err != nil {
 			return "", err.Error()
 		}
-		fmt.Fprintf(h, "%s\x00%s\x00", ref, sum)
+		sums[ref] = sum
+	}
+	h := sha256.New()
+	fmt.Fprintf(h, "msis product code v2\x00%s\x00%s\x00%s\x00", vars.UpgradeCode(), vars["PRODUCT_VERSION"], vars.Platform())
+	for _, t := range toolchain {
+		fmt.Fprintf(h, "%s\x00", t)
+	}
+	if err := hashLocationFree(h, wxs, sums); err != nil {
+		return "", "the WXS " + err.Error()
 	}
 	if loc := wix.LocalizationFile(templateFolder, vars["LANGUAGE"]); loc != "" {
 		sum, err := sha256File(loc)
@@ -105,23 +109,9 @@ func referencedFiles(wxs string) ([]string, error) {
 				return nil, errPreprocessorVariable
 			}
 		}
-		fileVar := el.Name.Local == "WixVariable"
-		if fileVar {
-			fileVar = false
-			for _, a := range el.Attr {
-				if a.Name.Local == "Id" && fileWixVariables[a.Value] {
-					fileVar = true
-				}
-			}
-		}
 		for _, a := range el.Attr {
-			switch {
-			case a.Name.Local == "Source" || a.Name.Local == "SourceFile", fileVar && a.Name.Local == "Value":
-				if a.Value != "" {
-					// "$$" is WiX's escaped "$" (the generator writes a file name's "$" so);
-					// the file WiX looks for has the single one.
-					seen[strings.ReplaceAll(a.Value, "$$", "$")] = true
-				}
+			if ref, ok := fileReference(el, a); ok {
+				seen[ref] = true
 			}
 		}
 	}
@@ -131,6 +121,68 @@ func referencedFiles(wxs string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// fileReference reports whether attribute a of el names a file for WiX to package - a Source,
+// a SourceFile, or the Value of a file-valued WixVariable - and returns the file as WiX looks
+// for it: "$$" is WiX's escaped "$" (the generator writes a file name's "$" so).
+func fileReference(el xml.StartElement, a xml.Attr) (string, bool) {
+	isFile := a.Name.Local == "Source" || a.Name.Local == "SourceFile"
+	if !isFile && a.Name.Local == "Value" && el.Name.Local == "WixVariable" {
+		for _, id := range el.Attr {
+			if id.Name.Local == "Id" && fileWixVariables[id.Value] {
+				isFile = true
+			}
+		}
+	}
+	if !isFile || a.Value == "" {
+		return "", false
+	}
+	return strings.ReplaceAll(a.Value, "$$", "$"), true
+}
+
+// hashLocationFree writes the WXS into h with every file reference replaced by the SHA-256 of
+// the file it resolves to (sums, keyed as fileReference returns them) and the reference's file
+// name, so the digest binds each file's content and name to its place in the package but not to
+// the folder the build ran in (#81): a script with absolute sources, built from another folder,
+// gets the same ProductCode.
+//
+// It writes the decoded token stream, not the text, so an attribute's quoting or escaping cannot
+// hide or fake a reference. Every token is written, delimited, comments included.
+func hashLocationFree(h io.Writer, wxs string, sums map[string]string) error {
+	d := xml.NewDecoder(strings.NewReader(wxs))
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("is not readable XML: %w", err)
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			fmt.Fprintf(h, "<%s:%s\x00", t.Name.Space, t.Name.Local)
+			for _, a := range t.Attr {
+				v := a.Value
+				if ref, ok := fileReference(t, a); ok {
+					// The file name stays: WiX installs a <File> without Name under its
+					// Source's name, so a rename with identical bytes is a different package.
+					v = "sha256:" + sums[ref] + "\x00" + ref[strings.LastIndexAny(ref, `\/`)+1:]
+				}
+				fmt.Fprintf(h, "@%s:%s=%d\x00%s\x00", a.Name.Space, a.Name.Local, len(v), v)
+			}
+		case xml.EndElement:
+			fmt.Fprintf(h, ">%s:%s\x00", t.Name.Space, t.Name.Local)
+		case xml.CharData:
+			fmt.Fprintf(h, "t%d\x00%s", len(t), t)
+		case xml.Comment:
+			fmt.Fprintf(h, "c%d\x00%s", len(t), t)
+		case xml.ProcInst:
+			fmt.Fprintf(h, "p%s\x00%d\x00%s", t.Target, len(t.Inst), t.Inst)
+		case xml.Directive:
+			fmt.Fprintf(h, "d%d\x00%s", len(t), t)
+		}
+	}
 }
 
 var errPreprocessorVariable = errors.New("uses a WiX preprocessor variable $(...), whose value msis cannot see")

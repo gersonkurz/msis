@@ -26,7 +26,7 @@ msis transforms declarative `.msis` XML scripts into Windows Installer packages 
 ```
 
 The tool abstracts away WiX complexity:
-- **Auto-generates GUIDs** for components (deterministic, based on file paths)
+- **Auto-generates GUIDs** for components (deterministic: the product plus where each file installs)
 - **Builds directory trees** from a named directory, recursively, or from single files
 - **Maps files to components** following WiX's one-file-per-component rule
 - **Converts .reg files** to WiX registry XML
@@ -203,7 +203,7 @@ output, err := ctx.Generate()
 Key responsibilities:
 - **Directory tree building**: Scans source folders, creates WiX Directory elements
 - **Component generation**: One component per file (WiX best practice)
-- **ID generation**: Deterministic GUIDs based on file paths
+- **ID generation**: Deterministic GUIDs from the product and the install destination (decisions D23)
 - **Shortcut handling**: Creates shortcut components with registry keypaths
 - **Registry processing**: Delegates to `registry` package for .reg files
 

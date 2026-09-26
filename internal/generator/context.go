@@ -73,9 +73,8 @@ type Context struct {
 	// Used to attach service definitions to existing file components
 	fileComponents map[string]*Component
 
-	// Every file component, grouped by the source path it was built from. A source used
-	// more than once needs its components' GUIDs qualified by where each one installs to;
-	// see resolveDuplicateSourceGUIDs.
+	// Every file component, grouped by the source path it was built from. resolveFileGUIDs
+	// keys each on where it installs, and on this source when a destination is shared.
 	fileComponentsBySource map[string][]placedComponent
 
 	// Registry processor and components
@@ -571,7 +570,7 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 
 	// All file components exist by now, so a source used in more than one place can be
 	// given per-target GUIDs before anything is rendered (issue #21).
-	c.resolveDuplicateSourceGUIDs()
+	c.resolveFileGUIDs()
 
 	// Generate launch conditions for requirements
 	launchSearchXML, launchCondXML := c.generateLaunchConditions()
@@ -970,16 +969,13 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 }
 
 func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string) error {
-	// Create component for file
-	// Use source path in component ID to handle feature-based file overrides
-	// (same target file from different sources in different features)
-	compPath := sourcePath // Use source path for uniqueness
-	compID := c.NextComponentID(compPath)
+	// The component id names where the file installs, not where it was built from (#81): an
+	// absolute source path would make the id - and the ProductCode hashed over the WXS - depend
+	// on the build machine's folder. NextComponentID disambiguates two components at one target
+	// (feature-based overrides, #79). The GUID is assigned once every file is known, by
+	// resolveFileGUIDs, because whether a target is shared decides its key.
+	compID := c.NextComponentID(destination(dir, fileName))
 	fileID := c.NextFileID()
-
-	// Generate explicit GUID from source path to ensure uniqueness
-	// even when multiple features install different versions of the same target file
-	guid := GenerateGUID(sourcePath)
 
 	// Track target file for duplicate detection
 	// Key is dirID:lowercaseFilename to identify the target location
@@ -1001,8 +997,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	}
 
 	comp := &Component{
-		ID:   compID,
-		GUID: guid,
+		ID: compID,
 		Files: []*File{
 			{
 				ID:         fileID,
@@ -1016,8 +1011,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 
 	c.addComponentToDirectory(dir, comp, featureID)
 
-	// Remember where this source landed; resolveDuplicateSourceGUIDs re-keys the GUIDs of
-	// any source that ends up installed to more than one place.
+	// Remember where this source landed; resolveFileGUIDs keys each component on it.
 	c.fileComponentsBySource[sourcePath] = append(c.fileComponentsBySource[sourcePath],
 		placedComponent{comp: comp, dir: dir})
 
@@ -1042,7 +1036,7 @@ type placedComponent struct {
 }
 
 // installedAt names the destination that gives this component its identity: the directory
-// plus the installed file name.
+// plus the installed file name. See destination.
 //
 // The file name is part of it because <files target="[INSTALLDIR]other.txt"> renames on
 // install, so one source can legitimately land twice in ONE directory under two names. Keying
@@ -1050,48 +1044,74 @@ type placedComponent struct {
 // WIX0369 - the very defect this fixes, in a shape the first version missed.
 //
 // The whole thing is case-folded because directory lookup is case-insensitive and keeps
-// whichever spelling it saw first: declaring [INSTALLDIR]Data\one before [INSTALLDIR]data	wo
+// whichever spelling it saw first: declaring [INSTALLDIR]Data\one before [INSTALLDIR]data\two
 // makes the shared parent "Data", and declaring them the other way round makes it "data".
 // Hashing the raw name would make identity depend on the order the elements are written in,
 // which is exactly what this design exists to avoid.
 func (p placedComponent) installedAt() string {
-	path := targetPathOf(p.dir)
+	name := ""
 	if len(p.comp.Files) > 0 {
-		path += "\\" + p.comp.Files[0].Name
+		name = p.comp.Files[0].Name
+	}
+	return destination(p.dir, name)
+}
+
+// destination is where a file installs, as the root key plus the path below it and the file
+// name, case-folded: installdir\conf\fastcgi.conf.
+func destination(dir *Directory, fileName string) string {
+	path := targetPathOf(dir)
+	if fileName != "" {
+		path += "\\" + fileName
 	}
 	return strings.ToLower(path)
 }
 
-// resolveDuplicateSourceGUIDs gives a distinct GUID to each component built from a source
-// file that the package installs to more than one place.
+// resolveFileGUIDs gives every file component its GUID: the product's UpgradeCode plus the
+// destination it installs to (#81, decisions D23). That is Windows Installer's component rule -
+// one GUID per resource per product, for the product's lifetime - and it holds across build
+// folders, machines and releases, which the source path it replaced did not: NG1's CI builds
+// from a folder named after the version, so every release got all-new GUIDs.
 //
-// addFile derives a component's GUID from its source path alone, so listing one source
-// against two targets produced two components with the same GUID and `wix build` rejected
-// the package outright (issue #21):
+// Where several components install to ONE destination - feature-based overrides of one file,
+// #79 - the destination alone cannot tell them apart, so each adds its source path relative to
+// the script's folder. Relative, so the key still does not depend on where the tree sits.
 //
-//	error WIX0369: Component/@Id='CID_..._1' ... has a @Guid value '{...}' that duplicates
-//	another component in this package.
-//
-// Because that is a hard error and msis builds the whole wix command line itself - there is
-// no way to suppress it - no package that builds today contains a repeated source path.
-// Every such package therefore keeps exactly the GUIDs it has: this rewrites nothing unless
-// a source appears more than once, which until now could not ship.
-//
-// Where it does apply, ALL of that source's components are re-keyed, not just the second
-// one. Leaving the first on the old scheme would make the identities depend on the order the
-// <files> elements happen to be written in, so reordering two lines would swap two GUIDs.
-// Keying every one of them on source plus target makes a component's identity a function of
-// what it installs and where, which is what it should have been.
-func (c *Context) resolveDuplicateSourceGUIDs() {
+// Every component of a shared destination is keyed that way, not only the second: otherwise
+// the identities would depend on the order the <files> elements are written in. The source
+// installed to several destinations (#21) needs nothing extra - its destinations differ.
+func (c *Context) resolveFileGUIDs() {
+	type sourced struct {
+		placedComponent
+		source string
+	}
+	byTarget := map[string][]sourced{}
 	for _, source := range sortedKeysOf(c.fileComponentsBySource) {
-		placed := c.fileComponentsBySource[source]
-		if len(placed) < 2 {
-			continue
-		}
-		for _, p := range placed {
-			p.comp.GUID = GenerateGUID(source + "|" + p.installedAt())
+		for _, p := range c.fileComponentsBySource[source] {
+			at := p.installedAt()
+			byTarget[at] = append(byTarget[at], sourced{p, source})
 		}
 	}
+	for _, at := range sortedKeysOf(byTarget) {
+		placed := byTarget[at]
+		for _, p := range placed {
+			key := at
+			if len(placed) > 1 {
+				key += "|" + c.relativeSource(p.source)
+			}
+			p.comp.GUID = GenerateGUID(c.productScopedID(key))
+		}
+	}
+}
+
+// relativeSource is a source path relative to the script's folder, case-folded as Windows
+// compares paths. A source that has no path relative to it (another drive) stays absolute.
+func (c *Context) relativeSource(source string) string {
+	if filepath.IsAbs(source) {
+		if rel, err := filepath.Rel(c.WorkDir, source); err == nil {
+			source = rel
+		}
+	}
+	return strings.ToLower(filepath.Clean(source))
 }
 
 // targetPathOf names the install location of a directory, as the root key the user wrote

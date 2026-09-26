@@ -812,3 +812,54 @@ row.
 Anything the product runs after install (ProAKT: PAKTCONF.EXE /POST-INSTALL, AKTCONFIG.EXE) may
 rewrite some of them; this probe does not run those. Packages built from the regular templates
 are not affected.
+
+## T80 — BrowseDlg's OK button (#80): DONE 2026-09-26
+
+Why: since WiX 6, BrowseDlg's OK button publishes nothing itself, and msis's own dialog sets did
+not publish its events, so OK did nothing and only Cancel closed the dialog. e785425 adds the two
+events; `TestBrowseDlgOKSetsTheFolderAndCloses` checks the compiled ControlEvent rows. This probe
+checks the dialog on a machine.
+
+Probe: `testscripts/t80`. The build side (`uv run t80_browse_probe.py`) builds msis HEAD and two
+packages:
+- `full`: `templates/x64` with `INSTALL_DIR_DIALOG`, where BrowseDlg opens from InstallDirDlg's
+  Change and from CustomizeDlg's Browse;
+- `minimal`: `templates/minimal`, where it opens from InstallDirDlg's Change.
+
+The VM side (`vm/t80_vm_probe.py`, elevated, interactive) has the tester pick a folder under
+`C:\T80\` in each BrowseDlg. It judges from the verbose log that each picked folder reached
+`WIXUI_INSTALLDIR`/`INSTALLDIR` and that the package installed to the last one, checks `app.txt`
+is there, and asks whether each OK closed the dialog.
+
+### Executed on 2026-09-26, on the test VM
+
+| Package | Result |
+|---|---|
+| full (Change, then Browse) | PASS |
+| minimal (Change) | PASS |
+
+## T81 — a major upgrade across the one-time component GUID change (#81, D23): DONE 2026-09-26
+
+Why: since #81 a file component's GUID is the product plus where the file installs, not its
+source path, so the first 3.0.6 build of a product gives every file component a new GUID. D23
+argues that is harmless because the templates' default MajorUpgrade removes the old version
+completely before installing the new one. This probe checks it on a machine.
+
+Probe: `testscripts/t81`. The build side (`uv run t81_guid_probe.py`) makes two packages:
+- v1 (1.0.0), built by msis at e785425 (the source-path scheme) from `work\ci\ng1-1.0.0`;
+- v2 (1.0.1), built by msis HEAD (D23) from `work\local\Downloads`.
+
+Both name their sources by absolute path. It refuses to stage unless v1 and v2 share no
+file-component GUID; they had 3 and 4 file components with none in common. Two files change
+content, one does not, and v2 adds one. The VM side (`vm/t81_vm_probe.py`, elevated,
+unattended) checks every file's content, the install folder and the Programs and Features
+entries after each step.
+
+### Executed on 2026-09-26, on the test VM
+
+| Step | Result |
+|---|---|
+| 1 install v1 | PASS: v1's files, one ARP entry 1.0.0 |
+| 2 upgrade to v2 | PASS: v2's files at v2's content, one ARP entry 1.0.1 |
+| 3 delete `conf\static.txt`, repair v2 | PASS: restored |
+| 4 uninstall v2 | PASS: no files, no folder, no ARP entry |

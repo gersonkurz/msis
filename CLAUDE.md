@@ -80,7 +80,9 @@ Key cross-cutting design points:
   uniqueness maps — never `Date.now()`/random — so output is stable and diffable. Preserve this
   when adding generators. The generated WXS is byte-identical across builds of one script, and
   the ProductCode is derived from the package's inputs (D20); the PackageCode and a few
-  timestamps WiX writes are the documented exceptions.
+  timestamps WiX writes are the documented exceptions. A file component's GUID is the product
+  plus where it installs, never the source path (D23), so building from another folder changes
+  nothing in the MSI.
 - **Directory roots.** Target paths are matched against known root keys (see table below); a
   `DirectoryTrees` map is built per root. Unmatched paths fall under `INSTALLDIR`.
 - **Two build modes for `<requires>`.** Default: build the MSI, then auto-wrap it in a Burn

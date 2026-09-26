@@ -69,6 +69,57 @@ func TestAnUnresolvableReferenceDerivesNoCode(t *testing.T) {
 	}
 }
 
+// #81: a script with absolute sources, built from another folder, gets the same ProductCode -
+// where the sources sit is not an input. What each file contains, and which file goes where,
+// still is: swapping two files' contents changes the code.
+func TestTheProductCodeIgnoresWhereSourcesSit(t *testing.T) {
+	vars := variables.Dictionary{"UPGRADE_CODE": "{9E4D3A86-5F7C-4B03-9D29-4A8C6E0F3B86}", "PRODUCT_VERSION": "1.0.0"}
+	codeIn := func(dir, first, second string) string {
+		t.Helper()
+		for name, content := range map[string]string{"one.txt": first, "two.txt": second} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rec := buildrecord.New(buildrecord.PathMSI, filepath.Join(dir, "setup.msis"), []buildrecord.BindPath{{Name: "wxs", Dir: dir}})
+		wxs := `<Wix><Package ProductCode="` + productCodePlaceholder + `"><File Source="` + filepath.Join(dir, "one.txt") +
+			`"/><File Source='` + filepath.Join(dir, "two.txt") + `'/></Package></Wix>`
+		code, why := productCode(wxs, vars, rec, dir, nil)
+		if code == "" {
+			t.Fatalf("no code derived: %s", why)
+		}
+		return code
+	}
+	ci := codeIn(filepath.Join(t.TempDir()), "a", "b")
+	local := codeIn(filepath.Join(t.TempDir()), "a", "b")
+	if ci != local {
+		t.Errorf("the same package built from two folders got %s and %s", ci, local)
+	}
+	if swapped := codeIn(t.TempDir(), "b", "a"); swapped == ci {
+		t.Error("swapping two files' contents kept the ProductCode")
+	}
+
+	// #81's review: WiX installs a <File> without Name under its Source's name, so the same
+	// bytes under another file name are a different package.
+	dir := t.TempDir()
+	rec := buildrecord.New(buildrecord.PathMSI, filepath.Join(dir, "setup.msis"), []buildrecord.BindPath{{Name: "wxs", Dir: dir}})
+	named := func(name string) string {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("same bytes"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		code, why := productCode(`<Wix><Package ProductCode="`+productCodePlaceholder+`"><File Id="F" Source="`+
+			filepath.Join(dir, name)+`"/></Package></Wix>`, vars, rec, dir, nil)
+		if code == "" {
+			t.Fatalf("no code derived: %s", why)
+		}
+		return code
+	}
+	if named("one.txt") == named("two.txt") {
+		t.Error("the same bytes installed under another file name kept the ProductCode")
+	}
+}
+
 // #66's review: WiX's preprocessor can add inputs the hash never sees, so a WXS that uses it
 // derives no code - an <?include?>, a <?define?>, a $(env.X). WiX's escaped "$$" is a plain
 // dollar, not a preprocessor reference, and the file it names is found with the single "$".

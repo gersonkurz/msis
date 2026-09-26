@@ -830,8 +830,8 @@ is a major upgrade, which removes the old version completely first. Those produc
 `ARPNOMODIFY`, which disables Change in Programs and Features and in the MSI's own maintenance
 dialog. For them, only `msiexec REMOVE=`/`ADDLOCAL=` from a command line reaches it.
 
-So msis builds the layout exactly as 3.0.5 did: the same components, the same GUIDs, checked
-against the 3.0.3-built ProAKT reference. It prints a warning for each service it finds. The
+So msis builds the layout exactly as 3.0.5 did: the same components, checked against the
+3.0.3-built ProAKT reference (their GUIDs follow D23 since 3.0.6, like every file component's). It prints a warning for each service it finds. The
 warning names the hazard, says the layout is deprecated, that msis 4 will refuse it and that
 `/STRICT` refuses it now, and proposes the two layouts that are sound:
 - the `<service>` in A, registered whenever A is installed;
@@ -848,3 +848,62 @@ attaches to the file's component, since WiX's default feature holds both.
 **What would reopen this:** msis 4, which refuses the layout outright; or a mechanism that
 lets one component's service registration follow a feature other than the component's own.
 Windows Installer has none today.
+
+---
+
+## D23 — A file component's identity is the product plus where it installs, not where it was built from
+
+**Settled in:** [#81](https://github.com/gersonkurz/msis/issues/81), 2026-09-26, product owner's
+decision.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) resolveFileGUIDs()`, `func (c *Context) relativeSource(source string) string`
+**Implemented by:** `cmd/msis/productcode.go` — `func hashLocationFree(h io.Writer, wxs string, sums map[string]string) error`
+
+Until 3.0.5 a file component's GUID was the SHA-256 of its source path as the build saw it, and
+its id was derived from the same path. For a script naming its sources by absolute path, that is
+the build machine's folder. The 3.0.3/3.0.5 regression QA of NG1 found the consequence: its
+reference MSI, built on CI from `D:\CI\ng1-2.4.0-banking\...`, and the same script built from a
+Downloads folder differed in **all 10,565** component GUIDs and in nothing else of the payload.
+Because the CI folder is named after the version, every NG1 release already got all-new GUIDs.
+msis-2.x was no better: it gave every component a random GUID on every build.
+
+Windows Installer's component rules want one GUID per resource for the product's lifetime. So a
+file component's GUID is now the product's UpgradeCode plus its destination: the root key and
+the path below it, case-folded, as in `{UPGRADE-CODE}/installdir\conf\fastcgi.conf`. The id is
+the destination without the product. The install folder's own name (`INSTALLDIR`'s value) is not
+part of either, so renaming it does not move the components. Non-file components were already
+keyed on the UpgradeCode plus a name (`productScopedID`).
+- **Two products** installing the same destination, each into its own folder, get different
+  GUIDs. Sharing one would make Windows Installer refcount one component at two paths.
+- **Several components at one destination** (feature-based overrides of one file, #79) cannot be
+  told apart by the destination. Each also carries its source path relative to the script's
+  folder, and every one of them does, so the GUIDs do not depend on the order the `<files>` are
+  written in. A source on another drive than the script has no relative path and stays absolute.
+- **The ProductCode** (D20) hashed the WXS, absolute `Source` paths included, so it moved with
+  the folder too. The hash now replaces each file reference with the SHA-256 of the file it
+  resolves to, and keeps its file name, since WiX installs a `<File>` without `Name` under its
+  `Source`'s name. Which content sits where, under which name, is still an input; the folder
+  the sources sit in is not.
+
+**The switch changes every file component's GUID and id once.** That is harmless for upgrades:
+every msis template uses WiX's default `MajorUpgrade` schedule, which removes the previous
+version completely (`RemoveExistingProducts` after `InstallValidate`) before installing the new
+one, so no component is shared between the two. It is the same thing NG1's CI has done on every
+release. The VM probe `testscripts/t81` (todo-testme.md T81, 2026-09-26) installed a package built
+with the old scheme, upgraded it to one built with D23 from another folder (no file-component
+GUID in common), repaired and uninstalled it: every step passed, with one ARP entry throughout and
+nothing left behind.
+
+What changes visibly is the SBOM: a file's `bom-ref` carries its component GUID, so refs change
+once, and a VEX document written against a 3.0.5 SBOM's refs needs its refs updated (msis flags
+a statement whose ref the build does not contain). From here on they stay stable across releases
+and build folders, which is what the ref was supposed to provide.
+
+Checked by `TestFileGUIDIsProductAndDestination`, which pins the values,
+`TestFileGUIDsDoNotDependOnTheBuildFolder`, `TestFileGUIDsAreScopedToTheProduct`,
+`TestSharedDestinationGetsDistinctStableGUIDs`, `TestTheProductCodeIgnoresWhereSourcesSit`, and,
+with the real wix, `TestTheBuildFolderDoesNotReachComponentIdentity`. That last one builds one
+script with absolute sources from two folders and compares the MSIs' components and ProductCode.
+
+**What would reopen this:** patches or minor upgrades, which need component identity to hold
+across a change of destination too; or a template moving `RemoveExistingProducts` late. Both
+would need the component rules checked release against release, which msis does not do.
