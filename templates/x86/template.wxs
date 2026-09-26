@@ -142,6 +142,13 @@
             <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
             <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
             <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+            <!-- BrowseDlg opens from CustomizeDlg's Browse and from InstallDirDlg's Change. Since WiX 6
+                 its OK button publishes nothing itself; the dialog set does, as WiX's stock sets do.
+                 Without these two rows OK is dead and only Cancel closes the dialog (#80). -->
+            <DialogRef Id="BrowseDlg" />
+            <Publish Dialog="BrowseDlg" Control="OK" Event="SetTargetPath" Value="[_BrowseProperty]" Order="3" />
+            <Publish Dialog="BrowseDlg" Control="OK" Event="EndDialog" Value="Return" Order="4" />
         </UI>
         {{#if START_EXE}}
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch {{PRODUCT_NAME}}" />

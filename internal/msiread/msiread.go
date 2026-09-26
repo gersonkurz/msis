@@ -182,6 +182,33 @@ func Read(path string) (pkg *Package, err error) {
 	return p, nil
 }
 
+// Rows runs an MSI SQL query against the package at path and returns the first n columns of
+// each result row as text, in the order MSI returns them (none is guaranteed). It exists for
+// checks on tables Read does not model - which ControlEvent rows a template compiled to (#80).
+func Rows(path, sql string, n int) (rows [][]string, err error) {
+	runtime.LockOSThread() // as in Read: open, fetches and close on one thread
+	defer runtime.UnlockOSThread()
+
+	db, oerr := openDatabase(path)
+	if oerr != nil {
+		return nil, oerr
+	}
+	defer func() {
+		if cerr := db.close(); cerr != nil && err == nil {
+			err = fmt.Errorf("closing %s: %w", path, cerr)
+		}
+	}()
+	err = db.query(sql, func(r *row) error {
+		rec := make([]string, n)
+		for i := range rec {
+			rec[i] = r.text(i + 1)
+		}
+		rows = append(rows, rec)
+		return nil
+	})
+	return rows, err
+}
+
 // optional runs a query over a table that a package need not contain at all - a package with no
 // services has no ServiceInstall table.
 //

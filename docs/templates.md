@@ -568,6 +568,11 @@ same. See [SBOM](sbom.md).
 - Use `{{variable}}` (double braces) for text values
 - Test with `/RETAINWXS` to inspect generated output
 - Check WiX 6 documentation for element syntax
+- A template with its own `<UI>` dialog set must publish BrowseDlg's OK events itself
+  (`SetTargetPath [_BrowseProperty]`, `EndDialog Return`): since WiX 6 the dialog carries none,
+  WiX's stock sets do. A copy taken from msis 3.0.5 or earlier lacks them, so its Browse and
+  Change buttons open a dialog whose OK does nothing (#80); copy the two `Publish` rows from the
+  shipped template
 
 ## See Also
 
