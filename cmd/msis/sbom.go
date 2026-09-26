@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/analyze"
 	"github.com/gersonkurz/msis/internal/burnread"
 	"github.com/gersonkurz/msis/internal/cli"
 	"github.com/gersonkurz/msis/internal/msiread"
@@ -15,16 +17,27 @@ import (
 // It reads the artifact, not the .msis that produced it. The script says what was asked for; the
 // package says what shipped, and for a release that is months old the package is the only thing
 // that still exists.
-func runSBOM(path string) error {
+func runSBOM(path string, analyzePayload bool) error {
 	if strings.EqualFold(pathExt(path), ".exe") {
+		if analyzePayload {
+			printAnalyzeBundle()
+		}
 		return runBundleSBOM(path)
 	}
-	pkg, err := msiread.Read(path)
+	opts := sbom.Options{MsisVersion: Version}
+	var pkg *msiread.Package
+	var err error
+	if analyzePayload {
+		// One read serves both: the package, and the payload syft is run over.
+		pkg, opts.Analyzed, err = analyze.Syft(path)
+		opts.AnalyzedCounts = &sbom.AnalyzedCounts{}
+	} else {
+		pkg, err = msiread.Read(path)
+	}
 	if err != nil {
 		return err
 	}
-
-	doc, err := sbom.FromPackage(pkg, sbom.Options{MsisVersion: Version})
+	doc, err := sbom.FromPackage(pkg, opts)
 	if err != nil {
 		return err
 	}
@@ -44,6 +57,7 @@ func runSBOM(path string) error {
 		fmt.Printf("  %s\n", cli.Info("Kept the previous document as "+preserved))
 	}
 	warnNTIAUnknown(doc)
+	printAnalyzed(opts.Analyzed, opts.AnalyzedCounts)
 
 	// Say where the inventory stops, in the terminal as well as in the document.
 	for _, m := range pkg.Media {
@@ -130,4 +144,41 @@ func runBundleSBOM(path string) error {
 		}
 	}
 	return nil
+}
+
+// printAnalyzed says in the terminal what /ANALYZE added and what it left out (#82, D25); the
+// document says the same in its metadata.
+func printAnalyzed(a *sbom.Analyzed, c *sbom.AnalyzedCounts) {
+	if a == nil || c == nil {
+		return
+	}
+	fmt.Printf("  %s %s %s identified %s package(s) in %s payload file(s) from their own declarations\n",
+		cli.Success("Analyzed:"), a.Tool.Name, a.Tool.Version, cli.Number(fmt.Sprintf("%d", c.Imported)),
+		cli.Number(fmt.Sprintf("%d", c.Files)))
+	if c.Dropped > 0 {
+		fmt.Printf("  %s\n", cli.Info(fmt.Sprintf("%d more are in files a supplied SBOM describes; it is kept, "+
+			"the analyzer's packages for those files are not", c.Dropped)))
+	}
+	var left []string
+	for _, reason := range sortedKeys(a.Skipped) {
+		left = append(left, fmt.Sprintf("%d %s", a.Skipped[reason], reason))
+	}
+	if len(left) > 0 {
+		fmt.Printf("  %s\n", cli.Info("Not imported, as no package declares that identity (D25): "+strings.Join(left, ", ")))
+	}
+}
+
+// printAnalyzeBundle explains why /ANALYZE does nothing for a bundle.
+func printAnalyzeBundle() {
+	fmt.Printf("  %s\n", cli.Info("/ANALYZE reads installed files; a bundle carries installers - run /SBOM /ANALYZE "+
+		"on its chained .msi files, and the bundle's document links to theirs"))
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

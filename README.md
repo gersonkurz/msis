@@ -125,6 +125,9 @@ describes what actually ships. Every file has its SHA-256 and SHA-512, and a bun
 documents of the installers it chains. It aims at [BSI TR-03183-2](docs/sbom.md#bsi-tr-03183-2),
 the most concrete SBOM specification behind the EU Cyber Resilience Act.
 [docs/sbom.md](docs/sbom.md) says what the document claims, and just as importantly what it does not.
+`/ANALYZE` adds the packages the payload declares itself: Python distributions, Maven jars and
+.NET `.deps.json` entries, found by [syft](https://github.com/anchore/syft) and attached to the
+files they are in. `/SCAN` then runs grype on the result.
 
 **msis's own releases carry their SBOMs.** Each MSI and the universal bundle ship with a
 `.cdx.json` beside them. Each MSI's document lists what is inside `msis.exe`: its Go modules and the

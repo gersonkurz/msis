@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gersonkurz/msis/internal/analyze"
 	"github.com/gersonkurz/msis/internal/buildrecord"
 	"github.com/gersonkurz/msis/internal/bundle"
 	"github.com/gersonkurz/msis/internal/burnread"
@@ -219,7 +220,7 @@ func cachedArchs(cached map[string]string, typ, version string) []string {
 // subject digest before making it, so a bundle written first would simply record that no
 // document was there - correct, but less useful than doing it the other way round.
 func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.Supplied, declared []sbom.Declaration,
-	statements *vex.Source, scan bool, scanDir string) error {
+	statements *vex.Source, scan bool, scanDir string, analyzePayload bool) error {
 
 	// The VEX annotates ONE document: the inventory of what is installed. Where a build
 	// produces both an MSI and the bundle wrapping it, that is the MSI - its components are
@@ -228,6 +229,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 
 	for _, artifact := range artifacts {
 		var doc *sbom.Document
+		var opts sbom.Options // the MSI's, for what /ANALYZE contributed to it
 		var err error
 		switch {
 		case isBundleArtifact(artifact):
@@ -236,6 +238,9 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 			// the wrapper's payload, and made it depend on itself.
 			opts := sbom.Options{MsisVersion: Version,
 				Build: rec.For(buildrecord.ScopeArtifactBundle)}
+			if analyzePayload && len(artifacts) == 1 {
+				printAnalyzeBundle() // a bundle-only build: nothing installed to analyze
+			}
 			var b *burnread.Bundle
 			if b, err = burnread.Read(artifact); err == nil {
 				doc, err = sbom.FromBundle(b, opts)
@@ -244,10 +249,17 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 			// Supplied documents describe installed FILES, which only the MSI has. The
 			// wrapper carries the MSI itself and links to its document (#33); repeating the
 			// contents of a file inside that MSI would say the bundle contains them directly.
-			opts := sbom.Options{MsisVersion: Version,
+			opts = sbom.Options{MsisVersion: Version,
 				Build: rec.For(buildrecord.ScopeArtifactMSI), Supplied: supplied, Declared: declared}
 			var pkg *msiread.Package
-			if pkg, err = msiread.Read(artifact); err == nil {
+			if analyzePayload {
+				// One read serves both: the package, and the payload syft is run over.
+				opts.AnalyzedCounts = &sbom.AnalyzedCounts{}
+				pkg, opts.Analyzed, err = analyze.Syft(artifact)
+			} else {
+				pkg, err = msiread.Read(artifact)
+			}
+			if err == nil {
 				doc, err = sbom.FromPackage(pkg, opts)
 			}
 		}
@@ -267,6 +279,7 @@ func emitBuildSBOM(rec *buildrecord.Record, artifacts []string, supplied []sbom.
 		}
 		warnNTIAUnknown(doc)
 		printBOMLinks(doc)
+		printAnalyzed(opts.Analyzed, opts.AnalyzedCounts)
 
 		if inventoryDoc == nil || !isBundleArtifact(artifact) {
 			inventory, inventoryDoc = artifact, doc

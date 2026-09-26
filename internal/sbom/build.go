@@ -39,6 +39,13 @@ type Options struct {
 	// Declared are the script's <component> facts, each about one file (#64, #65, D16).
 	Declared []Declaration
 
+	// Analyzed is what an analyzer run over the extracted payload identified (/ANALYZE, #82,
+	// D25). Nil unless asked for.
+	Analyzed *Analyzed
+
+	// AnalyzedCounts, when set, is filled by FromPackage with what the analyzer contributed.
+	AnalyzedCounts *AnalyzedCounts
+
 	Now       func() time.Time
 	NewSerial func() (string, error)
 }
@@ -172,6 +179,13 @@ func FromPackage(pkg *msiread.Package, opts Options) (*Document, error) {
 	if err := applyDeclarations(doc, opts.Declared); err != nil {
 		return nil, err
 	}
+	counts, err := mergeAnalyzed(doc, opts.Analyzed, opts.Supplied)
+	if err != nil {
+		return nil, err
+	}
+	if opts.AnalyzedCounts != nil {
+		*opts.AnalyzedCounts = counts
+	}
 
 	sortDocument(doc)
 
@@ -231,6 +245,11 @@ func admissibleWithoutDigest(c Component) bool {
 	// inside one of the files in it - so msis never held its bytes and never had a digest to
 	// publish. Whatever the supplier gave is carried as given, including nothing.
 	if c.raw != nil {
+		return true
+	}
+	// Identified by an analyzer inside a payload file (#82): like a supplied component it is
+	// not in the artifact, its file is, and the file carries the digest.
+	if analyzedBy(c) != "" {
 		return true
 	}
 	if propertyValueOf(c.Properties, propRole) != roleRequiredRuntime {

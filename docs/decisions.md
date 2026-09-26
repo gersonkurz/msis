@@ -956,3 +956,70 @@ that layout with its own advice, so one layout never gets two warnings.
 
 **What would reopen this:** msis 4, which refuses the cross-feature shape; or a mechanism that
 lets one component follow either of two features. Windows Installer has none.
+
+---
+
+## D25 — An analyzer's identifications enter the SBOM only where a package declares itself
+
+**Settled in:** [#82](https://github.com/gersonkurz/msis/issues/82), 2026-09-26, the product owner's
+four decisions recorded on the issue.
+**Implemented by:** `internal/analyze/analyze.go` — `func classify(art artifact) (basis, within, skip string)`, `func Syft(path string) (*msiread.Package, *sbom.Analyzed, error)`, `func launched(exe string) string`
+**Implemented by:** `internal/sbom/analyzed.go` — `func mergeAnalyzed(doc *Document, a *Analyzed, supplied []Supplied) (AnalyzedCounts, error)`, `var AnalyzerBases`
+**Implemented by:** `internal/sbom/conformance/conformance.go` — `var analyzerBases`
+**Implemented by:** `internal/msiread/extract.go` — `func writePayload(dir string, files []File, payload map[string][]byte) (map[string]string, error)`
+
+D4 says msis never guesses an identity. That left most real payloads opaque. ProAKT 3.6.0.73
+has 12,669 payload files, none with a purl, so grype found nothing, while syft, run over the
+same payload as a directory, identified 628 packages. The product owner decided four things:
+- **Only package metadata.** An identity is imported when it rests on the package's own
+  declaration:
+  - a Python distribution's `dist-info\METADATA`;
+  - a jar's Maven `pom.properties`, when syft reports the artifact under the pom's own
+    artifact id and version;
+  - a `.deps.json` entry of type `package` (syft's `dotnet-deps-entry`). The application's own
+    `project` entry is not a package, so syft's `pkg:nuget` purl for it is not imported.
+  
+  Everything syft infers stays out: PE version resources (the pe-binary cataloger, and the
+  .NET cataloger's `dotnet-portable-executable-entry`), jars named from their manifest or file
+  name, binary classifiers. syft's generated CPEs are not imported for any package.
+- **msis runs syft from PATH**, never downloading it, as `/SCAN` runs grype (D19). It runs over
+  the MSI's payload, extracted in its install layout (`msiread.ExtractTo`), so what is analyzed
+  is exactly what ships. The extraction refuses a target that would leave its folder, since an
+  MSI's Directory and File tables are not validated by anyone. The digest in `metadata.tools` is
+  the program's: a Scoop shim is followed to what its `.shim` names, and a Chocolatey shim gets
+  no digest rather than the launcher's.
+- **Opt-in**, with `/ANALYZE` beside `/SBOM`.
+- **A supplied SBOM wins** for its file (#36). The analyzer's packages for that file are dropped
+  and counted.
+
+The line between declared and inferred was drawn from syft's own output, not from its
+catalogers' names:
+- syft's .NET cataloger reports `log4net 2.0.8.0-.NET 2.0` from the DLL's version resource
+  (`metadataType: dotnet-portable-executable-entry`), and `#ZipLibrary` for SharpZipLib, whose
+  ProductName that is.
+- For a jar without `pom.properties`, syft took the name from the file (`bcprov-ext-jdk15on`,
+  where the manifest says `bcprov-ext`), and guessed the Maven group (`org.bouncycastle`). That
+  is why "manifest" is not a basis, although the decision's wording offered it: the manifest is
+  the package's statement, but the name and group syft emits for such a jar are not taken from
+  it.
+
+The rule is enforced three times:
+- `classify` decides.
+- `mergeAnalyzed` refuses any package whose basis is not one of the three.
+- The conformance rules fail any analyzed component whose `msis:analyzer.basis` is not one of
+  them, or that carries no purl, and check two-sided that the document neither invents nor drops
+  an analyzed package.
+
+Each package becomes a component that its payload file depends on. The file's own graph stays
+`unknown`, because an analyzer claims no completeness.
+
+The effect on ProAKT 3.6.0.73, grype DB of 2026-09-25: 204 packages imported from 130 payload
+files, 154 findings where there were 0. Left out, and stated in the terminal and in
+`msis:analyzer.run`: 219 PE identifications (including the Python runtime, `sqlite3.dll` and
+log4net), 184 jars without `pom.properties` (Bouncy Castle among them), and 1 Python package
+outside a dist-info. Those are the matches D4 gives up. The route to them stays what it was: a
+supplied SBOM, or `<component purl=...>` declared by someone who knows.
+
+**What would reopen this:** an analyzer that reports, per identity, which bytes of a declaration
+it took each field from, so a manifest-derived identity could be checked rather than trusted;
+or a product-owner decision to accept inferred identities, marked as such, behind a further flag.

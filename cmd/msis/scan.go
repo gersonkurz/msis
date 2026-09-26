@@ -16,6 +16,9 @@ import (
 // that run writes; on its own it scans the CycloneDX documents named, and nothing else - there
 // is no document to scan in a build that writes none, and an installer is not a document.
 func scanArgsValid(args *cliArgs) error {
+	if args.analyze && !args.sbom {
+		return fmt.Errorf("/ANALYZE adds what syft identifies in the payload to the SBOM; add /SBOM")
+	}
 	if args.scanDir != "" && !args.scan {
 		return fmt.Errorf("/SCAN-DIR names where /SCAN keeps its reports; add /SCAN")
 	}

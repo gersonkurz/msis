@@ -48,6 +48,7 @@ type cliArgs struct {
 	sbom            bool              // /SBOM: write a CycloneDX document for a built .msi
 	scan            bool              // /SCAN: run grype on the SBOM (#69)
 	scanDir         string            // /SCAN-DIR:PATH: where /SCAN keeps its reports (#70)
+	analyze         bool              // /ANALYZE: identify packages in the payload with syft (#82, D25)
 	standalone      bool              // Skip auto-bundling, use launch conditions only
 	strict          bool              // Refuse deprecated layouts instead of warning (#77, D22)
 	noColor         bool              // Disable colored output
@@ -117,7 +118,7 @@ func main() {
 		if artifactOnlySBOM(args) {
 			err := sbomablePath(filename)
 			if err == nil {
-				err = runSBOM(filename)
+				err = runSBOM(filename, args.analyze)
 			}
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s %s: %v\n", cli.Error("Error writing the SBOM for"), cli.Filename(filename), err)
@@ -517,7 +518,7 @@ func processMSIFile(setup *ir.Setup, vars variables.Dictionary, workDir, templat
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{msiPath}, supplied, declared, statements, args.scan, args.scanDir)
+			return emitBuildSBOM(rec, []string{msiPath}, supplied, declared, statements, args.scan, args.scanDir, args.analyze)
 		}
 	}
 
@@ -632,7 +633,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 		// document exists and its subject digest matches, so this order is what turns two
 		// documents into a linked pair rather than two unrelated files.
 		rec.Sort()
-		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, declared, statements, args.scan, args.scanDir)
+		return emitBuildSBOM(rec, []string{msiPath, bundleBuilder.OutputFile}, supplied, declared, statements, args.scan, args.scanDir, args.analyze)
 	}
 
 	return nil
@@ -806,7 +807,7 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 		if args.sbom {
 			rec.Sort()
-			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, nil, statements, args.scan, args.scanDir)
+			return emitBuildSBOM(rec, []string{builder.OutputFile}, nil, nil, statements, args.scan, args.scanDir, args.analyze)
 		}
 	}
 
@@ -920,6 +921,7 @@ func parseArgs() *cliArgs {
 	fs.BoolVar(&args.sbom, "sbom", false, "")
 	fs.BoolVar(&args.scan, "scan", false, "")
 	fs.StringVar(&args.scanDir, "scan-dir", "", "")
+	fs.BoolVar(&args.analyze, "analyze", false, "")
 	fs.BoolVar(&args.standalone, "standalone", false, "")
 	fs.BoolVar(&args.strict, "strict", false, "")
 	fs.BoolVar(&args.noColor, "no-color", false, "")
@@ -1040,6 +1042,9 @@ func printUsage() {
 	fmt.Printf("  %s                own, on the .cdx.json documents named. Keeps grype's report\n", cli.Info("     "))
 	fmt.Printf("  %s                beside it and applies the product's VEX statements\n", cli.Info("     "))
 	fmt.Printf("  %s  With /SCAN: keep the reports in DIR instead of beside each SBOM\n", cli.Info("/SCAN-DIR:DIR"))
+	fmt.Printf("  %s            With /SBOM: run syft on the MSI's payload and add the packages\n", cli.Info("/ANALYZE"))
+	fmt.Printf("  %s                that declare themselves (dist-info METADATA, pom.properties,\n", cli.Info("     "))
+	fmt.Printf("  %s                .deps.json), each attached to the file it was found in\n", cli.Info("     "))
 	fmt.Printf("  %s             Show configuration status\n", cli.Info("/STATUS"))
 	fmt.Printf("  %s           Show this help message\n", cli.Info("/?, /HELP"))
 	fmt.Println()

@@ -351,6 +351,15 @@ const (
 	propDeclaredBy      = "msis:declared.by"
 	propDeclaredFields  = "msis:declared.fields"
 
+	// What /ANALYZE contributed (#82, D25): on each analyzed component the analyzer, its
+	// cataloger, the declaration the identity rests on, and for a nested jar its path inside;
+	// on the document, what the run imported and left out.
+	propAnalyzedBy       = "msis:analyzer"
+	propAnalyzerFinder   = "msis:analyzer.cataloger"
+	propAnalyzerBasis    = "msis:analyzer.basis"
+	propAnalyzerWithin   = "msis:analyzer.within"
+	propAnalyzerDocument = "msis:analyzer.run"
+
 	// BSI TR-03183-2 v2.1.0 §5.2.2 and its CycloneDX property taxonomy (#63). Named by BSI,
 	// not msis, so a BSI-aware consumer finds them where the guideline says they are.
 	propBSIFilename   = "bsi:component:filename"

@@ -308,7 +308,8 @@ licence is the one their packages declare (`MS-RL`). A payload file's licence is
 only carried when supplied.
 
 A supplied SBOM is different — its author determined the identity, and their purls come across
-untouched.
+untouched. So is a package that declares itself inside a payload file, which `/ANALYZE` reads
+(below): the identity is the package's own statement, not msis's inference.
 
 ---
 
@@ -324,6 +325,16 @@ Namespaced so a consumer can tell msis's properties from anyone else's.
 | `msis:coverage` | what the inventory does not cover, in prose |
 | `msis:msi.productCode`, `msis:msi.upgradeCode` | product identity; the UpgradeCode is what stays constant across releases |
 | `msis:burn.bundleCode`, `msis:burn.engineVersion` | the same for a bundle |
+| `msis:analyzer.run` | with `/ANALYZE`: what the analyzer imported, from how many files, and what it left out and why (D25) |
+
+**An analyzed package** (`/ANALYZE`, D25)
+
+| property | |
+|---|---|
+| `msis:analyzer` | the analyzer that identified it, with its version, e.g. `syft 1.52.0` |
+| `msis:analyzer.cataloger` | the analyzer's name for what found it, e.g. `python-installed-package-cataloger` |
+| `msis:analyzer.basis` | the declaration the identity rests on: `dist-info METADATA`, `pom.properties` or `.deps.json`, nothing else |
+| `msis:analyzer.within` | for a jar nested in another jar, its path inside the outer one |
 
 **The subject** (`metadata.component`)
 
@@ -515,6 +526,56 @@ nothing in it is a source of truth. It answers "which products ship this DLL, at
 "what changed between two releases", "does this file set match anything we shipped", and — with
 VEX sidecars — "which releases are affected, minus what we have already assessed". See
 [`tools/sbom-index/README.md`](../tools/sbom-index/README.md).
+
+---
+
+## `/ANALYZE`: packages that declare themselves
+
+A payload file is bytes to msis. But much of a real payload is packages that say what they are:
+a Python distribution's `dist-info\METADATA`, a jar's Maven `pom.properties`, a .NET
+application's `.deps.json`. `/ANALYZE` reads those, with **syft**, and puts each package into the
+document attached to the file it was found in ([decisions D25](decisions.md)):
+
+```
+msis /SBOM /ANALYZE app.msi                  describe the installer, with its packages
+msis /BUILD /SBOM /ANALYZE /SCAN setup.msis  the same during a build, then scan it
+```
+
+```
+  Analyzed: syft 1.52.0 identified 204 package(s) in 130 payload file(s) from their own declarations
+  Not imported, as no package declares that identity (D25): 1 Python packages without dist-info METADATA, 219 from PE version resources, 184 jars without pom.properties
+```
+
+- **What syft scans is the package.** msis extracts the MSI's payload to a temporary folder in
+  its install layout and runs syft there. That is exactly what ships: not the build tree, and
+  not a file that was left out. It works the same on an old artifact as during a build. syft is
+  run from `PATH`, never downloaded, like grype for `/SCAN`, and its version and digest go into
+  `metadata.tools`. The digest is of the program that ran: for a Scoop shim, the program the
+  `.shim` names. Where that cannot be told (a Chocolatey shim), no digest is recorded rather than
+  the launcher's.
+- **Only declarations are imported.** An identity resting on a package's own `dist-info`
+  METADATA, `pom.properties` (under the pom's own artifact id and version) or `.deps.json`
+  package entry becomes a component with syft's purl. The application's own project in a
+  `.deps.json` is not a NuGet package, so the purl syft gives it is not imported either. syft also infers identities: from a PE version
+  resource, from a jar's file name, with a Maven group guessed from its package names. Those
+  are counted, printed and stated in the document, but not imported, because a wrong identity
+  produces false matches and hides real ones (D4). syft's generated CPEs are not imported either.
+- **Each package is a component its file depends on.** It is marked `msis:analyzer` (tool and
+  version), `msis:analyzer.cataloger` and `msis:analyzer.basis` (the declaration). A jar
+  nested in another jar also carries `msis:analyzer.within`, its path inside. The file's own
+  dependency graph stays `unknown`: an analyzer does not claim to have found everything.
+- **A supplied SBOM wins.** For a file `<sbom for=...>` describes, the supplier's document is
+  kept and syft's packages for that file are dropped, and the terminal says how many.
+- **It is opt-in.** Without `/ANALYZE` the document is unchanged, and a machine without syft is
+  unaffected. A bundle has no installed files of its own, so `/ANALYZE` covers the MSI; the
+  bundle's document links to it.
+
+On ProAKT 3.6.0.73 (12,669 payload files), the document without `/ANALYZE` gave grype nothing to
+match: 0 findings. With it, 204 packages were imported, and grype found 154 vulnerabilities,
+each on a package whose identity the package itself declares. What stays out is what D4 keeps
+out: the Python runtime and `sqlite3.dll` (PE version resources), Bouncy Castle (syft names the
+jar from its file name and guesses its Maven group) and `log4net` (its assembly's version
+resource).
 
 ---
 

@@ -238,7 +238,7 @@ func TestTheVersionFallbackIsTheSourcesModificationDate(t *testing.T) {
 		}
 	}
 
-	if err := runSBOM(msi); err != nil {
+	if err := runSBOM(msi, false); err != nil {
 		t.Fatal(err)
 	}
 	if v := versions()["notes.txt"]; v != "" {

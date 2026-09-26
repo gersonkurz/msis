@@ -68,6 +68,13 @@ type Expected struct {
 	// that combination fails.
 	SuppliedComponentNames []string
 
+	// AnalyzedComponentNames are the component NAMES an analyzer identified inside payload
+	// files (#82, D25), as a MULTISET, derived from the analyzer's findings rather than from
+	// the output. Two-sided like SuppliedComponentNames. An analyzed component may carry a
+	// purl - its identity was declared by the package itself - but only with one of the
+	// bases D25 admits, which is the rule that keeps an inference out.
+	AnalyzedComponentNames []string
+
 	// DetectedComponents are the bom-refs for things the installer merely DETECTS and does
 	// not distribute - a /STANDALONE build's prerequisites become launch conditions (#34).
 	// They carry no digest of any kind, and could not: nothing was shipped, so there are no
@@ -107,7 +114,7 @@ func Check(data []byte, want Expected) []error {
 		identified[ref] = true
 	}
 	for _, c := range components {
-		if c.PURL != "" && !identified[c.BOMRef] {
+		if c.PURL != "" && !identified[c.BOMRef] && c.analyzedBy() == "" {
 			fail("component %q carries purl %q but its identity was not determined", c.BOMRef, c.PURL)
 		}
 	}
@@ -153,6 +160,9 @@ func Check(data []byte, want Expected) []error {
 				fail("component %q distributes nothing and the document does not say why "+
 					"it has no digest", c.BOMRef)
 			}
+		case c.analyzedBy() != "":
+			// Identified inside a payload file (#82): the file is in the artifact and carries
+			// the digest; the package is a statement about part of its contents.
 		case c.suppliedFrom() != "":
 			// Received, not observed. msis never held these bytes, so it had no hash to
 			// publish and none to drop; whatever digest the supplier gave is carried as
@@ -221,6 +231,40 @@ func Check(data []byte, want Expected) []error {
 			if _, ok := expect[name]; !ok {
 				fail("the merged document has %d component(s) named %q marked as supplied, "+
 					"but nothing supplied them", n, name)
+			}
+		}
+	}
+
+	// --- analyzed components (#82, D25) ---------------------------------------------------
+	{
+		have, expect := map[string]int{}, map[string]int{}
+		for _, c := range components {
+			if c.analyzedBy() == "" {
+				continue
+			}
+			have[c.Name]++
+			if c.role() == rolePayload {
+				fail("component %q is marked as analyzed and as installed payload", c.BOMRef)
+			}
+			if c.PURL == "" {
+				fail("analyzed component %q carries no purl, so it identifies nothing", c.BOMRef)
+			}
+			if basis := c.property(propAnalyzerBasis); !analyzerBases[basis] {
+				fail("analyzed component %q rests on %q, which is not a package's own declaration "+
+					"(D25 admits dist-info METADATA, pom.properties and .deps.json)", c.BOMRef, basis)
+			}
+		}
+		for _, name := range want.AnalyzedComponentNames {
+			expect[name]++
+		}
+		for name, n := range expect {
+			if got := have[name]; got != n {
+				fail("the analyzer identified %d package(s) named %q; the document has %d", n, name, got)
+			}
+		}
+		for name, n := range have {
+			if _, ok := expect[name]; !ok {
+				fail("the document has %d analyzed component(s) named %q that the analyzer did not report", n, name)
 			}
 		}
 	}
@@ -797,6 +841,17 @@ func (c component) role() string {
 // document has to state the gap, not merely leave one.
 const propPayloadUnavailable = "msis:payload.unavailable"
 
+// propAnalyzedBy marks a component an analyzer identified inside a payload file (#82), and
+// propAnalyzerBasis the declaration it rests on. See Expected.AnalyzedComponentNames.
+const (
+	propAnalyzedBy    = "msis:analyzer"
+	propAnalyzerBasis = "msis:analyzer.basis"
+)
+
+var analyzerBases = map[string]bool{"dist-info METADATA": true, "pom.properties": true, ".deps.json": true}
+
+func (c component) analyzedBy() string { return c.property(propAnalyzedBy) }
+
 // propSuppliedFrom marks a component that came from a supplied document rather than from the
 // artifact (#36). See Expected.SuppliedComponentNames.
 const propSuppliedFrom = "msis:supplied.from"
@@ -956,3 +1011,12 @@ var licenseIDs = sync.OnceValue(func() map[string]bool {
 // license.id - the vendored spdx.schema.json enum. Anything else, a LicenseRef- included, can
 // only be given as an expression.
 func IsLicenseID(id string) bool { return licenseIDs()[id] }
+
+func (c component) property(name string) string {
+	for _, p := range c.Properties {
+		if p.Name == name {
+			return p.Value
+		}
+	}
+	return ""
+}

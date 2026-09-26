@@ -136,7 +136,13 @@ type Shortcut struct {
 }
 
 // Read opens an installer database and reads everything this package understands.
-func Read(path string) (pkg *Package, err error) {
+func Read(path string) (*Package, error) {
+	pkg, _, err := read(path)
+	return pkg, err
+}
+
+// read is Read, also returning the payload it extracted to hash: File id -> bytes.
+func read(path string) (pkg *Package, payload map[string][]byte, err error) {
 	// Windows Installer handles belong to the thread that created them, and Go may move a
 	// goroutine to a different OS thread at almost any call - so the open, every fetch and
 	// every close have to happen on one thread. The lock covers the deferred close too.
@@ -145,7 +151,7 @@ func Read(path string) (pkg *Package, err error) {
 
 	db, oerr := openDatabase(path)
 	if oerr != nil {
-		return nil, oerr
+		return nil, nil, oerr
 	}
 	defer func() {
 		if cerr := db.close(); cerr != nil && err == nil {
@@ -170,16 +176,17 @@ func Read(path string) (pkg *Package, err error) {
 		{"Shortcut", readShortcuts},
 	} {
 		if err := step.fn(db, p); err != nil {
-			return nil, fmt.Errorf("reading the %s table of %s: %w", step.name, path, err)
+			return nil, nil, fmt.Errorf("reading the %s table of %s: %w", step.name, path, err)
 		}
 	}
 
 	resolveTargets(p)
-	if err := hashPayload(db, p); err != nil {
-		return nil, fmt.Errorf("reading the payload of %s: %w", path, err)
+	payload, err = hashPayload(db, p)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading the payload of %s: %w", path, err)
 	}
 	sortAll(p)
-	return p, nil
+	return p, payload, nil
 }
 
 // Rows runs an MSI SQL query against the package at path and returns the first n columns of
@@ -500,9 +507,9 @@ func sortAll(p *Package) {
 // cannot produce bytes for is exactly the "looks complete, is not" output this package exists to
 // avoid; the one excusable case, a cabinet that did not travel with the package, is recorded on
 // the Media row and excused explicitly.
-func hashPayload(db *database, p *Package) error {
+func hashPayload(db *database, p *Package) (map[string][]byte, error) {
 	if len(p.Files) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	payload := map[string][]byte{}
@@ -517,11 +524,11 @@ func hashPayload(db *database, p *Package) error {
 		}
 		data, err := readStream(db, m.StreamName())
 		if err != nil {
-			return fmt.Errorf("reading cabinet %s: %w", m.StreamName(), err)
+			return nil, fmt.Errorf("reading cabinet %s: %w", m.StreamName(), err)
 		}
 		files, err := cabinet.Extract(data)
 		if err != nil {
-			return fmt.Errorf("extracting cabinet %s: %w", m.StreamName(), err)
+			return nil, fmt.Errorf("extracting cabinet %s: %w", m.StreamName(), err)
 		}
 		for name, bytes := range files {
 			payload[name] = bytes
@@ -535,7 +542,7 @@ func hashPayload(db *database, p *Package) error {
 			continue
 		}
 		if len(data) != f.Size {
-			return fmt.Errorf("file %s (%s): the cabinet holds %d bytes, the File table says %d",
+			return nil, fmt.Errorf("file %s (%s): the cabinet holds %d bytes, the File table says %d",
 				f.ID, f.Name, len(data), f.Size)
 		}
 		sum, sum512 := sha256.Sum256(data), sha512.Sum512(data)
@@ -545,10 +552,10 @@ func hashPayload(db *database, p *Package) error {
 	}
 
 	if missing := unexplainedFiles(p.Files, p.Media, payload); len(missing) > 0 {
-		return fmt.Errorf("%d file(s) are listed in the File table but absent from the "+
+		return nil, fmt.Errorf("%d file(s) are listed in the File table but absent from the "+
 			"package's cabinets: %s", len(missing), strings.Join(missing, ", "))
 	}
-	return nil
+	return payload, nil
 }
 
 // unexplainedFiles names the payload files that produced no bytes and have no excuse.

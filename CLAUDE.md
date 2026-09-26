@@ -66,6 +66,7 @@ Each stage is its own package under `internal/`, wired together in `cmd/msis/mai
 | `cabinet` | Shared in-memory cabinet extraction (Windows FDI), used by both readers. |
 | `sbom` | CycloneDX 1.6 emission for an MSI (`FromPackage`) or a bundle (`FromBundle`), sidecar retention and BOM-Links. `merge.go` composes a component SBOM the script supplied for one payload file (#36): imported components are emitted VERBATIM (raw JSON, so licences and anything else msis does not model survive), only their document-local `bom-ref` is namespaced, and the supplier's coverage statements are preserved rather than improved. `sbom/conformance` holds the vendored schema (embedded) and the rule checks every emitter answers to. |
 | `vex` | Evaluates a VEX document (#37) against the SBOM of the build it accompanies, and writes the sidecar beside it. msis assesses nothing; what it checks is that an assessment's recorded conditions STILL HOLD - above all the release it was made for, because a library can be byte-identical between two releases while the application around it starts calling the vulnerable path. A statement whose conditions lapsed is kept and flagged, and one that was SUPPRESSING a finding stops doing so. |
+| `analyze` | `/ANALYZE` (#82, D25): extracts an MSI's payload (`msiread.ExtractTo`), runs syft (on PATH, never downloaded) over it, and keeps only identities a package declares itself - dist-info METADATA, pom.properties, .deps.json - each attached to the file it was found in. PE-version-resource and file-name identities are counted, never imported (D4). |
 | `scan` | `/SCAN` (#69): runs grype (on PATH, never downloaded) on an SBOM, keeps its JSON verbatim beside it, and states what the scan could not cover (components without purl/CPE, BOM-Links not scanned in the same run). A finding is "answered" only by a statement from msis's VEX sidecar evaluated against that very document (D19). A finding never fails a run. |
 | `buildrecord` | What a build knows and the artifact cannot say (#34): each payload's source, the toolchain, whether a prerequisite is carried or merely detected, and where a downloaded one came from. Each of the four build paths **contributes** to a record; `sbom` layers it onto the artifact-derived document and refuses to emit if the two disagree about any file. |
 
@@ -101,7 +102,7 @@ overrides variables. Key flags: `/BUILD`, `/RETAINWXS`, `/STANDALONE`, `/DRY-RUN
 of warning - today the #77 service layout, D22, and #79's two features installing one file,
 D24; msis 4 refuses them always). `/STATUS` is the diagnostic entry point (WiX
 location/version, template search order, prerequisite cache). `/INSPECT` and `/SBOM` read a built
-artifact; `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; alone, on the
+artifact; `/ANALYZE` (with `/SBOM`) adds the packages syft finds declared in the payload (D25); `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; alone, on the
 `.cdx.json` documents named) and applies msis's evaluated VEX to the findings (D19).
 
 ## Supported Directory Roots
