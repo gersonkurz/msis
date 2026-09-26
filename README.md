@@ -1,6 +1,6 @@
 # msis
 
-A Windows installer generator that transforms declarative `.msis` XML scripts into MSI packages via WiX Toolset 6.
+A Windows installer generator that transforms declarative `.msis` XML scripts into MSI packages and bundles via WiX Toolset 6 or 7, and describes what it built in an SBOM.
 
 ## Why Does This Exist?
 
@@ -23,7 +23,7 @@ Writing WiX XML by hand is tedious. A simple installer requires hundreds of line
 </setup>
 ```
 
-Instead of 500+ lines of WiX XML. The tool handles component GUIDs, directory trees, feature mapping, registry import, and [multi-architecture bundles](docs/Bundle.md).
+Instead of 500+ lines of WiX XML. The tool handles component GUIDs, directory trees, feature mapping, registry import, services, prerequisites and [multi-architecture bundles](docs/Bundle.md). Two builds of one script produce packages identical except for the documented fields ([decisions D20](docs/decisions.md)), and `/SBOM` describes them for the Cyber Resilience Act ([SBOM](#sbom)).
 
 ## Installation
 
@@ -112,7 +112,7 @@ That's it. Your installer is ready at `setup.msi`.
 | **[Bundle Guide](docs/Bundle.md)** | Multi-architecture installers and prerequisites |
 | **[Installer Hooks](docs/installer-hooks.md)** | Native hooks, destructive uninstall cleanup, and `RETAIN_FILES_ON_UNINSTALL` |
 | **[Settled Questions](docs/decisions.md)** | Things that look like defects and are not: what was decided, on what evidence |
-| **[SBOM](docs/sbom.md)** | `/INSPECT` and `/SBOM`, what the document claims and what it does not, retention and BOM-Links |
+| **[SBOM](docs/sbom.md)** | `/INSPECT`, `/SBOM`, `/ANALYZE` and `/SCAN`: what the document claims and what it does not, VEX, retention and BOM-Links |
 | **[Schema](docs/msis.xsd)** | Complete XML element and attribute reference |
 | **[Roadmap](docs/roadmap.md)** | Planned features and future direction |
 | **[Developer Overview](docs/overview.md)** | Architecture, code structure, and internals |
@@ -157,16 +157,34 @@ The document's creator decides, not the tool.
 ```
 msis [OPTIONS] FILE [FILE...]
 
-Options:
-  /BUILD                Generate WXS and build MSI using WiX
-  /RETAINWXS            Keep the generated .wxs file after build
-  /TEMPLATE:PATH        Use custom WiX template
-  /TEMPLATEFOLDER:PATH  Base template folder
-  /CUSTOMTEMPLATES:PATH Custom templates overlay
-  /DRY-RUN              Parse and validate only, no output
-  /STATUS               Show configuration (WiX location, templates)
-  /?, /HELP             Show help
+Building:
+  /BUILD                 Generate the .wxs and build the MSI (and bundle) with WiX
+  /SET:NAME=VALUE        Override or add a <set> variable
+  /RETAINWXS             Keep the generated .wxs after the build
+  /TEMPLATE:PATH         Use a custom WiX template
+  /TEMPLATEFOLDER:PATH   Base template folder
+  /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)
+  /STANDALONE            No auto-bundle: <requires> become launch conditions
+  /STRICT                Refuse deprecated layouts instead of warning (msis 4 will)
+  /DRY-RUN               Parse and validate only, no output
+
+Reading and describing a built .msi or bundle .exe:
+  /INSPECT               Report what is inside it
+  /SBOM                  Write a CycloneDX SBOM beside it; with /BUILD, for what was built
+  /ANALYZE               With /SBOM: add the packages syft finds declared in the payload
+  /SCAN                  Run grype on the SBOM and apply the product's VEX
+  /SCAN-DIR:DIR          With /SCAN: keep the reports in DIR
+
+Setup and diagnostics:
+  /SETUP-WIX             Install or repair the pinned WiX toolset and its extensions
+  /WIX-VERSION:VER       With /SETUP-WIX: a specific WiX version
+  /STATUS                Show configuration (WiX location and version, templates, cache)
+  /NO-COLOR              Disable colored output
+  /?, /HELP              Show help
 ```
+
+`msis /?` prints the same with examples. [docs/sbom.md](docs/sbom.md) covers the second group in
+full.
 
 ## Migration from msis-2.x
 
@@ -201,6 +219,80 @@ msis has had three generations, all sharing the same `.msis` script format:
 
 Earlier versions were reconstructed from the Git log and tagged retroactively. The newest entry
 below is the current release; `just set-version X.Y.Z` adds the next one.
+
+**3.0.6** — 2026-09-26 (tag [`v3.0.6`](../../releases/tag/v3.0.6))
+
+SBOMs, and a regression QA against real products. Every issue from #29 to #83 is closed, and the
+fixes were checked against the 3.0.3 reference builds of ProAKT 3.6.0.x, Poste Italiane 4.2 and
+NG1 2.4, with the risky cases run on a test VM (`todo-testme.md`).
+
+**Upgrading products built with an earlier msis** — read this first:
+- **`<remove-on-uninstall>` no longer runs when an upgrade removes the previous version**
+  ([#76](../../issues/76), decisions D21). Up to 3.0.5 every major upgrade deleted the folder
+  or registry key it names, the application's data included. An upgrade removes the old version
+  with the **old** package's tables, though, so the first upgrade from a 3.0.5-or-earlier build
+  still deletes it one last time (verified on the VM, T76). Back up that data before that first
+  upgrade.
+- **`preserve="yes"` survives a silent x86 package.** 3.0.3's x86 silent template wrote every
+  preserved value as an empty string, on a fresh install and on an upgrade (T10). 3.0.6 keeps the
+  values it finds. It cannot restore values already lost.
+- **Component GUIDs are the product plus where each file installs** ([#81](../../issues/81),
+  D23). They used to hash the absolute source path, so building from another folder changed
+  every GUID. The first 3.0.6 build of a product changes them once; the major upgrade removes the
+  old version completely first, so that is harmless (verified on the VM, T81). SBOM file refs
+  change once too. The ProductCode no longer depends on the build folder either. A comparison of
+  two packages (a regression check against a reference build) has to use the same msis on both
+  sides, or every GUID differs.
+- **`<service>` attributes reach the package** ([#78](../../issues/78)): `description`,
+  `service-type`, `error-control` and `restart`, with msis-2.x's defaults. A service without
+  `description` now gets its name as the description, which 3.0.3 left empty.
+- **The Browse dialog's OK works** ([#80](../../issues/80)). Since WiX 6 the dialog publishes
+  nothing itself; msis's own dialog sets now publish its events, so choosing a folder in
+  Browse or Change takes effect. A custom template copied from 3.0.5 needs the two rows
+  (docs/templates.md).
+
+**SBOM**, for the EU Cyber Resilience Act, aimed at BSI TR-03183-2 ([docs/sbom.md](docs/sbom.md)):
+- `/INSPECT` reports what is inside a built `.msi` or bundle `.exe`. `/SBOM` writes a CycloneDX
+  1.6 document for it, from the artifact rather than the script: every file with SHA-256 and
+  SHA-512, and a bundle linking to its installers' documents (BOM-Links, verified before they
+  are made). `/BUILD /SBOM` adds what only the build knows: each payload's source, the toolchain,
+  and where each prerequisite came from.
+- The script can say what msis cannot read: `<sbom source= for=>` merges a component SBOM for a
+  payload file, `<component>` declares a file's identity, and a contradiction stops the build.
+- `<vex>` carries vulnerability statements that lapse when their conditions no longer hold.
+  `/SCAN` runs grype on the document and applies them. `/ANALYZE` runs syft on the MSI's payload
+  and adds the packages that declare themselves (Python distributions, Maven jars, .NET
+  `.deps.json` entries); on ProAKT 3.6.0.73 it took grype from 0 to 154 findings (D25).
+- msis's own release ships an SBOM beside each installer, listing what is inside `msis.exe` and
+  the hook DLL, under CC0-1.0.
+
+**New warnings, and `/STRICT`.** Two layouts that build today but lose files when a feature is
+removed later are deprecated: they build as before, warn, `/STRICT` refuses them, and msis 4
+will. One is a `<service>` in another feature than its executable ([#77](../../issues/77), D22);
+the other is two features installing one file ([#79](../../issues/79), D24). Each warning says
+how to rewrite it. Two `<files>` for one target in the same feature stay allowed and silent. The
+installer-hook danger warnings now name what to use instead.
+
+**Fixes:**
+- Every prerequisite download is pinned to a URL and SHA-256 and verified on every cache reuse
+  ([#30](../../issues/30)); `sha256=` verifies a supplied one too ([#50](../../issues/50)).
+- Two builds of one script are identical except the documented fields, and the ProductCode is
+  derived from the package's inputs ([#66](../../issues/66), D20); no output depends on map
+  order ([#73](../../issues/73)).
+- A registry-only package builds ([#54](../../issues/54)); no permission component on an
+  unnamed root ([#55](../../issues/55)); the minimal templates offer the install folder only
+  when there is one ([#56](../../issues/56)); a false-like `INSTALL_DIR_DIALOG` or
+  `INCLUDE_VCREDIST` no longer takes the template branch ([#57](../../issues/57)).
+- `{{VAR}}` expands in `.reg` string values again ([#46](../../issues/46)) and in
+  `<feature name>` ([#75](../../issues/75)); the `BUILD_TARGET` directory is created
+  ([#42](../../issues/42)); the overwrite check and the build agree on the output file
+  ([#41](../../issues/41)).
+
+**Releases and docs:** a release build refuses a dirty tree, re-checks the prerequisite pins
+([#49](../../issues/49)), gates on SBOM coverage ([#63](../../issues/63)) and stops on a failed
+packaging step ([#53](../../issues/53)). [docs/decisions.md](docs/decisions.md) records the
+questions that were settled on evidence (D1–D25), so they are not rediscovered; GitHub issues
+replace `TODO.md`.
 
 **3.0.5** — 2026-09-19 (tag [`v3.0.5`](../../releases/tag/v3.0.5))
 

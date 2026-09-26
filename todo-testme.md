@@ -899,3 +899,33 @@ Every msiexec returned 0. Conclusion (D24): within one feature the layout is sou
 unversioned text the copy written last was on disk. Across features, removing either feature
 deletes the shared file. Not covered: versioned files, and a repair over an existing, modified
 copy, where Windows Installer's file-replacement rules may decide otherwise.
+
+## T76 — the first upgrade from a package built before the #76 fix: DONE 2026-09-26
+
+Why: 3.0.6 runs `<remove-on-uninstall>` on a real uninstall only (#76, D21). An upgrade removes
+the previous version with that version's own tables, though. D21 therefore predicts that the
+first upgrade from a 3.0.5-or-earlier build still deletes the folder once. Poste Italiane 4.2's
+scripts use exactly `<remove-on-uninstall folder="[INSTALLDIR]"/>`.
+
+Probe: `testscripts/t76`. The build side (`uv run t76_upgrade_probe.py`) builds msis v3.0.5 from
+its tag and msis HEAD, and three x86 packages of one product. It checks in each WXS whether the
+removal carries the upgrade guard, and refuses to stage if not. The packages:
+- v1 1.0.0, built by 3.0.5;
+- v2 1.0.1 and v3 1.0.2, built by HEAD.
+
+The VM side (`vm/t76_vm_probe.py`, elevated, unattended) seeds `data\customer.db` in
+INSTALLDIR. It then checks the application file, the data, the ARP entry and the folder after
+each step.
+
+### Executed on 2026-09-26, on the test VM
+
+| Step | Result |
+|---|---|
+| 1 install v1 (3.0.5), seed data | PASS |
+| 2 upgrade v1 → v2 (first upgrade to a 3.0.6 package) | PASS, OBSERVED: **the site data is GONE** |
+| 3 upgrade v2 → v3 (both 3.0.6), data seeded again | PASS: the data is kept |
+| 4 uninstall v3 | PASS: the folder is removed, as the element intends |
+
+Conclusion: D21's limit holds as predicted. The first upgrade from an old build deletes the data
+once; from then on upgrades keep it. The 3.0.6 release notes tell sites to back up before that
+first upgrade.

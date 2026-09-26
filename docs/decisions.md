@@ -792,7 +792,10 @@ as before. The components keep their keypaths, so their GUIDs do not change.
 **The limit:** Windows Installer removes the old version with the old version's cached package.
 So an upgrade from a version built by an earlier msis still runs that version's unconditional
 cleanup. The protection holds for upgrades from the first fixed version on; the tutorial says
-so. The harness's upgrade scenario judges the data's survival, and must pass on the VM.
+so. The harness's upgrade scenario judges the data's survival, and must pass on the VM. Both
+halves were run on the VM (`testscripts/t76`, todo-testme.md T76, 2026-09-26). Upgrading a
+3.0.5-built package to a 3.0.6-built one deleted the site data. The next upgrade, 3.0.6 to 3.0.6,
+kept it.
 
 **What would reopen this:** a need to clear the data on updates too, which would be an opt-in
 per element, never the default; or a WiX change to how the util custom actions evaluate their

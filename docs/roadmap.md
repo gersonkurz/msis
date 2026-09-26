@@ -136,6 +136,22 @@ These are explicitly **not** planned for msis:
 - `/SETUP-WIX`: installs the pinned WiX toolset and its extensions, version-matched
 - WiX 6 **and 7** integration (major version auto-detected; `-acceptEula` added for v7+)
 
+## Completed (3.0.6)
+
+- SBOMs for the Cyber Resilience Act, aimed at BSI TR-03183-2 ([sbom.md](sbom.md)): `/INSPECT`
+  and `/SBOM` read a built MSI or bundle; `/BUILD /SBOM` adds what the build knew; `<sbom>` and
+  `<component>` supply what msis cannot read; `<vex>` statements, `/SCAN` with grype, and
+  `/ANALYZE`, which adds the packages syft finds declared in the payload
+- Reproducible packages: two builds of one script are identical except the documented fields,
+  from any build folder, with a ProductCode derived from the package's inputs (decisions D20,
+  D23)
+- Prerequisite downloads pinned to a URL and SHA-256, verified on every reuse
+- `/STRICT`, and deprecation warnings for layouts that lose files when a feature is removed:
+  a `<service>` in another feature than its executable (D22), two features installing one
+  file (D24)
+- `<remove-on-uninstall>` limited to a real uninstall (D21); `preserve="yes"` in silent x86
+  packages; the Browse dialog under WiX 6/7
+
 ---
 
 ## Keeping this file honest

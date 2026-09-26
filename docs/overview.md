@@ -80,66 +80,43 @@ For bundles, an additional path:
 
 ## Package Structure
 
-```
-msis-3.x/
-├── cmd/msis/
-│   └── main.go              # CLI entry point, argument parsing
-│
-├── internal/
-│   ├── ir/
-│   │   └── types.go         # Intermediate Representation types
-│   │
-│   ├── parser/
-│   │   ├── parser.go        # XML parsing → IR conversion
-│   │   └── parser_test.go
-│   │
-│   ├── variables/
-│   │   ├── variables.go     # Dictionary with Handlebars resolution
-│   │   └── variables_test.go
-│   │
-│   ├── generator/
-│   │   ├── context.go       # IR → WXS XML generation
-│   │   └── context_test.go
-│   │
-│   ├── bundle/
-│   │   ├── generator.go     # Bundle chain XML generation
-│   │   └── prerequisites.go # VC++/NetFx prerequisite definitions
-│   │
-│   ├── template/
-│   │   └── renderer.go      # Handlebars template rendering
-│   │
-│   ├── registry/
-│   │   └── processor.go     # .reg file → WiX XML conversion
-│   │
-│   └── wix/
-│       ├── builder.go       # WiX CLI invocation
-│       └── builder_test.go
-│
-├── templates/               # WiX Handlebars templates
-│   ├── x64/template.wxs
-│   ├── x86/template.wxs
-│   ├── minimal/template.wxs
-│   ├── bundle.wxs
-│   └── wixlib/*.wxl         # Localization files
-│
-└── docs/
-    ├── Bundle.md            # Bundle documentation
-    ├── msis.xsd             # XML schema
-    └── overview.md          # This file
-```
+Each stage is its own package under `internal/`, wired together in `cmd/msis`. The CLI's
+files follow the operations: `main.go` (arguments and the build), `sbom.go`, `enrich.go`
+(`/BUILD /SBOM`), `scan.go`, `productcode.go` (D20).
 
 ### Package Responsibilities
+
+**Building a package**
 
 | Package | Responsibility |
 |---------|----------------|
 | `ir` | Data types representing parsed .msis content |
-| `parser` | XML unmarshaling with validation |
-| `variables` | Variable dictionary with Handlebars expansion |
-| `generator` | Converts IR to WXS XML fragments |
-| `bundle` | Generates WiX Burn chain XML |
-| `template` | Renders final .wxs using Handlebars |
-| `registry` | Converts .reg files to WiX registry XML |
-| `wix` | Invokes WiX CLI tools |
+| `parser` | XML unmarshaling with validation: unknown attributes and missing required fields are errors |
+| `variables` | Variable dictionary with Handlebars expansion, typed accessors, deprecation and hook warnings |
+| `generator` | Converts IR to WXS XML fragments; component ids and GUIDs (D23), the deprecated-layout checks (D22, D24) |
+| `registry` | Converts .reg files to WiX registry XML, including `preserve="yes"` |
+| `requirements` | Launch conditions for `<requires>` under `/STANDALONE` |
+| `bundle` | Burn chain XML and the prerequisite registry (VC++, .NET) |
+| `prereqcache` | Downloads and caches prerequisites, pinned to URL and SHA-256 (D5) |
+| `template` | Renders the final .wxs with Handlebars, with the custom-template overlay |
+| `wix` | WiX CLI invocation, version and extension detection, `/SETUP-WIX` |
+| `cli` | Colored terminal output, honouring `NO_COLOR` and `/NO-COLOR` |
+
+**Reading and describing what was built** (docs/sbom.md)
+
+| Package | Responsibility |
+|---------|----------------|
+| `msiread` | Reads a built MSI's tables and payload, never executing it; `ExtractTo` writes the payload out for an analyzer |
+| `burnread` | Reads a Burn bundle's manifest, chain and containers |
+| `cabinet` | In-memory cabinet extraction, shared by both readers |
+| `buildrecord` | What a build knows that the artifact cannot say: sources, toolchain, prerequisites |
+| `sbom` | CycloneDX 1.6 for an MSI or a bundle, supplied SBOMs, declared facts, analyzed packages; `sbom/conformance` holds the schema and the rules every document answers to |
+| `analyze` | `/ANALYZE`: syft over the extracted payload, keeping only declared identities (D25) |
+| `vex` | Evaluates a VEX document against the SBOM of its build |
+| `scan` | `/SCAN`: grype on an SBOM, with what the scan could not cover |
+| `filekind`, `contact`, `spdx` | File classification, contact and SPDX-expression validation for the SBOM |
+
+`tools/sbom-index` is a separate Go module: a SQLite index over the SBOM corpus.
 
 ---
 
@@ -391,15 +368,18 @@ For each `<files>` element:
 
 ### Component ID Generation
 
-Component IDs are deterministic to enable upgrades:
+Component identity is deterministic and does not depend on where the build ran (decisions D23):
 
-```go
-func (c *Context) generateComponentID(filePath string) string {
-    // Hash the relative path for reproducibility
-    h := sha256.Sum256([]byte(filePath))
-    return fmt.Sprintf("CID_%s", hex.EncodeToString(h[:8]))
-}
-```
+- A file component's **id** is `CID_` plus a hash of its destination: the root key, the path
+  below it and the file name, case-folded. Its **GUID** hashes the product's UpgradeCode plus
+  that destination.
+- Where several components install to one destination (#79), each GUID also carries its source
+  path relative to the script's folder. The id disambiguates with a counter.
+- Non-file components (services, shortcuts, environment variables, permissions) hash the
+  UpgradeCode plus a name (`productScopedID`).
+
+So two builds of one script, from any folder, give the same component ids and GUIDs, and two products never
+share one. `resolveFileGUIDs` assigns the file GUIDs once every file is known.
 
 ### File Exclusion
 
@@ -550,27 +530,25 @@ func GetInstalledExtensions() []string  // Installed extensions
 
 ### Test Organization
 
-```
-internal/
-├── parser/parser_test.go      # XML parsing tests
-├── variables/variables_test.go # Variable resolution tests
-├── generator/context_test.go  # WXS generation tests
-├── bundle/generator_test.go   # Bundle generation tests
-├── registry/processor_test.go # Registry conversion tests
-└── wix/builder_test.go        # WiX invocation tests
-```
+Every package has its tests beside it. Two kinds need a word:
+
+- **`*_windows_test.go`** drive the real `wix` CLI, `msi.dll` or syft/grype, and build real
+  packages. They skip when a tool is missing (`requireWix`, a syft or grype not on `PATH`).
+- **`testscripts/tNN/`** are VM probes for what only an install can show: a build side
+  (`uv run`) that stages packages, and a VM side run elevated on a snapshotted machine. Their
+  results are recorded in `todo-testme.md`.
+
+`TestEverySettledDecisionIsStillImplemented` checks that the code each `docs/decisions.md`
+entry names is still there; the SBOM vocabulary test checks `docs/sbom.md` names every property
+the emitter writes.
 
 ### Running Tests
 
 ```bash
-# All tests
-go test ./...
-
-# Verbose
-go test -v ./...
-
-# Specific package
-go test ./internal/parser
+just check                              # fmt-check + vet (incl. GOOS=linux) + test + test-tools
+go test -count=1 -p=1 ./...             # the root module, uncached; -p=1 because tests share wix and the filesystem
+go test ./internal/parser -run TestX    # one test
+just test-tools                         # the nested tools/sbom-index module, which ./... does not reach
 ```
 
 ### Test Patterns
@@ -610,6 +588,12 @@ func TestVariableResolution(t *testing.T) {
 |------------|---------|
 | `github.com/aymerick/raymond` | Handlebars template engine |
 | `github.com/gersonkurz/go-regis3` | Registry file parsing |
+| `github.com/santhosh-tekuri/jsonschema/v6` | Validates every SBOM against the vendored CycloneDX 1.6 schema |
+| `golang.org/x/sys`, `golang.org/x/term` | Windows API access and terminal detection |
+
+External tools msis runs but does not bundle: WiX, which `/SETUP-WIX` can install at the pinned
+version (through `dotnet tool` and `wix extension`); grype for `/SCAN` and syft for `/ANALYZE`,
+which have to be installed already and are never downloaded.
 
 ### Why These Dependencies?
 
@@ -626,6 +610,6 @@ msis-3.x architecture follows these principles:
 1. **Pipeline design**: Clear phases (parse → resolve → generate → template → build)
 2. **Separation of concerns**: Each package has one responsibility
 3. **Compatibility**: Same .msis format as 2.x, same templates work
-4. **Determinism**: Same input produces same output (reproducible builds)
-5. **Minimal dependencies**: Only two external packages
+4. **Determinism**: Same input produces a package identical except for the documented fields (PackageCode, timestamps), from any build folder (D20, D23)
+5. **Minimal dependencies**: a handful of Go modules; scanners and WiX are run, never bundled
 6. **Testability**: Each phase is independently testable
