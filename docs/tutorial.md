@@ -144,6 +144,49 @@ Name the directory and its contents are installed **recursively**, subfolders in
 </feature>
 ```
 
+### One target, two sources: an override
+
+Two `<files>` may install different sources to the same target **in one feature**. The feature
+installs and removes both copies together, which is how a product layers its own files over a
+base set:
+
+```xml
+<feature name="MyApp">
+  <files source="core\config" target="[INSTALLDIR]config"/>
+  <files source="custom\config" target="[INSTALLDIR]config"/>
+</feature>
+```
+
+Which copy ends up on disk is decided by Windows Installer's
+[file-replacement rules](https://learn.microsoft.com/en-us/windows/win32/msi/replacing-existing-files),
+not by msis. On a test machine, with unversioned text files, it was the copy written **last**,
+after install and after a repair that restored the deleted file (#79). For versioned files
+(executables, DLLs) the rules compare versions, so declaration order is not the whole story.
+Where it matters, check the result on a machine.
+
+Across **different features** the same thing is deprecated:
+
+```xml
+<!-- deprecated: two features own one file (msis warns; /STRICT and msis 4 refuse it) -->
+<feature name="Standard">
+  <files source="a\config.json" target="[INSTALLDIR]"/>
+</feature>
+<feature name="Variant" enabled="false">
+  <files source="b\config.json" target="[INSTALLDIR]"/>
+</feature>
+```
+
+Each `<files>` makes its own component, so two components own one file. On a test machine,
+removing either feature from an installed product deleted the file the other still installed,
+and msiexec reported success (#79). msis builds it, as earlier versions did, and warns naming
+the file and its sources. `/STRICT` refuses it, and msis 4 will. The warning proposes three
+fixes:
+- give each feature's copy a target of its own;
+- install the copies in one feature, as above;
+- if the file does not belong in the package at all (a stray `desktop.ini`, say), leave it out:
+  `<exclude folder="...">` naming it where it comes from a copied folder, or drop the `<files>`
+  that names it directly.
+
 ### Protecting User Configuration
 
 What if the user modifies `config.json`? By default, upgrades overwrite all files. To preserve user changes:

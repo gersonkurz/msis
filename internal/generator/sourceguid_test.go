@@ -193,8 +193,8 @@ func TestFileGUIDsDoNotDependOnTheBuildFolder(t *testing.T) {
 	const code = "{11111111-2222-3333-4444-555555555555}"
 	shape := func() []ir.Feature {
 		return features([]ir.Item{
-			ir.Files{Source: `out\conf\fastcgi.conf`, Target: `[INSTALLDIR]conf`},
-			ir.Files{Source: `out\app.exe`, Target: "[INSTALLDIR]"},
+			ir.Files{Source: filepath.FromSlash("out/conf/fastcgi.conf"), Target: `[INSTALLDIR]conf`},
+			ir.Files{Source: filepath.FromSlash("out/app.exe"), Target: "[INSTALLDIR]"},
 		})
 	}
 	ciGUIDs, ciIDs := buildIn(t, filepath.Join(t.TempDir(), "ng1-2.4.0-banking"), code, shape()...)
@@ -226,8 +226,8 @@ func TestFileGUIDsAreScopedToTheProduct(t *testing.T) {
 // GUID belongs to which source must not depend on the order the features are written in.
 func TestSharedDestinationGetsDistinctStableGUIDs(t *testing.T) {
 	const code = "{11111111-2222-3333-4444-555555555555}"
-	standard := []ir.Item{ir.Files{Source: `a\config.json`, Target: "[INSTALLDIR]"}}
-	variant := []ir.Item{ir.Files{Source: `b\config.json`, Target: "[INSTALLDIR]"}}
+	standard := []ir.Item{ir.Files{Source: filepath.FromSlash("a/config.json"), Target: "[INSTALLDIR]"}}
+	variant := []ir.Item{ir.Files{Source: filepath.FromSlash("b/config.json"), Target: "[INSTALLDIR]"}}
 	dir := t.TempDir()
 	guidsOf := func(fs ...ir.Feature) map[string]string {
 		vars := variables.New()
@@ -257,7 +257,7 @@ func TestSharedDestinationGetsDistinctStableGUIDs(t *testing.T) {
 	}
 	forward := guidsOf(features(standard, variant)...)
 	reversed := guidsOf(features(variant, standard)...)
-	if len(forward) != 2 || forward[`a\config.json`] == forward[`b\config.json`] {
+	if len(forward) != 2 || forward[filepath.FromSlash("a/config.json")] == forward[filepath.FromSlash("b/config.json")] {
 		t.Errorf("the two components at one destination should have distinct GUIDs: %v", forward)
 	}
 	if !sameMap(forward, reversed) {

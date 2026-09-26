@@ -907,3 +907,52 @@ script with absolute sources from two folders and compares the MSIs' components 
 **What would reopen this:** patches or minor upgrades, which need component identity to hold
 across a change of destination too; or a template moving `RemoveExistingProducts` late. Both
 would need the component rules checked release against release, which msis does not do.
+
+---
+
+## D24 — Two `<files>` installing one target: allowed in one feature, deprecated across features
+
+**Settled in:** [#79](https://github.com/gersonkurz/msis/issues/79), 2026-09-26, product owner's
+decision ("split by shape"), on the T79 VM probe's evidence.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) checkSharedFileTargets() error`
+
+Each `<files>` makes its own component, as it did in msis-2.x. So two `<files>` installing
+different sources to one target make two components own one file. The build accepts this: the
+second copy gets a generated ShortName, and since D23 each component's GUID carries its source.
+Field scripts produce it in two shapes, and the VM probe `testscripts/t79` (todo-testme.md T79,
+2026-09-26) showed they behave differently.
+- **One feature.** ProAKT 3.6.0.73's `setup-ngbt.msis` installs `Files_Core`, then `Files_NG`,
+  to `INSTALLDIR`. 32 paths under `CONFIG\CURRENCY\` get two owners, two of them with different
+  content: an intended override. The feature installs and removes both components together,
+  so nothing is lost: on the VM uninstall removed the file, and it was present after install and
+  after a repair. **Allowed, no warning**, documented in the tutorial as the override idiom.
+  Which copy ends up on disk is Windows Installer's file-replacement rules' decision, not msis's.
+  On the VM, with unversioned text, it was the copy written last, after install and after a
+  repair of the deleted file. That is what was measured; msis does not promise it for versioned
+  files or for a repair over an existing, modified file.
+- **Different features.** The issue's repro: Standard installs `a\config.json`, Variant (off by
+  default) `b\config.json`, both to `[INSTALLDIR]`. On the VM, removing Variant from an install
+  with both deleted the file although Standard was still installed, and so did removing Standard
+  with Variant installed. msiexec reported success each time, the #77 failure for plain files.
+  While both were installed the Variant copy was on disk. **Deprecated**, with D22's reasoning:
+  scripts in the field build it, so msis builds it as before, warns, `/STRICT` refuses it, and
+  msis 4 will. The warning names the file, every source grouped by feature, and three fixes:
+  - a target of its own for each feature's copy;
+  - the copies in one feature;
+  - leaving the file out, when it does not belong in the package: an `<exclude folder="...">`
+    line for each source that comes from a directory walk, and removing the `<files>` for each
+    source a `<files>` names directly, since `<exclude>` applies only to a walk.
+
+The warning found two field scripts before it shipped. The Poste Italiane 4.2.0.90 and
+pro2127 scripts install `desktop.ini`, which Explorer writes into customised folders, from four
+source folders into `[INSTALLDIR]` and `[INSTALLDIR]Python`. The owners are the main feature and
+"Debug Symbols", so removing Debug Symbols deletes the main feature's copy. The file is harmless,
+and so is its loss, but it does not belong in the package, which is the third fix. None of the
+other scripts checked warns: ProAKT 3.6.0.x, Poste Italiane 4.2.0.78/4.2.0.82 and chimera's
+buildable scripts. NG1 was not checked, because its payload lives on the CI machine.
+
+A component carrying a service is left to `checkServiceFileOwnership` (#77, D22), which reports
+that layout with its own advice, so one layout never gets two warnings.
+
+**What would reopen this:** msis 4, which refuses the cross-feature shape; or a mechanism that
+lets one component follow either of two features. Windows Installer has none.

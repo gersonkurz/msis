@@ -863,3 +863,39 @@ entries after each step.
 | 2 upgrade to v2 | PASS: v2's files at v2's content, one ARP entry 1.0.1 |
 | 3 delete `conf\static.txt`, repair v2 | PASS: restored |
 | 4 uninstall v2 | PASS: no files, no folder, no ARP entry |
+
+## T79 — two `<files>` installing one target (#79, D24): DONE 2026-09-26
+
+Why: each `<files>` makes its own component, so two sources for one target are two components
+owning one file. #77 showed what that does for a service's executable. This probe checks plain
+files, in the two shapes found in the field.
+
+Probe: `testscripts/t79`. The build side (`uv run t79_target_probe.py`) builds msis HEAD and two
+packages:
+- `same`: one feature installs `core\CONFIG`, then `ng\CONFIG`, to `[INSTALLDIR]CONFIG`, with
+  two different `CURRENCY.TXT`. That is ProAKT's `setup-ngbt.msis` shape.
+- `features`: Standard (enabled) installs `a\config.json` and Variant (disabled) `b\config.json`,
+  both to `[INSTALLDIR]`. That is the issue's repro.
+
+The VM side (`vm/t79_vm_probe.py`, elevated, unattended) reads the shared file after every step.
+It FAILs a step where the file is missing although an owning feature is installed, and records
+which copy is on disk while both owners are installed.
+
+### Executed on 2026-09-26, on the test VM
+
+| Scenario | Step | Result |
+|---|---|---|
+| same | install | PASS: the ng copy (written last) |
+| same | delete it, repair | PASS: the ng copy |
+| same | uninstall | PASS: gone |
+| features A | install default (Standard) | PASS: standard |
+| features A | add Variant | PASS: the variant copy |
+| features A | remove Variant | **FAIL: the file is gone, although Standard is installed** |
+| features B | install both | PASS: the variant copy |
+| features B | remove Standard | **FAIL: the file is gone, although Variant is installed** |
+| features C | Variant only, then uninstall | PASS |
+
+Every msiexec returned 0. Conclusion (D24): within one feature the layout is sound, and for this
+unversioned text the copy written last was on disk. Across features, removing either feature
+deletes the shared file. Not covered: versioned files, and a repair over an existing, modified
+copy, where Windows Installer's file-replacement rules may decide otherwise.

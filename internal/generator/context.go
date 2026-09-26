@@ -27,7 +27,8 @@ type Context struct {
 	WorkDir   string // Directory containing the .msis file
 
 	// Strict refuses what is deprecated instead of warning about it (/STRICT): today the #77
-	// layout, a service sharing its executable with another feature (D22).
+	// layout, a service sharing its executable with another feature (D22), and the #79 one,
+	// two features installing one file (D24).
 	Strict bool
 
 	// warnings collects build-time diagnostics, surfaced on GeneratedOutput and
@@ -567,6 +568,9 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 	if err := c.checkServiceFileOwnership(); err != nil {
 		return nil, err
 	}
+	if err := c.checkSharedFileTargets(); err != nil {
+		return nil, err
+	}
 
 	// All file components exist by now, so a source used in more than one place can be
 	// given per-target GUIDs before anything is rendered (issue #21).
@@ -883,7 +887,7 @@ func (c *Context) processFiles(files ir.Files, featureID string) error {
 		}
 
 		dir := c.GetOrCreateDirectory(rootKey, dirPath, files.DoNotOverwrite)
-		return c.addFile(dir, source, targetFileName, featureID)
+		return c.addFile(dir, source, targetFileName, featureID, false)
 	}
 }
 
@@ -959,7 +963,7 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 				return err
 			}
 		} else {
-			if err := c.addFile(dir, wxsSourcePath, entry.Name(), featureID); err != nil {
+			if err := c.addFile(dir, wxsSourcePath, entry.Name(), featureID, true); err != nil {
 				return err
 			}
 		}
@@ -968,7 +972,9 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 	return nil
 }
 
-func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string) error {
+// walked says the file came from a directory walk, where <exclude> applies, rather than from a
+// <files> naming it.
+func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string, walked bool) error {
 	// The component id names where the file installs, not where it was built from (#81): an
 	// absolute source path would make the id - and the ProductCode hashed over the WXS - depend
 	// on the build machine's folder. NextComponentID disambiguates two components at one target
@@ -1013,7 +1019,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 
 	// Remember where this source landed; resolveFileGUIDs keys each component on it.
 	c.fileComponentsBySource[sourcePath] = append(c.fileComponentsBySource[sourcePath],
-		placedComponent{comp: comp, dir: dir})
+		placedComponent{comp: comp, dir: dir, walked: walked})
 
 	// Track component by filename so services can attach to it
 	if _, exists := c.fileComponents[fileKey]; !exists {
@@ -1029,10 +1035,12 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 }
 
 // placedComponent is a file component together with the directory it installs into, which
-// is what distinguishes two components built from the same source file.
+// is what distinguishes two components built from the same source file. walked records that
+// it came from a directory walk (so <exclude> can leave it out) rather than a <files> naming it.
 type placedComponent struct {
-	comp *Component
-	dir  *Directory
+	comp   *Component
+	dir    *Directory
+	walked bool
 }
 
 // installedAt names the destination that gives this component its identity: the directory
@@ -1525,19 +1533,21 @@ func (c *Context) serviceFileConflict(dir *Directory, svc *Component) string {
 	return ""
 }
 
-func (c *Context) serviceFileConflictMessage(service, file, source string, fileFeatures, serviceFeatures []string) string {
-	names := func(ids []string) string {
-		quoted := make([]string, len(ids))
-		for i, id := range ids {
-			name, ok := c.featureNames[id]
-			if !ok {
-				name = "items outside any feature"
-			}
-			quoted[i] = fmt.Sprintf("%q", name)
+// featureNamesOf names features for a message: quoted script names, joined with "and".
+func (c *Context) featureNamesOf(ids []string) string {
+	quoted := make([]string, len(ids))
+	for i, id := range ids {
+		name, ok := c.featureNames[id]
+		if !ok {
+			name = "items outside any feature"
 		}
-		return strings.Join(quoted, " and ")
+		quoted[i] = fmt.Sprintf("%q", name)
 	}
-	fileIn, serviceIn := names(fileFeatures), names(serviceFeatures)
+	return strings.Join(quoted, " and ")
+}
+
+func (c *Context) serviceFileConflictMessage(service, file, source string, fileFeatures, serviceFeatures []string) string {
+	fileIn, serviceIn := c.featureNamesOf(fileFeatures), c.featureNamesOf(serviceFeatures)
 	return fmt.Sprintf("service %q: %s is installed by feature %s, but the <service> is in feature %s, so the "+
 		"executable is installed a second time for it. A file can belong to only one component: removing either "+
 		"feature from an installed product deletes the file the other still needs (#77). This layout is deprecated: "+
@@ -1547,6 +1557,82 @@ func (c *Context) serviceFileConflictMessage(service, file, source string, fileF
 		"    <files source=\"%s\" target=\"[INSTALLDIR]service\\%s\"/>\n"+
 		"    <service file-name=\"[INSTALLDIR]service\\%s\"/>",
 		service, file, fileIn, serviceIn, fileIn, serviceIn, escapeXMLAttr(source), escapeXMLAttr(file), escapeXMLAttr(file))
+}
+
+// checkSharedFileTargets reports a file that components of different features install to
+// one destination (#79, D24): a warning, or under Strict an error.
+//
+// Two <files> naming one target make two components own one file. Within one feature that is
+// sound, and scripts rely on it: the feature installs and removes both together. (Which copy
+// ends up on disk is Windows Installer's file-replacement rules' call; for the unversioned text
+// T79 used, it was the one written last, after install and after a repair of a deleted file.)
+// Across
+// features it is the #77 hazard for plain files: on the VM, removing either feature from an
+// installed product deleted the file the other still installed, with msiexec reporting
+// success. Like #77 it is deprecated rather than refused (D22's reasoning): msis 4 will refuse
+// it, and Strict refuses it now. A component that carries a service is left to
+// checkServiceFileOwnership, which reports that layout with its own advice.
+func (c *Context) checkSharedFileTargets() error {
+	type owner struct {
+		placedComponent
+		source string
+	}
+	byTarget := map[string][]owner{}
+	for _, source := range sortedKeysOf(c.fileComponentsBySource) {
+		for _, p := range c.fileComponentsBySource[source] {
+			at := p.installedAt()
+			byTarget[at] = append(byTarget[at], owner{p, source})
+		}
+	}
+	for _, at := range sortedKeysOf(byTarget) {
+		owners := byTarget[at]
+		if len(owners) < 2 || slices.ContainsFunc(owners, func(o owner) bool { return o.comp.Service != nil }) {
+			continue
+		}
+		first := c.featuresOf(owners[0].comp.ID)
+		if !slices.ContainsFunc(owners[1:], func(o owner) bool { return !slices.Equal(c.featuresOf(o.comp.ID), first) }) {
+			continue // one feature (set) owns every copy: installed and removed together
+		}
+		// The owners grouped by feature set, in the order the sources sort.
+		var sets []string
+		sources := map[string][]string{}
+		var excludes strings.Builder
+		for _, o := range owners {
+			set := c.featureNamesOf(c.featuresOf(o.comp.ID))
+			if _, seen := sources[set]; !seen {
+				sets = append(sets, set)
+			}
+			sources[set] = append(sources[set], o.source)
+			// <exclude> applies to a directory walk only; a file a <files> names directly is
+			// left out by removing that element.
+			if o.walked {
+				fmt.Fprintf(&excludes, "\n    <exclude folder=\"%s\"/>", escapeXMLAttr(o.source))
+			} else {
+				fmt.Fprintf(&excludes, "\n    (remove the <files source=\"%s\" .../> that names it)", escapeXMLAttr(o.source))
+			}
+		}
+		var by []string
+		for _, set := range sets {
+			by = append(by, fmt.Sprintf("feature %s from %s", set, strings.Join(sources[set], ", ")))
+		}
+		root, rest, _ := strings.Cut(targetPathOf(owners[0].dir), "\\")
+		target := "[" + root + "]" + rest
+		if rest != "" {
+			target += "\\"
+		}
+		target += owners[0].comp.Files[0].Name
+		msg := fmt.Sprintf("%s is installed by %s. Several components own one file, and removing one of those "+
+			"features from an installed product deletes the file the others still install (#79). This layout is "+
+			"deprecated: msis 4 will refuse it, and /STRICT refuses it now. Either give each feature's copy a target "+
+			"of its own; or install the copies in one feature, which installs and removes them together; "+
+			"or, if the file does not belong in the package, leave it out:%s",
+			target, strings.Join(by, "; and by "), excludes.String())
+		if c.Strict {
+			return errors.New(msg)
+		}
+		c.warn("%s", msg)
+	}
+	return nil
 }
 
 func (c *Context) processShortcut(sc ir.Shortcut, featureID string) error {

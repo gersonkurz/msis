@@ -1,0 +1,9 @@
+[project]
+name = "t79-target-probe"
+version = "1.0.0"
+description = "VM probe for #79 - two <files> installing one target"
+requires-python = ">=3.14"
+dependencies = ["loguru>=0.7.3"]
+
+[tool.uv]
+package = false

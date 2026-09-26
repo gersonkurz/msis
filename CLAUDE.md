@@ -98,7 +98,8 @@ The tool accepts Windows-style `/FLAG` and `/FLAG:VALUE`; `parseArgs` in `main.g
 to `--flag` for Go's `flag` package (paths with `\` or `:` are left as files). `/SET:NAME=VALUE`
 overrides variables. Key flags: `/BUILD`, `/RETAINWXS`, `/STANDALONE`, `/DRY-RUN`, `/STATUS`,
 `/TEMPLATE`, `/TEMPLATEFOLDER`, `/CUSTOMTEMPLATES`, `/STRICT` (refuse deprecated layouts instead
-of warning - today the #77 service layout, D22; msis 4 refuses them always). `/STATUS` is the diagnostic entry point (WiX
+of warning - today the #77 service layout, D22, and #79's two features installing one file,
+D24; msis 4 refuses them always). `/STATUS` is the diagnostic entry point (WiX
 location/version, template search order, prerequisite cache). `/INSPECT` and `/SBOM` read a built
 artifact; `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; alone, on the
 `.cdx.json` documents named) and applies msis's evaluated VEX to the findings (D19).
