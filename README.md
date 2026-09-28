@@ -217,8 +217,37 @@ msis has had three generations, all sharing the same `.msis` script format:
 
 ### msis-3.x version history
 
-Earlier versions were reconstructed from the Git log and tagged retroactively. The newest entry
-below is the current release; `just set-version X.Y.Z` adds the next one.
+Earlier versions were reconstructed from the Git log and tagged retroactively. The newest dated
+entry below is the current release; `just set-version X.Y.Z` adds the next one. An
+**Unreleased** entry lists what is on `main` since that tag. It becomes that version's notes
+when it is released.
+
+**Unreleased** (next: 3.0.7) — on `main`, not yet tagged or published
+
+**Upgrading products built with an earlier msis:**
+- **Directory and File ids are derived from where they install** ([#85](../../issues/85),
+  decisions D26). They used to be sequence numbers (`DIR_ID00003`, `FILE_ID00007`), so one added
+  folder or file renumbered every id after it, and with them every folder-permission component
+  (its GUID included). Now a directory is `DIR_<hash>` of its install path, a File is its
+  component's id with `FILE_` for `CID_`, and a `<create-folder>` is keyed on its folder. Two
+  builds now differ only where their contents differ, and a `.wxs` can be diffed between
+  releases.
+  - The first 3.0.7 build of a product changes every directory and file id once. It also changes
+    the GUID of every permission component below a root folder and of every `<create-folder>`.
+  - Under the shipped templates that is harmless. The major upgrade removes the old version
+    completely first. On the VM (T85), runtime data and folder permissions survived both
+    upgrades, feature removal, repair and uninstall.
+  - A script that wrote a generated id itself (`[#FILE_ID00007]`, a `DIR_ID...` as a directory)
+    has to change.
+  - SBOM file refs do not change; the `msis:msi.fileKey` property does.
+  - A regression comparison against a reference build needs the same msis on both sides, as with
+    3.0.6's GUID change.
+
+**Known issue, found by the same probe:** inserting a feature before an existing one hands
+customers' feature choices to the wrong features on upgrade ([#87](../../issues/87)). Until that
+is fixed, add a new feature or sub-feature only after every existing one. Features are
+numbered depth-first in the order they are written, so one inserted anywhere else moves every
+feature after it.
 
 **3.0.6** — 2026-09-26 (tag [`v3.0.6`](../../releases/tag/v3.0.6))
 
