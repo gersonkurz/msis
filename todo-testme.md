@@ -929,3 +929,46 @@ each step.
 Conclusion: D21's limit holds as predicted. The first upgrade from an old build deletes the data
 once; from then on upgrades keep it. The 3.0.6 release notes tell sites to back up before that
 first upgrade.
+
+## T85 — path-derived ids across upgrades (#85, D26), and positional feature ids (#87): DONE 2026-09-28
+
+Why: D26 gives every directory and file a new id once, and every permission component below a
+root and every `<create-folder>` component a new GUID. D26 argues that is harmless under the
+templates' default MajorUpgrade, as D23 did; T81 checked that for file components only. #87
+suspects that MigrateFeatures, which matches features by id, hands a customer's feature choices
+to the wrong features when a release inserts one.
+
+Probe: `testscripts/t85`. The build side (`uv run t85_id_probe.py`) builds msis at 3822972 (the
+sequence-number scheme) and from the working tree, and stages:
+- leg 1: `ids-1.0.0` (old scheme), `ids-1.0.1` (D26), `ids-1.0.2` (D26, plus a `__pycache__`
+  folder, an empty folder, a file sorted first and a `<create-folder>`). A nested INSTALLDIR,
+  so APPDATADIR falls back to it; permission components on every named folder; two
+  `<create-folder>`; `APPDATADIR\data` shared by the Main and Extra features. It refuses to stage
+  unless v1's ids are numbered, v2's derived, some permission GUIDs move between them, and v3
+  keeps every identity of v2. It also refuses a WXS with anything that deletes recursively, or a
+  permission component on an unnamed folder (#55).
+- leg 2: `f1` [Main, Debug (off)], `f2append` [Main, Debug, NewTool (off)] as the control, and
+  `f2insert` [Main, NewTool (off), Debug], where Debug's id becomes NewTool's.
+
+The VM side (`vm/t85_vm_probe.py`, elevated, unattended) seeds runtime data after the first
+install, and checks every step's files, folders, Programs and Features entries, and the Users
+entries of each permissioned folder's ACL against the first install's. It refuses to start if
+anything of its own is on the machine, and always ends by uninstalling its products and removing
+the runtime files it wrote and any folder under `MsisProbe85` left empty.
+
+### Executed on 2026-09-28, on the product owner's Windows 11 ARM64 VM (x64 packages)
+
+| Step | Result |
+|---|---|
+| L1.1 install 1.0.0 (sequence-number ids) | PASS; Users has an explicit FullControl entry on every probe folder |
+| L1.2 upgrade to 1.0.1 (D26) | PASS: 1.0.1's files, runtime data unchanged, ACLs as after L1.1 |
+| L1.3 upgrade to 1.0.2 (D26, added folders) | PASS |
+| L1.4 remove Extra | PASS: `data\extra.txt` gone; `data`, which Main shares, and its ACL kept |
+| L1.5 delete a file and the empty `cache`, repair | PASS: both back, ACLs as after L1.1 |
+| L1.6 uninstall | PASS: only the runtime data left, the package's empty folders gone, no ARP entry |
+| L2 control (f1 with every feature -> f2append) | PASS: Main and Debug, as chosen |
+| L2 insert (f1 with every feature -> f2insert) | **#87 reproduces**: Main and NewTool installed, Debug not |
+
+Conclusion: D26's one-time change is harmless under the shipped templates, as argued. #87 is
+real: MigrateFeatures carried Debug's state (FEATURE_00001) to NewTool, which took that id, and
+Debug, now FEATURE_00002, fell back to its default. The cleanup left no folder and no ARP entry.

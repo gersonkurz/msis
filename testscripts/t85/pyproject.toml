@@ -1,0 +1,9 @@
+[project]
+name = "t85-id-probe"
+version = "1.0.0"
+description = "VM probe for #85 (path-derived Directory/File ids across upgrades) and #87 (positional feature ids)"
+requires-python = ">=3.14"
+dependencies = ["loguru>=0.7.3"]
+
+[tool.uv]
+package = false

@@ -77,9 +77,11 @@ it means the root module's `go vet ./...` / `go test ./...` do **not** cover it;
 
 Key cross-cutting design points:
 
-- **Deterministic IDs.** `generator.Context` uses monotonic counters (`nextFileID`, etc.) and
-  uniqueness maps — never `Date.now()`/random — so output is stable and diffable. Preserve this
-  when adding generators. The generated WXS is byte-identical across builds of one script, and
+- **Deterministic IDs.** `generator.Context` derives Directory, File and Component ids from where
+  they install (D23, D26: `DIR_<hash>`, `FILE_<hash>`, `CID_<hash>`), uses monotonic counters for
+  the rest (shortcuts, features, ...; #87) and uniqueness maps — never `Date.now()`/random — so
+  output is stable and diffable, and one added folder renumbers nothing. Preserve this when
+  adding generators. The generated WXS is byte-identical across builds of one script, and
   the ProductCode is derived from the package's inputs (D20); the PackageCode and a few
   timestamps WiX writes are the documented exceptions. A file component's GUID is the product
   plus where it installs, never the source path (D23), so building from another folder changes

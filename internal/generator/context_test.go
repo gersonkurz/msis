@@ -97,16 +97,6 @@ func TestNextIDs(t *testing.T) {
 	vars := variables.New()
 	ctx := NewContext(setup, vars, ".")
 
-	// Directory IDs
-	id1 := ctx.NextDirectoryID()
-	id2 := ctx.NextDirectoryID()
-	if id1 == id2 {
-		t.Error("directory IDs should be unique")
-	}
-	if id1 != "DIR_ID00000" {
-		t.Errorf("first directory ID = %q, want DIR_ID00000", id1)
-	}
-
 	// Component IDs (path-based)
 	cid1 := ctx.NextComponentID("test\\path")
 	cid2 := ctx.NextComponentID("test\\path")

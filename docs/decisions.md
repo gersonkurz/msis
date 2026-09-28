@@ -1026,3 +1026,57 @@ supplied SBOM, or `<component purl=...>` declared by someone who knows.
 **What would reopen this:** an analyzer that reports, per identity, which bytes of a declaration
 it took each field from, so a manifest-derived identity could be checked rather than trusted;
 or a product-owner decision to accept inferred identities, marked as such, behind a further flag.
+
+---
+
+## D26 — Directory and File ids are derived from where they install, not numbered
+
+**Settled in:** [#85](https://github.com/gersonkurz/msis/issues/85), 2026-09-28: the concept was discussed with Codex and
+accepted by the product owner.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) newDirectory(key, name, customID string, parent *Directory, doNotOverwrite bool) *Directory`, `func fileIDFor(componentID string) string`, `"create_folder_" + dir.ID`
+
+Until 3.0.6 directories were `DIR_ID%05d` and files `FILE_ID%05d`, numbered in the order the
+generator met them. One folder or file early in the tree renumbered every directory or file
+after it, and with the directories every folder-permission component, whose id and GUID were
+`perm_` plus the directory id. probuiknoba's comparison of two Poste Italiane 4.2.0.90 builds
+found it: seven extra folders (six `__pycache__`, one empty) made some 20,000 differences in a
+2.2 MB WXS whose real difference was about 40 entries. D23 had already made file components
+path-derived; this does the same for the rest of the tree.
+- **A directory** is identified by its root key as written plus the case-folded path below it
+  (`INSTALLDIR\conf\ssl`). Its id is `DIR_` and the first 8 bytes of that key's SHA-256, hex, the
+  form of `CID_`. The directory carrying a root keeps the root key as its id, as the WXS always
+  named it. A directory above a nested root (`NGBT` in `INSTALLDIR=NGBT\chimera`) is identified
+  by the root key and its distance (`INSTALLDIR|up1`), not its name, so renaming the install
+  folder changes a `Name` and no id, as D23 keeps that name out of component identity.
+- **A file's** id is its component's, with `FILE_` for `CID_`, suffix included. So it is as stable
+  as the component id: the destination for a file component (D23), the service name for a
+  service's own copy of its executable. The `_1` suffix of a destination two `<files>` share
+  (D24) is still the order they are written in; that is #86.
+- **A permission component** needed no change of its own: `perm_` plus a stable directory id is
+  stable. At a root its key was already the root key, so its GUID did not move. **A
+  `<create-folder>`** was keyed on the constant `create_folder` and told apart by a counter; it
+  is keyed on its directory now. Two naming one target still take the counter.
+- **A collision fails the build.** Keys are unique exactly where the tree's maps are, so two
+  keys with one id can only be the hash, and a counter would bring back the order dependence.
+
+**The switch changes every directory and file id once**, and the GUID of every permission
+component below a root and of every `<create-folder>` component. Same argument as D23: the
+shipped templates' `MajorUpgrade` removes the previous version completely before installing, so
+no component is shared between the two. That is the shipped templates; a custom template that
+schedules `RemoveExistingProducts` late, or a script that sets `PRODUCT_CODE` itself, is outside
+it. A script that wrote a generated id (`[#FILE_ID00007]`, a `DIR_ID...` as an `<execute
+directory>`) breaks, as it would have on any renumbering. The SBOM's file `bom-ref`s do not
+move, since they carry the component GUID and the target; `msis:msi.fileKey` does. The VM probe
+`testscripts/t85` (todo-testme.md T85) upgrades a 3.0.6 package to this scheme and on to a second
+release, with permissioned and empty folders and runtime data. Run on 2026-09-28 (ARM64 VM, x64 packages),
+every step passed. Runtime data survived both upgrades, each folder's ACL for Users stayed as the
+first install set it, removing a feature kept the folder it shares with another, repair restored a
+deleted file and folder, and uninstall left only the runtime data.
+
+Checked by `TestAnAddedFolderOrFileRenumbersNothing`, which fails on the sequence-number scheme
+(every later directory, file and permission component moved), `TestDirectoryAndFileIDsArePinned`,
+`TestNestedRootNameIsNotDirectoryIdentity`, `TestDirectoryIDIgnoresNameCase`,
+`TestEveryFileIDIsItsComponentsAndUnique` and `TestADirectoryIDCollisionFailsTheBuild`.
+
+**What would reopen this:** patches, which key on File table entries across releases and would
+need #86 first; or a template moving `RemoveExistingProducts` late.

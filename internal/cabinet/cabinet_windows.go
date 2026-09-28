@@ -246,7 +246,7 @@ func cstring(p *byte) string {
 
 // Extract decompresses a cabinet held in memory and returns each entry's bytes by name.
 //
-// In a cabinet WiX produced, entry names are the File table's keys (FILE_ID00007 and so on),
+// In a cabinet WiX produced, entry names are the File table's keys (FILE_f29a2be0ba08a44b, FILE_ID00007 before msis's D26),
 // which is what makes mapping payload to inventory rows exact rather than a guess at filenames.
 func Extract(data []byte) (map[string][]byte, error) {
 	if len(data) < 4 || string(data[:4]) != "MSCF" {

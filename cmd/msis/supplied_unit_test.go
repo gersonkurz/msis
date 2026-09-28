@@ -157,7 +157,7 @@ func TestATargetMatchingSeveralFilesIsRefused(t *testing.T) {
 		t.Errorf("%q does not say how many files are there", err)
 	}
 	// Both candidates are named, so the author can see what they have to separate.
-	if strings.Count(err.Error(), "FILE_ID") < 2 {
+	if strings.Count(err.Error(), "FILE_") < 2 {
 		t.Errorf("%q does not name the candidates", err)
 	}
 }

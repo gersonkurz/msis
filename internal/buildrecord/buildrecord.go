@@ -91,7 +91,7 @@ type Tool struct {
 
 // File is one payload file, joined to the artifact by its WiX File id.
 type File struct {
-	FileID string // FILE_ID00007 - the artifact carries this as msis:msi.fileKey
+	FileID string // FILE_f29a2be0ba08a44b (FILE_ID00007 before D26) - the artifact carries this as msis:msi.fileKey
 	Source string // the path as authored, slash-separated
 	Root   string // WHICH bind path it resolved in; see BindPath.Name
 	SHA256 string // of the file the build read

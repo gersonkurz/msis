@@ -49,7 +49,7 @@ type Package struct {
 
 // File is one row of the File table, with its install target resolved.
 type File struct {
-	ID        string // the File key, e.g. FILE_ID00006
+	ID        string // the File key, e.g. FILE_f29a2be0ba08a44b (FILE_ID00006 before msis's D26)
 	Name      string // long name
 	ShortName string // 8.3 name, when the package carries one
 	Component string

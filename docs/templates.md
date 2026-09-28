@@ -268,8 +268,9 @@ right before `WixShellExec` runs, so `[INSTALLDIR]` (and the other
 directory properties **already include a trailing backslash**, so write `[INSTALLDIR]MyApp.exe` with
 **no** extra `\` (unlike the bundle's `[InstallFolder]\App.exe`).
 
-> Earlier versions required a WiX **File Id** wrapped as `[#FileId]`. Because msis generates opaque,
-> per-run ids (`FILE_ID00007`), that form was effectively unusable — `START_EXE` is now a Formatted
+> Earlier versions required a WiX **File Id** wrapped as `[#FileId]`. msis generates opaque ids
+> (`FILE_ID00007` until 3.0.6, a hash of where the file installs since, decisions D26), so that form
+> was effectively unusable — `START_EXE` is now a Formatted
 > path, matching the bundle's `LAUNCH_TARGET`. The template no longer wraps the value, so you may
 > still pass an explicit `[#FileId]` if you know the id.
 

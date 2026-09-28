@@ -35,16 +35,20 @@ type Context struct {
 	// printed by main.go.
 	warnings []string
 
-	// ID counters for deterministic generation
-	nextDirectoryID int
-	nextFileID      int
-	nextShortcutID  int
-	nextEnvID       int
-	nextServiceID   int
-	nextFeatureID   int
+	// ID counters for deterministic generation. Directories and files have none: their ids
+	// are derived from where they install (#85, D26).
+	nextShortcutID int
+	nextEnvID      int
+	nextServiceID  int
+	nextFeatureID  int
 
 	// Component tracking (for uniqueness)
 	componentIDs map[string]bool
+
+	// directoryKeys maps each derived directory id to the key it was derived from, so a hash
+	// collision is found; idCollision holds the first, which Generate reports.
+	directoryKeys map[string]string
+	idCollision   error
 
 	// Directory trees by root key (INSTALLDIR, APPDATADIR, etc.)
 	DirectoryTrees map[string]*Directory
@@ -127,6 +131,7 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 		Variables:              vars,
 		WorkDir:                workDir,
 		componentIDs:           make(map[string]bool),
+		directoryKeys:          make(map[string]string),
 		DirectoryTrees:         make(map[string]*Directory),
 		ExcludedFolders:        make(map[string]bool),
 		featureIDs:             make(map[string]string),
@@ -147,7 +152,8 @@ func NewContext(setup *ir.Setup, vars variables.Dictionary, workDir string) *Con
 
 // Directory represents a directory in the installation tree.
 type Directory struct {
-	ID             string
+	ID             string // the root key for a root's directory, else DIR_<hash of key>
+	key            string // the directory's identity; see newDirectory
 	Name           string
 	CustomID       string // e.g., "INSTALLDIR"
 	Parent         *Directory
@@ -209,26 +215,68 @@ type Shortcut struct {
 	WorkingDir  string // Working directory ID (e.g., "INSTALLDIR")
 }
 
-// NextDirectoryID returns a unique directory ID.
-func (c *Context) NextDirectoryID() string {
-	id := fmt.Sprintf("DIR_ID%05d", c.nextDirectoryID)
-	c.nextDirectoryID++
-	return id
+// newDirectory makes a directory whose identity is key (#85, decisions D26): the root key the
+// user wrote for the directory carrying it, that key plus the case-folded path below it for a
+// subdirectory ("INSTALLDIR\conf\ssl"), and the root key plus its distance for a directory
+// above the root's own ("INSTALLDIR|up1" is the parent of a nested INSTALLDIR). Its id is
+// the root key itself for the root's directory, as the WXS always named it, and otherwise
+// DIR_<hash of key>, so one added folder no longer renumbers every directory after it.
+//
+// The key space is exactly the tree's: DirectoryTrees is keyed on the root key as written and
+// Children on the case-folded name, so two directories have one key only if the tree already
+// holds them as one. Two keys with one id are therefore a hash collision, which fails the build
+// (checked by Generate) rather than taking a counter that would make ids order-dependent again.
+func (c *Context) newDirectory(key, name, customID string, parent *Directory, doNotOverwrite bool) *Directory {
+	id := customID
+	if id == "" {
+		id = "DIR_" + shortHash(key)
+		if other, taken := c.directoryKeys[id]; taken && other != key && c.idCollision == nil {
+			c.idCollision = fmt.Errorf("directories %q and %q hash to the same id %s", other, key, id)
+		}
+		c.directoryKeys[id] = key
+	}
+	return &Directory{
+		ID:             id,
+		key:            key,
+		Name:           name,
+		CustomID:       customID,
+		Parent:         parent,
+		Children:       make(map[string]*Directory),
+		DoNotOverwrite: doNotOverwrite,
+		FeatureIDs:     make(map[string]bool),
+	}
 }
 
-// NextFileID returns a unique file ID.
-func (c *Context) NextFileID() string {
-	id := fmt.Sprintf("FILE_ID%05d", c.nextFileID)
-	c.nextFileID++
-	return id
+// subdirectory returns parent's child called name, making it if the tree does not hold it yet.
+func (c *Context) subdirectory(parent *Directory, name string, doNotOverwrite bool) *Directory {
+	lower := strings.ToLower(name)
+	child, ok := parent.Children[lower]
+	if !ok {
+		child = c.newDirectory(parent.key+"\\"+lower, name, "", parent, doNotOverwrite)
+		parent.Children[lower] = child
+	}
+	return child
+}
+
+// fileIDFor is the File id of the one file a component carries: its component id with FILE_
+// for CID_, suffix included (#85, D26). So a File key is exactly as stable as its component's
+// id - the destination for a file component (D23), the service name for a service's copy - and
+// as unique, which NextComponentID ensures.
+func fileIDFor(componentID string) string {
+	return "FILE_" + strings.TrimPrefix(componentID, "CID_")
+}
+
+// shortHash is the first 8 bytes of a string's SHA-256, in hex: the form of every
+// path-derived id (CID_, DIR_, FILE_).
+func shortHash(s string) string {
+	hash := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(hash[:8])
 }
 
 // NextComponentID returns a unique component ID based on path.
 func (c *Context) NextComponentID(path string) string {
 	// Generate deterministic ID from path hash
-	hash := sha256.Sum256([]byte(path))
-	hashStr := hex.EncodeToString(hash[:8])
-	baseID := fmt.Sprintf("CID_%s", hashStr)
+	baseID := "CID_" + shortHash(path)
 
 	// Ensure uniqueness
 	id := baseID
@@ -384,44 +432,25 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 		}
 
 		// Handle nested paths like "NGBT\chimera" - need to create parent directories
-		// and put the custom ID (INSTALLDIR) on the final directory
-		if strings.Contains(rootName, "\\") {
-			parts := strings.Split(rootName, "\\")
-			// Create the first part as root (without custom ID)
-			root = &Directory{
-				ID:         c.NextDirectoryID(),
-				Name:       parts[0],
-				Children:   make(map[string]*Directory),
-				FeatureIDs: make(map[string]bool),
+		// and put the custom ID (INSTALLDIR) on the final directory. The directories above it
+		// are named by their distance from it, not by name, so renaming the install folder
+		// changes a Name attribute and no id (as D23 keeps it out of component identity).
+		parts := strings.Split(rootName, "\\")
+		var parent *Directory
+		for i, part := range parts {
+			key, customID := rootKey, rootKey
+			if up := len(parts) - 1 - i; up > 0 {
+				key, customID = fmt.Sprintf("%s|up%d", rootKey, up), ""
 			}
-			c.DirectoryTrees[rootKey] = root
-
-			// Create intermediate directories, putting custom ID on the last one
-			current := root
-			for i := 1; i < len(parts); i++ {
-				isLast := i == len(parts)-1
-				child := &Directory{
-					ID:         c.NextDirectoryID(),
-					Name:       parts[i],
-					Parent:     current,
-					Children:   make(map[string]*Directory),
-					FeatureIDs: make(map[string]bool),
-				}
-				if isLast {
-					child.CustomID = rootKey // Put INSTALLDIR on the final directory
-				}
-				current.Children[strings.ToLower(parts[i])] = child
-				current = child
+			// The root's name is empty if its variable is not set, which is fine.
+			dir := c.newDirectory(key, part, customID, parent, false)
+			if parent == nil {
+				root = dir
+				c.DirectoryTrees[rootKey] = root
+			} else {
+				parent.Children[strings.ToLower(part)] = dir
 			}
-		} else {
-			root = &Directory{
-				ID:         c.NextDirectoryID(),
-				Name:       rootName, // Will be empty if variable not set, which is fine
-				CustomID:   rootKey,
-				Children:   make(map[string]*Directory),
-				FeatureIDs: make(map[string]bool),
-			}
-			c.DirectoryTrees[rootKey] = root
+			parent = dir
 		}
 	}
 
@@ -440,20 +469,7 @@ func (c *Context) GetOrCreateDirectory(rootKey string, subPath string, doNotOver
 		if part == "" {
 			continue
 		}
-		key := strings.ToLower(part)
-		child, ok := current.Children[key]
-		if !ok {
-			child = &Directory{
-				ID:             c.NextDirectoryID(),
-				Name:           part,
-				Parent:         current,
-				Children:       make(map[string]*Directory),
-				DoNotOverwrite: doNotOverwrite,
-				FeatureIDs:     make(map[string]bool),
-			}
-			current.Children[key] = child
-		}
-		current = child
+		current = c.subdirectory(current, part, doNotOverwrite)
 	}
 	return current
 }
@@ -565,6 +581,9 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		c.addPathEnvironment(firstFeatureID)
 	}
 
+	if c.idCollision != nil {
+		return nil, c.idCollision
+	}
 	if err := c.checkServiceFileOwnership(); err != nil {
 		return nil, err
 	}
@@ -941,20 +960,7 @@ func (c *Context) addDirectoryContents(dir *Directory, relBasePath, absCurrentPa
 		}
 
 		if entry.IsDir() {
-			// Create subdirectory
-			key := strings.ToLower(entry.Name())
-			subDir, ok := dir.Children[key]
-			if !ok {
-				subDir = &Directory{
-					ID:             c.NextDirectoryID(),
-					Name:           entry.Name(),
-					Parent:         dir,
-					Children:       make(map[string]*Directory),
-					DoNotOverwrite: doNotOverwrite,
-					FeatureIDs:     make(map[string]bool),
-				}
-				dir.Children[key] = subDir
-			}
+			subDir := c.subdirectory(dir, entry.Name(), doNotOverwrite)
 			// Mark directory with feature so permission components are associated
 			if featureID != "" {
 				c.markDirectoryFeature(subDir, featureID)
@@ -981,7 +987,7 @@ func (c *Context) addFile(dir *Directory, sourcePath, fileName, featureID string
 	// (feature-based overrides, #79). The GUID is assigned once every file is known, by
 	// resolveFileGUIDs, because whether a target is shared decides its key.
 	compID := c.NextComponentID(destination(dir, fileName))
-	fileID := c.NextFileID()
+	fileID := fileIDFor(compID)
 
 	// Track target file for duplicate detection
 	// Key is dirID:lowercaseFilename to identify the target location
@@ -1247,8 +1253,10 @@ func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) erro
 	// Create the full directory path in the tree
 	dir := c.GetOrCreateDirectory(rootKey, subPath, false)
 
-	// Add a component with CreateFolder to ensure WiX creates the directory
-	compID := c.NextComponentID(c.productScopedID("create_folder"))
+	// Add a component with CreateFolder to ensure WiX creates the directory. It is keyed on
+	// the directory (#85, D26), as its permission component is; a constant key made its id
+	// and GUID a counter over every <create-folder> in the script.
+	compID := c.NextComponentID(c.productScopedID("create_folder_" + dir.ID))
 
 	comp := &Component{
 		ID:           compID,
@@ -1313,7 +1321,7 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 	// refuses the package if it is (#77).
 	dir := c.GetOrCreateDirectory("INSTALLDIR", "", false)
 	compID := c.NextComponentID(c.productScopedID("svc_" + svc.ServiceName))
-	fileID := c.NextFileID()
+	fileID := fileIDFor(compID)
 
 	sourcePath := svc.FileName
 	if path, ok := c.fileSourcePaths[fileKey]; ok {
@@ -1439,7 +1447,7 @@ func (c *Context) processAnchoredService(svc ir.Service, serviceDef *Service, re
 		GUID: GenerateGUID(compID),
 		Files: []*File{
 			{
-				ID:         c.NextFileID(),
+				ID:         fileIDFor(compID),
 				Name:       fileName,
 				ShortName:  shortName,
 				SourcePath: existingFile.SourcePath,
