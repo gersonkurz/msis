@@ -96,6 +96,13 @@ commented out with `<!-- … -->`, one inside a Handlebars comment, and one in a
 this build does not take are all reported, because in each case the generated content does not
 reach the package.
 
+**Every package now generates content for three of them.** The downgrade guard (decisions D27)
+puts a registry search in `{{{LAUNCH_CONDITION_SEARCHES}}}`, a launch condition in
+`{{{LAUNCH_CONDITIONS}}}` and the component recording the package's version in
+`{{{REGISTRY_ENTRIES}}}`. Every shipped template has all three. A custom template that lacks one
+fails the build from 3.0.7 on, even if the script has no `<requires>` or `<registry>`; copy the
+placeholder from the shipped template.
+
 ## Logo Customization
 
 The installer UI displays logo images at various stages. msis supports customizing these via variables.
@@ -532,7 +539,8 @@ same. See [SBOM](sbom.md).
 ### Generated Content
 - `{{{FEATURES}}}` - Feature XML (triple braces = unescaped)
 - `{{{INSTALLDIR_FILES}}}` - Directory/component XML for INSTALLDIR
-- `{{{REGISTRY_ENTRIES}}}` - Registry XML
+- `{{{REGISTRY_ENTRIES}}}` - Registry XML, and the downgrade guard's version record (D27)
+- `{{{LAUNCH_CONDITION_SEARCHES}}}`, `{{{LAUNCH_CONDITIONS}}}` - the `<requires>` checks and the downgrade guard (D27)
 - `{{{CUSTOM_ACTIONS}}}` - CustomAction XML
 
 ### Logos (if set)

@@ -972,3 +972,44 @@ the runtime files it wrote and any folder under `MsisProbe85` left empty.
 Conclusion: D26's one-time change is harmless under the shipped templates, as argued. #87 is
 real: MigrateFeatures carried Debug's state (FEATURE_00001) to NewTool, which took that id, and
 Debug, now FEATURE_00002, fell back to its default. The cleanup left no folder and no ARP entry.
+
+## T89 — refusing an older build that differs only in the 4th version field (#89, D27): DONE 2026-10-01
+
+Why: Windows Installer ignores the 4th field and the templates allow same-version upgrades, so
+1.2.3.80 over 1.2.3.90 was taken as an upgrade, reported success, and lost the binaries whose
+version went down (a field report). D27 records each package's version and refuses an older one.
+
+Probe: `testscripts/t89`. The build side (`uv run t89_downgrade_probe.py`) builds msis at 5db5bae
+(no guard) and from the working tree, a `core.dll` per version with the dotnet SDK (its
+FileVersion is the package version, checked), and six packages: old-90 and old-80 without the
+guard; new-90, new-90b (same version, other content), new-80 and new-95 with it. It refuses a WXS
+with anything that deletes recursively, and a package whose guard does not match the msis that
+built it.
+
+The VM side (`vm/t89_vm_probe.py`, elevated, unattended): leg A reproduces the report and tries
+a repair; leg B checks the guard (refusals with 1603 and the message in the log, nothing changed;
+an equal-version rebuild; the upgrade; uninstall; a Child-only `ADDLOCAL` install still
+recording; the supported way back); leg C shows the documented limit. Same safety as T85:
+refuses to start over its own leftovers, `/norestart`, a cleanup that always runs and removes
+only empty folders and keys.
+Leg D (added in review) checks the guard for a payload written directly under `<setup>`, with
+the only authored feature off by default.
+
+### Executed on 2026-10-01, on the product owner's Windows 11 ARM64 VM (x64 packages)
+
+| Step | Result |
+|---|---|
+| A2 old-80 over old-90 (no guard) | **the report reproduces**: rc 0, `core.dll` missing, the text files present |
+| A3 repair old-80 | `core.dll` 1.2.3.80 back: a repair recovers an install broken this way |
+| B1 install new-90 | PASS; `00001.00002.00003.00090` recorded |
+| B2 new-80 over it | PASS: refused with 1603 and the message in the log; nothing changed |
+| B3 new-90b (same version, other content) | PASS: allowed, every file intact, the changed file updated |
+| B4 upgrade to new-95 | PASS: 1.2.3.95 recorded, so the record survives an upgrade |
+| B5 new-90 over new-95 | PASS: refused, nothing changed |
+| B6 uninstall | PASS: no files, nothing recorded |
+| B7 new-90 with only the Child sub-feature | PASS: the version is recorded |
+| B8 uninstall, then new-80 | PASS: the supported way back works |
+| C2 new-80 over an unguarded old-90 | not refused, `core.dll` missing: the stated limit |
+| D1–D3 the payload under `<setup>` | PASS: 1.2.3.80 refused over 1.2.3.90 |
+
+The final cleanup left no folder, no `Software\msis` key and no ARP entry.

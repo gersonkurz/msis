@@ -86,6 +86,10 @@ Key cross-cutting design points:
   timestamps WiX writes are the documented exceptions. A file component's GUID is the product
   plus where it installs, never the source path (D23), so building from another folder changes
   nothing in the MSI.
+- **Downgrade guard (D27).** Every package records its padded four-field version under
+  `HKLM\Software\msis\Packages\<UpgradeCode>` and refuses to install over a later one
+  (`internal/generator/downgrade.go`), because Windows Installer ignores the 4th field and
+  `AllowSameVersionUpgrades` would otherwise take an older build as an upgrade and lose files.
 - **Directory roots.** Target paths are matched against known root keys (see table below); a
   `DirectoryTrees` map is built per root. Unmatched paths fall under `INSTALLDIR`.
 - **Two build modes for `<requires>`.** Default: build the MSI, then auto-wrap it in a Burn

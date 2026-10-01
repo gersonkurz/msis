@@ -1080,3 +1080,68 @@ Checked by `TestAnAddedFolderOrFileRenumbersNothing`, which fails on the sequenc
 
 **What would reopen this:** patches, which key on File table entries across releases and would
 need #86 first; or a template moving `RemoveExistingProducts` late.
+
+---
+
+## D27 — An older build is refused, not installed over a later one, even when only the 4th version field differs
+
+**Settled in:** [#89](https://github.com/gersonkurz/msis/issues/89), 2026-10-01, the product
+owner's decision ("disable downgrades"; going back means uninstalling first).
+**Implemented by:** `internal/generator/downgrade.go` — `func comparableVersion(version string) (string, error)`, `func (c *Context) downgradeGuard() (search, condition, component string, err error)`, `Installed OR NOT %s OR %s <= "%s"`
+
+A field report: installing 4.2.0.82 over 4.2.0.90 reported success and left about 75 core
+binaries missing. Windows Installer compares only the first three fields of `ProductVersion`, and
+every msis template, like msis-2.x's, authors `<MajorUpgrade AllowSameVersionUpgrades="yes">`. That
+attribute is what lets two builds differing only in the 4th field upgrade one another at all;
+without it they would install side by side. So the older build is taken as a same-version upgrade:
+- costing finds the installed binaries of a greater version and skips the older copies;
+- `RemoveExistingProducts` then removes the installed product, deleting those binaries;
+- nothing installs the older ones.
+
+A downgrade in the first three fields was always refused by `DowngradeErrorMessage`. Not a
+regression: the authoring is unchanged since msis-2.x.
+
+**The guard.** Each package records its version, every field padded to five digits
+(`00004.00002.00000.00090`), as `Version` under `HKLM\Software\msis\Packages\<UpgradeCode>`, in a
+component every top-level feature references, the generated package-items feature for items
+written directly under `<setup>` included. A `RegistrySearch` reads it into
+`MSIS_INSTALLED_VERSION`, and a launch condition, `Installed OR NOT MSIS_INSTALLED_VERSION OR
+MSIS_INSTALLED_VERSION <= "<this package's>"`, refuses an install over a later one. The message is
+"A later version of [ProductName] is already installed. To install this version, uninstall the
+installed one first."
+- **Why padded strings:** Windows Installer compares two strings lexicographically. On the padded
+  form that is the numeric order, field by field, the 4th included; on plain strings 4.2.0.9 would
+  sort after 4.2.0.10.
+- **Why no custom action:** the search and the condition are declarative and run before
+  anything is removed (AppSearch and LaunchConditions come long before
+  `RemoveExistingProducts`), in silent installs too, where the refusal is msiexec's 1603.
+- **An equal version is let through,** as `AllowSameVersionUpgrades` lets it through today. A
+  repair, modify or uninstall of the installed product is never refused (`Installed`).
+- **Where it goes:** into `{{{LAUNCH_CONDITION_SEARCHES}}}`, `{{{LAUNCH_CONDITIONS}}}` and
+  `{{{REGISTRY_ENTRIES}}}`, which every shipped template has. The template coverage check then
+  requires them of a custom template too, so a template without them fails the build rather
+  than silently dropping the guard.
+- **A `PRODUCT_VERSION` the guard cannot read** (not one to four numbers up to 65535) fails the
+  build. An empty one gets no guard, since WiX refuses that package anyway.
+
+**Limits, stated.** Only installs made by a package built with the guard are protected: an older
+package recorded nothing, so the first package with the guard installed over one cannot see it.
+The record follows the package's platform hive (an x86 package writes the 32-bit view), so a
+product changing platform under one UpgradeCode is not compared across the change. An install
+selecting features with `ADDLOCAL` records the version whichever top-level feature it selects.
+
+Rejected: making the downgrade work with `REINSTALLMODE=amus`, which force-overwrites every file
+on every install, customer-modified ones included; and comparing in a custom action, which would
+put a DLL into every package. A product can also avoid the problem by versioning its builds in
+the first three fields, so that Windows Installer sees, and refuses, the downgrade itself.
+
+The VM probe `testscripts/t89` (todo-testme.md T89) reproduces the report without the guard and
+checks the guard's refusals, an equal-version rebuild, the upgrade, a feature-limited install, a
+payload under `<setup>` and the supported way back. Run on 2026-10-01 (ARM64 VM, x64 packages),
+every check passed. Without the guard the report reproduced: success with `core.dll` missing.
+A repair (`msiexec /fa`) of the broken install put it back, which is the remedy for installs
+already broken this way.
+
+**What would reopen this:** a requirement to support in-place downgrades, which needs forced file
+replacement and its consequences for modified files; or a template that drops
+`AllowSameVersionUpgrades`.

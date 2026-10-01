@@ -243,7 +243,19 @@ when it is released.
   - A regression comparison against a reference build needs the same msis on both sides, as with
     3.0.6's GUID change.
 
-**Known issue, found by the same probe:** inserting a feature before an existing one hands
+- **An older build is refused instead of breaking the install** ([#89](../../issues/89), D27).
+  Windows Installer ignores the 4th version field, so installing 4.2.0.82 over 4.2.0.90 was taken
+  as an upgrade. It reported success and left every binary whose version went down missing. msis
+  has always behaved this way, back to msis-2.x. Each package now records its full version, and
+  a later package refuses to install over a newer one, with "A later version of [ProductName] is
+  already installed". To go back, uninstall first.
+  - It protects installs made by 3.0.7-built packages. A package built earlier records nothing,
+    so the first 3.0.7 package over it is not checked.
+  - Every package now uses `{{{LAUNCH_CONDITION_SEARCHES}}}`, `{{{LAUNCH_CONDITIONS}}}` and
+    `{{{REGISTRY_ENTRIES}}}`. A custom template without them fails the build; copy them from the
+    shipped template (docs/templates.md).
+
+**Known issue, found by the T85 probe:** inserting a feature before an existing one hands
 customers' feature choices to the wrong features on upgrade ([#87](../../issues/87)). Until that
 is fixed, add a new feature or sub-feature only after every existing one. Features are
 numbered depth-first in the order they are written, so one inserted anywhere else moves every

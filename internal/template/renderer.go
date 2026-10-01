@@ -184,11 +184,12 @@ func (r *Renderer) generatedContent() map[string]string {
 // every entry of generatedContent is equally mandatory, so a gap here cannot change what the
 // check does - only how well it explains itself.
 var generatedContentHint = map[string]string{
-	"PRESERVATION_PROPERTIES": `existing registry values marked preserve="yes" would be overwritten with an empty string on install`,
-	"REMOVE_ON_UNINSTALL":     "the folders and registry keys named in <remove-on-uninstall> would never be cleaned up",
-	"LAUNCH_CONDITIONS":       "the package would install without checking the <requires> prerequisites",
-	"REGISTRY_ENTRIES":        "the imported .reg values would be missing from the package",
-	"FEATURES":                "the package would contain no features at all",
+	"PRESERVATION_PROPERTIES":   `existing registry values marked preserve="yes" would be overwritten with an empty string on install`,
+	"REMOVE_ON_UNINSTALL":       "the folders and registry keys named in <remove-on-uninstall> would never be cleaned up",
+	"LAUNCH_CONDITIONS":         "the package would install without checking the <requires> prerequisites, and over a later version of itself (decisions D27)",
+	"LAUNCH_CONDITION_SEARCHES": "the package could not see the version already installed, so the downgrade guard (decisions D27) could not refuse an older build",
+	"REGISTRY_ENTRIES":          "the imported .reg values, and the version record the next package's downgrade guard reads (decisions D27), would be missing from the package",
+	"FEATURES":                  "the package would contain no features at all",
 }
 
 // xmlComment matches an XML comment in rendered output. Content substituted inside one is

@@ -601,6 +601,14 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 	// Generate remove-on-uninstall XML first, as it registers components with features
 	removeOnUninstallXML := c.generateRemoveOnUninstallXML()
 
+	// The downgrade guard (#89, D27): after everything that registers components with features
+	// (the remove-on-uninstall ones can create the package-items feature), before the feature
+	// XML, since its component joins every top-level feature.
+	guardSearch, guardCondition, guardComponent, err := c.downgradeGuard()
+	if err != nil {
+		return nil, err
+	}
+
 	// Build preserved IDs for registry components (needed by both preservation and registry XML)
 	preservedIDs := c.registryProcessor.BuildAllPreservedIDs(c.RegistryComponents)
 
@@ -614,14 +622,14 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 		WindowsDirXML:             c.generateDirectoryXMLForRoot("WINDOWSDIR"),
 		SystemDirXML:              c.generateDirectoryXMLForRoot("SYSTEMDIR"),
 		FeatureXML:                c.generateAllFeatureXML(),
-		RegistryXML:               c.generateAllRegistryXML(preservedIDs),
+		RegistryXML:               c.generateAllRegistryXML(preservedIDs) + guardComponent,
 		DesktopXML:                c.generateShortcutsXML(c.DesktopShortcuts),
 		StartMenuXML:              c.generateShortcutsXML(c.StartMenuShortcuts),
 		CustomActionsXML:          c.generateCustomActionsXML(),
 		InstallExecuteSequence:    c.generateInstallExecuteSequence(),
 		RemoveOnUninstallXML:      removeOnUninstallXML,
-		LaunchConditionSearchXML:  launchSearchXML,
-		LaunchConditionsXML:       launchCondXML,
+		LaunchConditionSearchXML:  launchSearchXML + guardSearch,
+		LaunchConditionsXML:       launchCondXML + guardCondition,
 		PreservationPropertiesXML: c.registryProcessor.GeneratePreservationXML(c.RegistryComponents, preservedIDs),
 
 		// The registry processor's diagnostics are gathered while parsing .reg files,
