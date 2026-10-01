@@ -883,13 +883,25 @@ For prerequisites not in the built-in list:
   <exe id="CustomRuntime"
        source="prerequisites\custom-runtime.exe"
        args="/quiet"
-       detect="HKLM\SOFTWARE\CustomRuntime,Version,1.0"/>
+       detect="CustomRuntimeInstalled"/>
 
   <msi source_64bit="MyApp-1.0.0-x64.msi"/>
 </bundle>
 ```
 
-The `detect` attribute specifies a registry key to check. If the key exists with the specified value, the prerequisite is skipped.
+The `detect` attribute is a Burn condition: where it is true, the prerequisite counts as
+installed and is skipped. It tests Burn variables, not the registry directly, so
+`CustomRuntimeInstalled` has to be set by a `util:RegistrySearch`, declared in a custom bundle
+template:
+
+```xml
+<util:RegistrySearch Id="CustomRuntimeSearch" Variable="CustomRuntimeInstalled"
+    Root="HKLM" Key="SOFTWARE\CustomRuntime" Result="exists" Bitness="always64"/>
+```
+
+[Bundle.md](Bundle.md#custom-executable-packages) shows where that goes, and when a 32-bit
+installer's key needs `Bitness="always32"` instead. Without `detect`, the
+prerequisite runs on every install.
 
 For more details on prerequisites, custom packages, and bundle variables, see [Bundle.md](Bundle.md).
 

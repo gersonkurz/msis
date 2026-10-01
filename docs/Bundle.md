@@ -167,7 +167,7 @@ Add custom executables to the install chain:
 ```xml
 <bundle>
   <exe id="CustomSetup" source="custom-setup.exe"
-       detect="EXISTS('HKLM\SOFTWARE\CustomApp')"
+       detect="CustomAppInstalled"
        args="/silent"/>
   <msi source_64bit="MyApp-x64.msi" source_32bit="MyApp-x86.msi"/>
 </bundle>
@@ -176,8 +176,33 @@ Add custom executables to the install chain:
 Attributes:
 - `id` - WiX package identifier (auto-generated from filename if omitted)
 - `source` - Path to the executable
-- `detect` - WiX condition to check if already installed (optional)
+- `detect` - when the package counts as already installed (optional). It is a **Burn**
+  condition over Burn variables, and msis copies it verbatim into the `ExePackage`'s
+  `DetectCondition`. It is not an MSI condition: Burn has no `EXISTS()`, and nothing in `detect`
+  reads the registry by itself. WiX does not check the condition either, so a wrong one builds
+  without complaint and fails only on the target machine. Without `detect`, Burn cannot tell the
+  package is already there, so it runs on every install of the bundle.
 - `args` - Command-line arguments for silent install (optional)
+
+**Detecting from the registry.** A Burn condition can only test variables, so registry state
+must first be read into one by a `util:RegistrySearch`. msis has no element for declaring one
+for an `<exe>` today. Add it in a custom bundle template: copy `templates/bundle.wxs` (or
+`bundle-silent.wxs` for a silent bundle) into your `/CUSTOMTEMPLATES` folder and declare the
+search next to the built-in ones:
+
+```xml
+<!-- Sets CustomAppInstalled when HKLM\SOFTWARE\CustomApp exists -->
+<util:RegistrySearch Id="CustomAppSearch" Variable="CustomAppInstalled"
+    Root="HKLM" Key="SOFTWARE\CustomApp" Result="exists" Bitness="always64"/>
+```
+
+`detect="CustomAppInstalled"` then skips the package where the key exists. `Bitness="always64"`
+reads the 64-bit registry view, where a 64-bit installer writes. For a key that a 32-bit
+installer writes (it lands under `WOW6432Node`), use `Bitness="always32"`. With the wrong view the
+search never finds the key, and the package is installed again every time. The built-in VC++
+detection works the same way: the shipped template declares `VcppRuntimeX64Installed` and the
+others, and the `vcredist` prerequisite's detect condition tests them. A condition over Burn's
+built-in variables (`VersionNT64`, `NativeMachine`, ...) needs no search.
 
 ## Bundle Variables
 
@@ -359,9 +384,10 @@ The bundle uses WiX Burn conditions to select the correct packages:
     <!-- Install .NET Framework 4.8 if needed -->
     <prerequisite type="netfx" version="4.8"/>
 
-    <!-- Custom prerequisite -->
+    <!-- Custom prerequisite; DatabaseInstalled comes from a util:RegistrySearch in a
+         custom bundle template (see Custom Executable Packages) -->
     <exe id="DatabaseSetup" source="db-setup.exe"
-         detect="EXISTS('HKLM\SOFTWARE\MyCompany\Database')"
+         detect="DatabaseInstalled"
          args="/quiet"/>
 
     <!-- Main application MSIs -->
