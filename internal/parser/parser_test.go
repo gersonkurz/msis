@@ -1132,3 +1132,18 @@ func TestParseVEXRejectsWhatCannotBeActedOn(t *testing.T) {
 		})
 	}
 }
+
+// TestParseFeatureID: <feature id> reaches the IR as written, on nested features too; an empty
+// one is an error rather than silently positional (#87, D28).
+func TestParseFeatureID(t *testing.T) {
+	s, err := ParseBytes([]byte(`<setup><feature name="Main" id="MainId"><feature name="Child" id="Child.1"/></feature><feature name="Plain"/></setup>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Features[0].ID != "MainId" || s.Features[0].SubFeatures[0].ID != "Child.1" || s.Features[1].ID != "" {
+		t.Errorf("ids = %q, %q, %q", s.Features[0].ID, s.Features[0].SubFeatures[0].ID, s.Features[1].ID)
+	}
+	if _, err := ParseBytes([]byte(`<setup><feature name="Main" id=""/></setup>`)); err == nil || !strings.Contains(err.Error(), `id=""`) {
+		t.Errorf("an empty id was accepted: %v", err)
+	}
+}

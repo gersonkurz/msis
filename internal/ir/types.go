@@ -84,7 +84,8 @@ type Set struct {
 // Feature represents a feature grouping with nested items.
 type Feature struct {
 	Name        string
-	Enabled     bool // default true
+	ID          string // the Feature table key as written (#87, D28); empty: positional FEATURE_nnnnn
+	Enabled     bool   // default true
 	Condition   string
 	Allowed     bool // default true
 	Items       []Item

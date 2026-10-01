@@ -165,7 +165,8 @@ Building:
   /TEMPLATEFOLDER:PATH   Base template folder
   /CUSTOMTEMPLATES:PATH  Overlay folder for private assets (takes precedence)
   /STANDALONE            No auto-bundle: <requires> become launch conditions
-  /STRICT                Refuse deprecated layouts instead of warning (msis 4 will)
+  /STRICT                Refuse deprecated layouts instead of warning (msis 4 will),
+                         and features without an id (D28)
   /DRY-RUN               Parse and validate only, no output
 
 Reading and describing a built .msi or bundle .exe:
@@ -255,11 +256,19 @@ when it is released.
     `{{{REGISTRY_ENTRIES}}}`. A custom template without them fails the build; copy them from the
     shipped template (docs/templates.md).
 
-**Known issue, found by the T85 probe:** inserting a feature before an existing one hands
-customers' feature choices to the wrong features on upgrade ([#87](../../issues/87)). Until that
-is fixed, add a new feature or sub-feature only after every existing one. Features are
-numbered depth-first in the order they are written, so one inserted anywhere else moves every
-feature after it.
+- **A feature can carry a permanent `id`** ([#87](../../issues/87), D28). Upgrades match
+  features by id, and msis numbered them in the order written, so inserting a feature handed
+  customers' choices to the wrong features (found by the T85 probe). Features without an `id`
+  keep exactly the ids they had, so existing installers do not change. A feature inserted
+  **with** an `id` moves no other feature's number. Before reordering or removing features,
+  give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
+  `/STRICT` now also requires an id on every feature.
+- **Known issue: upgrading an install made by a msis-2.x package** ([#91](../../issues/91),
+  closed). msis-2.x numbered the first feature `FEATURE_00002`; msis 3 has always numbered it
+  `FEATURE_00000`. So the first upgrade from a 2.x-built install to any msis 3 package matches
+  features by the wrong ids, once, as in #87. msis does not renumber to 2.x's scheme, which would
+  do the same to every install made by msis 3. msis-2.x was used internally only, and no such
+  installs are expected.
 
 **3.0.6** — 2026-09-26 (tag [`v3.0.6`](../../releases/tag/v3.0.6))
 

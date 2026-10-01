@@ -79,7 +79,8 @@ Key cross-cutting design points:
 
 - **Deterministic IDs.** `generator.Context` derives Directory, File and Component ids from where
   they install (D23, D26: `DIR_<hash>`, `FILE_<hash>`, `CID_<hash>`), uses monotonic counters for
-  the rest (shortcuts, features, ...; #87) and uniqueness maps — never `Date.now()`/random — so
+  the rest (shortcuts, ...), numbers features positionally unless they carry an explicit `id`
+  (D28: the counter skips features with one), and uses uniqueness maps — never `Date.now()`/random — so
   output is stable and diffable, and one added folder renumbers nothing. Preserve this when
   adding generators. The generated WXS is byte-identical across builds of one script, and
   the ProductCode is derived from the package's inputs (D20); the PackageCode and a few
@@ -106,7 +107,7 @@ to `--flag` for Go's `flag` package (paths with `\` or `:` are left as files). `
 overrides variables. Key flags: `/BUILD`, `/RETAINWXS`, `/STANDALONE`, `/DRY-RUN`, `/STATUS`,
 `/TEMPLATE`, `/TEMPLATEFOLDER`, `/CUSTOMTEMPLATES`, `/STRICT` (refuse deprecated layouts instead
 of warning - today the #77 service layout, D22, and #79's two features installing one file,
-D24; msis 4 refuses them always). `/STATUS` is the diagnostic entry point (WiX
+D24; msis 4 refuses them always - and require an explicit `id` on every feature, D28). `/STATUS` is the diagnostic entry point (WiX
 location/version, template search order, prerequisite cache). `/INSPECT` and `/SBOM` read a built
 artifact; `/ANALYZE` (with `/SBOM`) adds the packages syft finds declared in the payload (D25); `/SCAN` runs grype on the SBOM (with `/SBOM`, on what that run wrote; alone, on the
 `.cdx.json` documents named) and applies msis's evaluated VEX to the findings (D19).

@@ -284,6 +284,25 @@
         resolved, /SET overrides included, e.g. name="{{PRODUCT_NAME}}".
       </xs:documentation></xs:annotation>
     </xs:attribute>
+    <xs:attribute name="id" use="optional">
+      <xs:annotation><xs:documentation>
+        The feature's Feature table key, written literally (#87, decisions D28). Upgrades carry a
+        customer's feature choices over by this key. Without an id a feature gets FEATURE_nnnnn,
+        numbered in the order written and counting only the features without an id. So inserting
+        an id-less feature renumbers every id-less feature after it; a feature inserted WITH an
+        id moves no other number. Give a new feature, and every feature below it, an id. Before
+        reordering or removing features, give EVERY existing feature the id its last shipped
+        package has. Ids are permanent: never rename one or reuse it for another feature.
+        At most 38 characters; a letter or underscore, then letters, digits, underscores and
+        periods; not ALL, MSIS_PACKAGE_ITEMS or VCRedist. /STRICT requires one on every feature.
+      </xs:documentation></xs:annotation>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="[A-Za-z_][A-Za-z0-9_.]*"/>
+          <xs:maxLength value="38"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
     <xs:attribute name="enabled" type="msisBoolean" use="optional"/>
     <xs:attribute name="condition" type="xs:string" use="optional"/>
     <xs:attribute name="allowed" type="msisBoolean" use="optional"/>

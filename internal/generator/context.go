@@ -28,7 +28,8 @@ type Context struct {
 
 	// Strict refuses what is deprecated instead of warning about it (/STRICT): today the #77
 	// layout, a service sharing its executable with another feature (D22), and the #79 one,
-	// two features installing one file (D24).
+	// two features installing one file (D24). It also requires an explicit id on every
+	// feature (#87, D28).
 	Strict bool
 
 	// warnings collects build-time diagnostics, surfaced on GeneratedOutput and
@@ -62,6 +63,9 @@ type Context struct {
 
 	// Feature names as written, by feature ID - for error messages
 	featureNames map[string]string
+
+	// featurePlaces lists every authored feature with its id, for checkFeatureIDs (#87, D28)
+	featurePlaces []featurePlace
 
 	// Feature component references (keyed by unique feature ID, not name)
 	FeatureComponents map[string][]string // feature ID -> component IDs
@@ -542,7 +546,10 @@ func (c *Context) Generate() (*GeneratedOutput, error) {
 
 	// Second pass: pre-assign feature IDs (ensures consistency between processing and generation)
 	for i := range c.Setup.Features {
-		c.assignFeatureIDs(&c.Setup.Features[i], "", i)
+		c.assignFeatureIDs(&c.Setup.Features[i], "", "", i, 1)
+	}
+	if err := c.checkFeatureIDs(); err != nil {
+		return nil, err
 	}
 
 	// Third pass: process features and items
@@ -744,21 +751,31 @@ func (c *Context) collectExcludesFromFeature(feature *ir.Feature) {
 
 // assignFeatureIDs pre-assigns unique IDs to features using index-based paths.
 // This ensures the same IDs are used during both item processing and XML generation.
-func (c *Context) assignFeatureIDs(feature *ir.Feature, parentIndexPath string, index int) {
+//
+// A feature's explicit id is used as written; only the features without one take a positional
+// number, in preorder (#87, D28). checkFeatureIDs validates the result.
+func (c *Context) assignFeatureIDs(feature *ir.Feature, parentIndexPath, parentWhere string, index, depth int) {
 	// Build index path using position (not name) to avoid collisions
 	indexPath := fmt.Sprintf("%d", index)
 	if parentIndexPath != "" {
 		indexPath = parentIndexPath + "/" + indexPath
 	}
+	where := feature.Name
+	if parentWhere != "" {
+		where = parentWhere + " > " + feature.Name
+	}
 
-	// Generate and store unique ID for this feature
-	featureID := c.NextFeatureID()
+	featureID := feature.ID
+	if featureID == "" {
+		featureID = c.NextFeatureID()
+	}
 	c.featureIDs[indexPath] = featureID
 	c.featureNames[featureID] = feature.Name
+	c.featurePlaces = append(c.featurePlaces, featurePlace{id: featureID, explicit: feature.ID != "", where: where, depth: depth})
 
 	// Process sub-features
 	for i := range feature.SubFeatures {
-		c.assignFeatureIDs(&feature.SubFeatures[i], indexPath, i)
+		c.assignFeatureIDs(&feature.SubFeatures[i], indexPath, where, i, depth+1)
 	}
 }
 

@@ -396,8 +396,8 @@ func TestServiceFileConflictSuggestionBuilds(t *testing.T) {
 	}
 	complete := ir.Feature{Name: "Complete", Enabled: true, Items: []ir.Item{
 		ir.Files{Source: exe, Target: "[INSTALLDIR]renamed.exe"}}}
-	refused := &ir.Setup{Features: []ir.Feature{complete, {Name: "Service", Enabled: true, Items: []ir.Item{
-		ir.Service{FileName: "renamed.exe", ServiceName: "MySvc", ServiceDisplayName: "My Service"}}}}}
+	refused := &ir.Setup{Features: frozen([]ir.Feature{complete, {Name: "Service", Enabled: true, Items: []ir.Item{
+		ir.Service{FileName: "renamed.exe", ServiceName: "MySvc", ServiceDisplayName: "My Service"}}}})}
 	ctx := NewContext(refused, variables.New(), ".")
 	ctx.Strict = true
 	_, err := ctx.Generate()
@@ -500,7 +500,9 @@ func TestServiceFileOwnership(t *testing.T) {
 				}
 			}
 
-			strict := NewContext(&tc.setup, variables.New(), ".")
+			strictSetup := tc.setup
+			strictSetup.Features = frozen(tc.setup.Features) // so /STRICT judges only the #77 layout
+			strict := NewContext(&strictSetup, variables.New(), ".")
 			strict.Strict = true
 			_, err = strict.Generate()
 			if !tc.deprecated {

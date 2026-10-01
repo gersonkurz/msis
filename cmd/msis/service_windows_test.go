@@ -24,9 +24,9 @@ func TestStrictRefusesTheDeprecatedServiceLayout(t *testing.T) {
     <set name="MANUFACTURER" value="Probe"/>
     <set name="UPGRADE_CODE" value="{2C7A9E51-4D3B-4A86-8F10-6B2E9D5C7A34}"/>
     <set name="BUILD_TARGET" value="{{TARGET}}"/>
-    <feature name="Complete"><files source="svc.exe" target="[INSTALLDIR]"/></feature>
-    <feature name="Service"><service file-name="svc.exe" service-name="svcD"/></feature>
-</setup>`)
+    <feature name="Complete" id="FEATURE_00000"><files source="svc.exe" target="[INSTALLDIR]"/></feature>
+    <feature name="Service" id="FEATURE_00001"><service file-name="svc.exe" service-name="svcD"/></feature>
+</setup>`) // ids, because /STRICT also requires them (D28); this test is about #77
 	if err := processFile(script, &cliArgs{templateFolder: repoTemplates(t), setOverrides: map[string]string{}}); err != nil {
 		t.Fatalf("the deprecated layout does not build by default: %v", err)
 	}

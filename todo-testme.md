@@ -1013,3 +1013,41 @@ the only authored feature off by default.
 | D1–D3 the payload under `<setup>` | PASS: 1.2.3.80 refused over 1.2.3.90 |
 
 The final cleanup left no folder, no `Software\msis` key and no ARP entry.
+
+## T87 — feature choices across upgrades with explicit feature ids (#87, D28): DONE 2026-10-01
+
+Why: MigrateFeatures matches features by id, and positional ids move when a feature is inserted
+(T85 leg 2 reproduced the loss). D28 lets a feature carry an explicit id that positional
+numbering skips.
+
+Probe: `testscripts/t87`. The build side (`uv run t87_feature_probe.py`) builds four packages
+from the working tree and checks each one's Feature ids in its WXS: v1 [Main, Docs, Debug(off)];
+v2id inserting NewOn > NewOnPart (on) and NewTool (off) with ids; v2pos inserting NewTool without
+one (the control); v3 with every feature frozen to its shipped id, reordered, and Docs removed.
+
+The VM side (`vm/t87_vm_probe.py`, elevated, unattended) installs v1 with Main and Debug only
+(one default-on feature deselected, one default-off selected). It asks Windows Installer for
+every feature's state (`MsiQueryFeatureState`) after each upgrade, and checks that each installed
+feature's file holds that package's version.
+- Leg 1: v1, then v2id, then `REMOVE=NewOn`, then v3, then uninstall, with runtime data checked.
+- Leg 2: v1 straight to v3.
+- Leg 3: the control, which must reproduce #87.
+
+Same safety as T89.
+
+### Executed on 2026-10-01, on the product owner's Windows 11 ARM64 VM (x64 packages)
+
+Every step passed. Feature states are as Windows Installer reports them; each installed feature's
+file held its package's version.
+
+| Step | Result |
+|---|---|
+| 1.1 v1 with Main and Debug | Main, Debug local; Docs absent |
+| 1.2 upgrade to v2id (inserted with ids) | Main, Debug kept, Docs still absent; NewOn, NewOnPart local (their default); NewTool absent; runtime data intact |
+| 1.3 `REMOVE=NewOn` | NewOn, NewOnPart absent; nothing else changed |
+| 1.4 upgrade to v3 (frozen, reordered, Docs removed) | Main, Debug kept; NewOn stayed absent, migrated rather than defaulted |
+| 1.5 uninstall | only the runtime data left |
+| 2.2 v1 straight to v3 | Main, Debug kept; NewOn local by default |
+| 3.2 control, inserted without an id | **#87 reproduced**: NewTool local, Debug absent, so the probe tells the two apart |
+
+The final cleanup left no folder, no `Software\msis` key and no ARP entry.

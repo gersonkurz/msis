@@ -71,6 +71,7 @@ type xmlSet struct {
 
 type xmlFeature struct {
 	Name        string `xml:"name,attr"`
+	ID          string `xml:"id,attr"`
 	Enabled     string `xml:"enabled,attr"`
 	Condition   string `xml:"condition,attr"`
 	Allowed     string `xml:"allowed,attr"`
@@ -832,6 +833,13 @@ func (f *xmlFeature) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 			f.Condition = attr.Value
 		case "allowed":
 			f.Allowed = attr.Value
+		case "id":
+			// Present but empty is an error, not "positional": an id that went missing by
+			// accident would silently renumber the feature (#87, D28).
+			if attr.Value == "" {
+				return fmt.Errorf(`<feature id=""> is empty; omit the attribute for a positional id, or give the feature its id`)
+			}
+			f.ID = attr.Value
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <feature>", attr.Name.Local)
 		}
@@ -1035,6 +1043,7 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 func convertFeature(raw *xmlFeature) (*ir.Feature, error) {
 	feature := &ir.Feature{
 		Name:      raw.Name,
+		ID:        raw.ID,
 		Enabled:   parseMsisBoolDefault(raw.Enabled, true),
 		Condition: raw.Condition,
 		Allowed:   parseMsisBoolDefault(raw.Allowed, true),

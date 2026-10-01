@@ -1145,3 +1145,87 @@ already broken this way.
 **What would reopen this:** a requirement to support in-place downgrades, which needs forced file
 replacement and its consequences for modified files; or a template that drops
 `AllowSameVersionUpgrades`.
+
+---
+
+## D28 — A feature may carry an explicit id; positional numbers count only the features without one
+
+**Settled in:** [#87](https://github.com/gersonkurz/msis/issues/87), 2026-10-01, the product
+owner's decision on the concept posted there, revised after Codex's review.
+**Implemented by:** `internal/generator/featureids.go` — `func (c *Context) checkFeatureIDs() error`, `var reservedFeatureIDs`, `const maxFeatureIDLength = 38`
+**Implemented by:** `internal/generator/context.go` — `featureID := feature.ID`
+**Implemented by:** `internal/parser/parser.go` — `case "id":`
+
+MajorUpgrade's MigrateFeatures, on in every shipped template, hands each installed feature's
+state to the feature with the same Feature table key in the new package. msis numbered features
+`FEATURE_%05d` in preorder, so inserting one renumbered every feature after it. The T85 VM probe
+reproduced it: Main and Debug installed, a feature inserted before Debug, and after the upgrade
+Main and the new feature were installed, Debug not.
+
+**Existing installers do not change.** Any new way of generating ids would itself break the
+correspondence once, on the first upgrade with it. So a package whose features carry no `id`
+gets exactly the ids it always got.
+
+**The rule.**
+- `<feature id="...">` is the key, as written.
+- One zero-based counter numbers the features without an id, in preorder; a feature with an id
+  does not advance it. So a feature inserted with an id, anywhere and at any depth, moves no
+  other number.
+- The whole tree is checked before any component is assigned. A collision, between two explicit
+  ids or between an explicit one and a positional one, fails the build, naming both features;
+  numbers are never skipped to avoid one.
+- An id must be an Identifier (a letter or underscore, then letters, digits, underscores and
+  periods) of at most 38 characters (the Feature table's key).
+- An id is literal: a `{{...}}` in it is an error, so that `/SET` cannot change an identity.
+- `id=""` is an error, not "positional".
+- Reserved: `ALL` in any case (it means every feature in `ADDLOCAL`/`REMOVE`),
+  `MSIS_PACKAGE_ITEMS` (msis's generated feature, which never advances the counter) and the
+  shipped templates' `VCRedist`.
+- Nesting is limited to the Feature table's 16 levels.
+
+**What an author does.**
+- Give a new feature an id, and every feature in a new subtree.
+- Before reordering or removing, freeze **all** existing features to their last shipped ids.
+  Freezing only the one being moved collides with the next feature's number, and if that
+  feature is removed, a later one silently inherits its history.
+- Freeze from the shipped MSI or its WXS, never from a fresh regeneration: msis-2.x numbered from
+  `FEATURE_00002` (#91).
+- Ids are permanent: case-sensitive, global, never renamed or reused. A reused id hands a
+  removed feature's state to an unrelated one, and no check within one package can see that.
+
+**What it does not guarantee.** Stable ids keep the correspondence; they do not keep:
+- the hierarchy (`Feature_Parent`);
+- defaults;
+- component ownership (D22, D24);
+- migration when `ADDLOCAL`/`REMOVE` are given on an upgrade's command line: that sets
+  Preselected, and Windows Installer does not migrate at all then.
+
+`ADD_TO_PATH` stays attached to the first authored top-level feature, so inserting a feature
+first moves it.
+
+**No warning by default** for features without an id. It would fire on every build of every
+existing product and cannot know whether an insert happened, and noise like that teaches
+people to skip the warnings that matter (D22, D24). `/STRICT` instead requires an id on every
+authored feature, recursively, disabled ones included. Its error lists each feature's current
+positional id with the instruction to use the last shipped id instead.
+
+Rejected:
+- a "last-known features" file beside the `.msis`: the build would write state into the source
+  tree, features would be matched by name, and it adds a format and merge conflicts for a rare
+  case;
+- ids derived from feature names or paths: that changes every existing id once.
+
+A `/DOCTOR` that compares a script against the previous release's MSI is noted on #87 for later.
+
+The VM probe `testscripts/t87` (todo-testme.md T87) checked it on 2026-10-01 (ARM64 VM, x64
+packages), reading every feature's installed state from Windows Installer. Every step passed:
+- an insertion with ids kept a customer's choices in both directions (a default-on feature
+  deselected, a default-off one selected);
+- new features took their defaults, and a maintenance `REMOVE` was migrated by the next upgrade
+  rather than defaulted;
+- freezing every feature to its shipped id allowed reordering and removing one;
+- an upgrade skipping a release kept the choices;
+- the control, the same insertion without an id, lost them.
+
+**What would reopen this:** a template that turns MigrateFeatures off; or a decision to make ids
+mandatory, which msis 4 could do the way it refuses the D22/D24 layouts.

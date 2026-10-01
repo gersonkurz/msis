@@ -90,7 +90,7 @@ func TestSharedFileTargets(t *testing.T) {
 				}
 			}
 
-			strict := NewContext(&ir.Setup{Features: tc.features}, variables.New(), dir)
+			strict := NewContext(&ir.Setup{Features: frozen(tc.features)}, variables.New(), dir) // only #79 judged
 			strict.Strict = true
 			_, err = strict.Generate()
 			switch {

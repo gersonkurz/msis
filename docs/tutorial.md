@@ -681,6 +681,7 @@ Let users choose what to install:
 | `enabled="true"` | Selected by default |
 | `enabled="false"` | Not selected by default |
 | `allowed="false"` | Hidden from user, always installed |
+| `id="DebugSymbols"` | The feature's permanent identity; see [Feature ids and upgrades](#feature-ids-and-upgrades) |
 
 ### Nested Features
 
@@ -702,6 +703,52 @@ Features can contain other features for hierarchical organization:
   </feature>
 </feature>
 ```
+
+### Feature ids and upgrades
+
+Windows Installer remembers which features a customer installed by each feature's id. When a
+new version upgrades the old one, every feature gets the state the feature with the **same id**
+had before. Without an `id` attribute, msis numbers features `FEATURE_00000`, `FEATURE_00001`,
+… in the order they are written. Inserting a feature therefore renumbers every feature after
+it, and the upgrade hands the customer's choices to the wrong features. A customer who had
+installed Debug Symbols finds a different feature installed instead (#87, decisions D28).
+
+Appending a feature at the end is safe. To insert one anywhere else, give it an `id`:
+
+```xml
+<feature name="Application">
+  <feature name="Core">…</feature>
+</feature>
+<feature name="New Tool" id="NewTool" enabled="false">   <!-- inserted: has an id -->
+  <files source="tools" target="[INSTALLDIR]tools"/>
+</feature>
+<feature name="Debug Symbols" enabled="false">…</feature>
+```
+
+Positional numbers count only the features **without** an id, so Application, Core and Debug
+Symbols keep their numbers.
+
+- **A new feature gets an `id`, and so does every feature below it.** An id-less sub-feature
+  still takes a number and moves what follows.
+- **Before reordering or removing features, give every existing feature the id it shipped
+  with**, all of them, sub-features included: `id="FEATURE_00002"`. Freezing only the one you
+  move collides with the next feature's number, and msis refuses the build. Take the ids from the
+  last released package, from the WXS that `/RETAINWXS` keeps or from the MSI itself. A package
+  built by msis-2.x numbered its first feature `FEATURE_00002`, not `FEATURE_00000` (#91).
+- **Ids are permanent.** Never rename one, change its case, or reuse it for a different
+  feature. A customer upgrading from an older release would get the old feature's state on the
+  new one.
+- An id is written literally: a letter or underscore, then letters, digits, underscores and
+  periods, at most 38 characters. `ALL`, `MSIS_PACKAGE_ITEMS` and `VCRedist` are reserved.
+- `/STRICT` requires an id on every feature. Its error lists the id each feature would get from
+  *this* script, as a diagnostic. That is the shipped id only if the script has not changed its
+  features since the last release and that release was built by msis 3. Always copy the ids
+  from the last shipped MSI or its WXS.
+
+An id keeps the *match* between old and new features. It does not keep a feature's place in the
+tree or its default. `ADDLOCAL`/`REMOVE` given on the command line of an upgrade replace the
+migration altogether. `ADD_TO_PATH` belongs to the first feature written, so inserting a feature
+first moves it.
 
 ---
 

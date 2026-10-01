@@ -50,7 +50,7 @@ type cliArgs struct {
 	scanDir         string            // /SCAN-DIR:PATH: where /SCAN keeps its reports (#70)
 	analyze         bool              // /ANALYZE: identify packages in the payload with syft (#82, D25)
 	standalone      bool              // Skip auto-bundling, use launch conditions only
-	strict          bool              // Refuse deprecated layouts instead of warning (#77, D22)
+	strict          bool              // Refuse deprecated layouts instead of warning (#77, D22; #79, D24), and features without an id (#87, D28)
 	noColor         bool              // Disable colored output
 	setupWix        bool              // /SETUP-WIX: install/repair WiX toolset + extensions
 	wixVersion      string            // /WIX-VERSION:VER override for /SETUP-WIX
@@ -1027,7 +1027,8 @@ func printUsage() {
 	fmt.Printf("  %s  Overlay folder for private assets (takes precedence)\n", cli.Info("/CUSTOMTEMPLATES:PATH"))
 	fmt.Printf("  %s            Parse and validate only, no output\n", cli.Info("/DRY-RUN"))
 	fmt.Printf("  %s         Skip auto-bundling, use launch conditions only\n", cli.Info("/STANDALONE"))
-	fmt.Printf("  %s             Refuse deprecated layouts instead of warning (msis 4 will)\n", cli.Info("/STRICT"))
+	fmt.Printf("  %s             Refuse deprecated layouts instead of warning (msis 4 will),\n", cli.Info("/STRICT"))
+	fmt.Printf("                      and features without an id (D28)\n")
 	fmt.Printf("  %s           Disable colored output\n", cli.Info("/NO-COLOR"))
 	fmt.Printf("  %s          Install/repair the WiX toolset + extensions\n", cli.Info("/SETUP-WIX"))
 	fmt.Printf("  %s    With /SETUP-WIX: install a specific WiX version\n", cli.Info("/WIX-VERSION:VER"))
