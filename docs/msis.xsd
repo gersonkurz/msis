@@ -304,7 +304,7 @@
       </xs:simpleType>
     </xs:attribute>
     <xs:attribute name="enabled" type="msisBoolean" use="optional"/>
-    <xs:attribute name="condition" type="xs:string" use="optional"/>
+    <!-- No condition attribute: msis 3 never emitted it and refuses it (#92, decisions D29). -->
     <xs:attribute name="allowed" type="msisBoolean" use="optional"/>
   </xs:complexType>
 

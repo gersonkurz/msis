@@ -1229,3 +1229,42 @@ packages), reading every feature's installed state from Windows Installer. Every
 
 **What would reopen this:** a template that turns MigrateFeatures off; or a decision to make ids
 mandatory, which msis 4 could do the way it refuses the D22/D24 layouts.
+
+---
+
+## D29 — `<feature condition>` is refused, not implemented
+
+**Settled in:** [#92](https://github.com/gersonkurz/msis/issues/92), 2026-10-01, the product
+owner's decision.
+**Implemented by:** `internal/parser/parser.go` — `condition is not supported on <feature>`
+
+msis 3 parsed `<feature condition="...">` and never emitted it, so the feature installed
+unconditionally. msis-2.x emitted conditional levels (`msi-simplified/Feature.cs`), with a meaning
+that depended on `enabled`:
+
+| | condition true | condition false |
+|---|---|---|
+| enabled feature | Level 0: not installable at all | Level 1: installed by default |
+| `enabled="false"` | Level 1: installed by default | Level 0: not installable |
+
+So on an enabled feature, `condition` meant "remove this feature when true".
+
+**Why refused rather than implemented:**
+- No user. No `.msis` script among the field scripts checked (everything under `C:\NGBT`, the
+  Poste Italiane, ProAKT and other product trees) uses it.
+- No documentation: it was a bare attribute in `msis.xsd`, described nowhere else.
+- No working behaviour to keep: msis 3 never emitted it.
+- msis-2.x was internal and is gone, so parity carries little weight (#91).
+- Faithful parity would ship the inverted meaning above.
+- Level 0 is a known way to lose things: Windows Installer evaluates the condition again on every
+  run. A feature that becomes Level 0 on an upgraded machine silently disappears; one that does
+  so during uninstall can leave its components behind. Doing it safely needs `Installed`/`REMOVE`
+  guards and a VM probe.
+
+So the parser refuses the attribute with a message saying what to do (`enabled="false"` for an
+optional feature), and the schema no longer declares it. `<registry condition>` is a different
+attribute, emitted as the registry component's condition, and is unchanged.
+
+**What would reopen this:** a real need for conditionally available features. That would be
+designed fresh, with an unambiguous name, the upgrade and uninstall guards, and a VM probe, not by
+restoring 2.x's semantics.

@@ -73,7 +73,6 @@ type xmlFeature struct {
 	Name        string `xml:"name,attr"`
 	ID          string `xml:"id,attr"`
 	Enabled     string `xml:"enabled,attr"`
-	Condition   string `xml:"condition,attr"`
 	Allowed     string `xml:"allowed,attr"`
 	SubFeatures []xmlFeature
 	Items       []xmlItem // Preserves document order
@@ -830,7 +829,10 @@ func (f *xmlFeature) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 		case "enabled":
 			f.Enabled = attr.Value
 		case "condition":
-			f.Condition = attr.Value
+			// msis 3 never emitted it, so such a feature always installed unconditionally, and
+			// msis-2.x's meaning was inverted for enabled features (#92, decisions D29).
+			return fmt.Errorf(`<feature condition=%q>: condition is not supported on <feature>. msis 3 has always ignored it, `+
+				`so the feature installed unconditionally; remove the attribute, and use enabled="false" to make the feature optional (#92)`, attr.Value)
 		case "allowed":
 			f.Allowed = attr.Value
 		case "id":
@@ -1042,11 +1044,10 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 
 func convertFeature(raw *xmlFeature) (*ir.Feature, error) {
 	feature := &ir.Feature{
-		Name:      raw.Name,
-		ID:        raw.ID,
-		Enabled:   parseMsisBoolDefault(raw.Enabled, true),
-		Condition: raw.Condition,
-		Allowed:   parseMsisBoolDefault(raw.Allowed, true),
+		Name:    raw.Name,
+		ID:      raw.ID,
+		Enabled: parseMsisBoolDefault(raw.Enabled, true),
+		Allowed: parseMsisBoolDefault(raw.Allowed, true),
 	}
 
 	// Convert items (preserves document order)

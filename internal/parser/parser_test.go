@@ -1147,3 +1147,16 @@ func TestParseFeatureID(t *testing.T) {
 		t.Errorf("an empty id was accepted: %v", err)
 	}
 }
+
+// TestFeatureConditionIsRefused: msis 3 never emitted <feature condition>, so such a feature
+// installed unconditionally; it is refused rather than silently ignored (#92, D29). The
+// <registry condition> attribute is a different one and stays.
+func TestFeatureConditionIsRefused(t *testing.T) {
+	_, err := ParseBytes([]byte(`<setup><feature name="Main" condition="VersionNT64"/></setup>`))
+	if err == nil || !strings.Contains(err.Error(), "not supported") || !strings.Contains(err.Error(), "#92") {
+		t.Fatalf("want the refusal, got %v", err)
+	}
+	if _, err := ParseBytes([]byte(`<setup><feature name="Main"><registry file="x.reg" condition="VersionNT64"/></feature></setup>`)); err != nil {
+		t.Errorf("<registry condition> must still parse: %v", err)
+	}
+}

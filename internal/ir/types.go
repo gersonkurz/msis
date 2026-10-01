@@ -86,8 +86,7 @@ type Feature struct {
 	Name        string
 	ID          string // the Feature table key as written (#87, D28); empty: positional FEATURE_nnnnn
 	Enabled     bool   // default true
-	Condition   string
-	Allowed     bool // default true
+	Allowed     bool   // default true
 	Items       []Item
 	SubFeatures []Feature
 }

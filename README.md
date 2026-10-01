@@ -263,6 +263,10 @@ when it is released.
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+- **`<feature condition="...">` is refused** ([#92](../../issues/92), D29). msis 3 has always
+  ignored it, so the feature installed unconditionally. A script with it now fails to build:
+  remove the attribute, and use `enabled="false"` for an optional feature. `<registry
+  condition>` is a different attribute and is unchanged.
 - **Known issue: upgrading an install made by a msis-2.x package** ([#91](../../issues/91),
   closed). msis-2.x numbered the first feature `FEATURE_00002`; msis 3 has always numbered it
   `FEATURE_00000`. So the first upgrade from a 2.x-built install to any msis 3 package matches
