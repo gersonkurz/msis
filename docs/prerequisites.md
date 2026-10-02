@@ -253,6 +253,22 @@ The `Release` DWORD value indicates the installed version:
 | 460798+ | 4.7 |
 | 394802+ | 4.6.2 |
 
+A bundle chaining a .NET prerequisite reads that value into the Burn variable `NETFRAMEWORK45`,
+from the 32-bit registry view (the key is in both views on 64-bit Windows). msis emits that search
+into the bundle templates' `{{{SEARCHES}}}` placeholder, for an explicit `<bundle>` and an
+auto-bundle alike. Before 3.0.7 nothing set it, so .NET counted as absent everywhere and its
+installer ran on every install (#93, decisions D32). A custom bundle template needs the
+placeholder; without it the build fails.
+
+### Elevation
+
+The VC++ and .NET installers install for the whole machine, and Burn runs them in its elevated
+engine. msis does not mark their packages `PerMachine`. A package without the attribute takes the
+bundle's scope, and a bundle of MSIs msis built is per-machine, because those MSIs are (#94,
+decisions D32; observed on a VM in T93). Every auto-bundle is such a bundle. An explicit
+`<bundle>` that chains a per-user MSI from elsewhere is per-user, and its prerequisites then run
+unelevated; chain per-machine MSIs with prerequisites.
+
 ## Multiple Prerequisites
 
 You can declare multiple prerequisites:

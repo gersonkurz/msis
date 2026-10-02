@@ -149,3 +149,48 @@ func TestABundleTemplateWithThemeNoneIsRefused(t *testing.T) {
 		t.Fatalf("want the Theme=\"none\" refusal, got %v", err)
 	}
 }
+
+const netfxAutoBundleScript = `<?xml version="1.0" encoding="utf-8"?>
+<setup>
+  <set name="PRODUCT_NAME" value="NetfxAuto"/>
+  <set name="PRODUCT_VERSION" value="1.0.0"/>
+  <set name="MANUFACTURER" value="msis tests"/>
+  <set name="UPGRADE_CODE" value="{5A9C3E71-2B6D-4F80-9E14-7C1A3D8B6E93}"/>
+  <set name="LICENSE_URL" value="https://example.com/license"/>
+  <set name="PLATFORM" value="x64"/>
+  <set name="BUILD_TARGET" value="{{TARGET}}"/>
+  <requires type="netfx" version="4.8" source="stub-netfx.exe"/>
+  <requires type="vcredist" version="2022" source="stub-vcredist.exe"/>
+  <feature name="Main">
+    <files source="app.txt" target="[INSTALLDIR]"/>
+  </feature>
+</setup>`
+
+// #93 (D32): an auto-bundle chaining .NET and VC++ declares the NETFRAMEWORK45 search the .NET
+// detect condition tests, builds with the real wix, and starts (/layout). Local stubs stand in for
+// the installers, so nothing downloads.
+func TestANetfxAutoBundleDeclaresItsSearch(t *testing.T) {
+	requireWix(t)
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "app.txt"), "the application\n")
+	standInExe(t, filepath.Join(dir, "stub-netfx.exe"))
+	// A different file: WiX derives a package's cache id from its content, and two copies of one
+	// file collide (WIX8000).
+	src, err := os.ReadFile(filepath.Join(os.Getenv("SystemRoot"), "System32", "hostname.exe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "stub-vcredist.exe"), string(src))
+	script := scriptFor(t, dir, "app.msi", netfxAutoBundleScript)
+	if err := processFile(script, &cliArgs{build: true, retainWxs: true, setOverrides: map[string]string{}, templateFolder: repoTemplates(t)}); err != nil {
+		t.Fatalf("building the auto-bundle: %v", err)
+	}
+	wxs, err := os.ReadFile(filepath.Join(dir, "app-bundle.wxs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wxs), "Variable='NETFRAMEWORK45'") {
+		t.Error("the bundle declares no NETFRAMEWORK45 search")
+	}
+	layOut(t, filepath.Join(dir, "app.exe"))
+}

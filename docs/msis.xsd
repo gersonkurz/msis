@@ -249,8 +249,9 @@
     <xs:attribute name="args" type="xs:string" use="optional"/>
     <xs:attribute name="per-machine" type="msisBoolean" use="optional">
       <xs:annotation><xs:documentation>
-        yes: Burn runs the package in its elevated engine, as a machine-wide installer needs
-        (#90, decisions D30). Default no (per-user), as before.
+        yes: marks the package per-machine, so Burn runs it elevated (#90, decisions D30). Without
+        it the package takes the bundle's scope: per-machine unless the chain holds a per-user
+        package, such as a per-user MSI msis did not build (#94, D32).
       </xs:documentation></xs:annotation>
     </xs:attribute>
   </xs:complexType>

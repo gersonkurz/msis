@@ -1314,9 +1314,13 @@ which msis does not offer.
 `CHAIN` and `SEARCHES`: a custom bundle template with nowhere to put content the script generated
 fails.
 
-**`<exe per-machine="yes">`** writes `PerMachine='yes'`, so Burn runs the package elevated. A
-machine-wide installer such as WebView2's needs it. Without the attribute nothing is emitted, as
-before. That prerequisites never carry `PerMachine` either is #94.
+**`<exe per-machine="yes">`** writes `PerMachine='yes'`, which states the package's scope. A
+package without `PerMachine` takes the bundle's scope. WiX's binder makes that per-machine unless a
+package is explicitly per-user. So in a bundle whose chain has no per-user package (every bundle of
+MSIs msis built, which are per-machine), an unmarked `<exe>` already runs elevated (T93, #94). An
+explicit `<bundle>` chaining a per-user MSI from elsewhere is per-user, and there the attribute is
+what makes a machine-wide installer run elevated. Without the attribute nothing is emitted, as
+before.
 
 **The auto-bundle** built from `<requires>` carries no `<exe>` or `<search>`, and is unchanged.
 
@@ -1399,3 +1403,62 @@ and did not run it.
 
 **What would reopen this:** a requirement for a bundle that is silent with no command-line switch,
 which needs a custom bootstrapper application.
+
+---
+
+## D32 — A prerequisite's detect condition has its search; an unmarked package is already per-machine
+
+**Settled in:** [#93](https://github.com/gersonkurz/msis/issues/93) and
+[#94](https://github.com/gersonkurz/msis/issues/94), 2026-10-02, both found in Codex's review of #90.
+#94 was settled by the T93 VM run, which showed it was not a bug.
+**Implemented by:** `internal/bundle/searches.go` — `func prerequisiteSearches(prereqs []ir.Prerequisite) string`, `MSIS_Prereq_NetFx4Release`
+
+**#93.** Every netfx prerequisite's `DetectCondition` tests `NETFRAMEWORK45`
+(`NETFRAMEWORK45 >= 528040` for 4.8, ...), and nothing set it. It is not a Burn built-in, the
+bundle templates had no search for it, and loading the Netfx extension does not declare one. So
+the condition was always false, .NET counted as absent everywhere, and its installer ran on every
+install. A bundle chaining a netfx prerequisite now carries a `util:RegistrySearch` that reads
+`HKLM\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\Release` into `NETFRAMEWORK45`.
+- It reads the 32-bit view: the key is in both views on 64-bit Windows, and the 32-bit view is
+  the native one on 32-bit Windows.
+- A machine without .NET 4.x leaves the variable unset, so the condition is false and .NET
+  installs.
+- The search goes into `{{{SEARCHES}}}` (D30), only when netfx is chained, for explicit and auto
+  bundles. A custom template without the placeholder fails the coverage check rather than
+  reinstalling .NET forever.
+
+The test that was meant to catch an undefined detect variable
+(`TestDetectConditionVariablesExistInTemplates`) looked only at the per-architecture
+conditions, taking each whole condition for a variable name. It now checks every identifier of
+every detect condition against Burn's built-ins, both templates and the generator's searches;
+with the search removed it fails on `NETFRAMEWORK45`.
+
+**#94: not a bug.** The prerequisite table marks VC++ and .NET `PerMachine: true`, and the
+generator never writes the attribute. The issue assumed WiX then defaults the `ExePackage` to
+per-user and Burn runs it unelevated. It does not:
+- WiX's compiler leaves an omitted `PerMachine` as "default";
+- its binder starts the bundle per-machine, lets only an explicitly per-user package flip it, and
+  gives every package without a scope the bundle's.
+
+An MSI msis builds is per-machine, so in a bundle of msis-built MSIs (every auto-bundle, and every
+explicit `<bundle>` chaining them) the prerequisites and `<exe>` packages run in Burn's elevated
+engine without the attribute. T93 observed exactly that: run from an unelevated shell, the
+unmarked stand-in and the old bundle's .NET stand-in both ran elevated. msis does not write the
+attribute on prerequisites, and the table's `PerMachine` field stays unused.
+
+**The exception, already reachable:** msis does not check the scope of an `<msi source=...>` it
+chains. An explicit `<bundle>` chaining a per-user MSI from elsewhere is per-user, and then its
+unmarked prerequisites run unelevated too. That is a real case of what #94 assumed, but it is
+narrow: it needs a per-user MSI msis did not build. There, an `<exe>` can say
+`per-machine="yes"`; a prerequisite cannot yet.
+
+The VM probe `testscripts/t93` (todo-testme.md T93) checked both on 2026-10-02 (ARM64 VM),
+running unelevated so that Burn had to elevate:
+- the old bundle's .NET stand-in was detected Absent and ran; the new one's was detected Present
+  and did not run;
+- every stand-in that ran ran elevated, the unmarked ones included.
+
+**What would reopen this:** a need to chain a per-user MSI in an explicit `<bundle>` together with
+VC++ or .NET prerequisites, which would need the prerequisites marked `PerMachine` (or the per-user
+MSI refused); or a prerequisite whose detection needs a search of another kind, which
+`prerequisiteSearches` is the place for.

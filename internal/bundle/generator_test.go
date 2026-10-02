@@ -7,6 +7,8 @@ import (
 
 	"github.com/gersonkurz/msis/internal/ir"
 	"github.com/gersonkurz/msis/internal/variables"
+	"regexp"
+	"slices"
 )
 
 func TestGenerateLegacyBundle(t *testing.T) {
@@ -791,31 +793,47 @@ func TestMultiArchBundleGainsNoArm64Payload(t *testing.T) {
 // no util:RegistrySearch defines builds WITHOUT ERROR — verified by accident while
 // testing #12, when a bundle compiled cleanly against templates that had no
 // VcppRuntimeArm64 search. The condition would then just be false forever.
+//
+// Every variable of every detect condition - the generic one as well as the per-architecture
+// ones - must be a Burn built-in, or be set either by both bundle templates or by the searches the
+// generator emits for that prerequisite. The test used to look only at the per-architecture
+// conditions, taking each whole condition for a variable name, so the netfx conditions
+// (NETFRAMEWORK45 >= 528040, ...), which nothing set, went unnoticed (#93).
 func TestDetectConditionVariablesExistInTemplates(t *testing.T) {
-	var wanted []string
-	for _, versions := range Prerequisites {
-		for _, def := range versions {
-			for _, cond := range []string{def.DetectConditionX86, def.DetectConditionX64, def.DetectConditionArm64} {
-				if cond != "" {
-					wanted = append(wanted, cond)
-				}
-			}
-		}
-	}
-	if len(wanted) == 0 {
-		t.Fatal("no per-architecture detect conditions found; test is not checking anything")
-	}
-
+	var templates []string
 	for _, tmpl := range []string{"../../templates/bundle.wxs", "../../templates/bundle-silent.wxs"} {
 		data, err := os.ReadFile(tmpl)
 		if err != nil {
 			t.Fatalf("reading %s: %v", tmpl, err)
 		}
-		body := string(data)
-		for _, variable := range wanted {
-			if !strings.Contains(body, `Variable="`+variable+`"`) {
-				t.Errorf("%s defines no util:RegistrySearch for %q, so any DetectCondition using it is always false", tmpl, variable)
+		templates = append(templates, string(data))
+	}
+	identifier := regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*`)
+	checked := 0
+	for typ, versions := range Prerequisites {
+		generated := prerequisiteSearches([]ir.Prerequisite{{Type: typ}})
+		for version, def := range versions {
+			for _, cond := range []string{def.DetectCondition, def.DetectConditionX86, def.DetectConditionX64, def.DetectConditionArm64} {
+				for _, name := range identifier.FindAllString(cond, -1) {
+					if slices.Contains([]string{"AND", "OR", "NOT"}, strings.ToUpper(name)) ||
+						slices.ContainsFunc(burnBuiltins, func(b string) bool { return strings.EqualFold(b, name) }) {
+						continue
+					}
+					checked++
+					if strings.Contains(generated, "Variable='"+name+"'") {
+						continue
+					}
+					for i, body := range templates {
+						if !strings.Contains(body, `Variable="`+name+`"`) {
+							t.Errorf("%s %s: no search sets %q - not template %d, not the generator - so its DetectCondition %q is always false",
+								typ, version, name, i, cond)
+						}
+					}
+				}
 			}
 		}
+	}
+	if checked == 0 {
+		t.Fatal("no detect-condition variables found; the test is not checking anything")
 	}
 }

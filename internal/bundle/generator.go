@@ -317,7 +317,7 @@ func (g *Generator) Generate() (*GeneratedBundle, error) {
 
 	return &GeneratedBundle{
 		ChainXML:  chain.String(),
-		SearchXML: generateSearches(bundle),
+		SearchXML: prerequisiteSearches(bundle.Prerequisites) + generateSearches(bundle),
 		Warnings:  searchWarnings,
 	}, nil
 }
@@ -505,8 +505,10 @@ func (g *Generator) generateExePackage(exe ir.ExePackage) string {
 	if exe.InstallArgs != "" {
 		sb.WriteString(fmt.Sprintf(" InstallArguments='%s'", escapeXMLAttr(exe.InstallArgs)))
 	}
-	// Burn runs a per-machine package in its elevated engine (#90, D30). Not emitted otherwise,
-	// so an <exe> without per-machine= is exactly what it was.
+	// per-machine="yes" states the package's scope (#90, D30). Without the attribute a package
+	// takes the bundle's scope: per-machine unless the chain holds a per-user package, such as a
+	// per-user MSI msis did not build (T93, #94, D32). Not emitted otherwise, so an <exe> without
+	// it is exactly what it was.
 	if exe.PerMachine {
 		sb.WriteString(" PerMachine='yes'")
 	}
@@ -809,7 +811,8 @@ func (g *AutoBundleGenerator) Generate() (*GeneratedBundle, error) {
 		escapeXMLAttr(g.MSIPath)), g.Silent))
 
 	return &GeneratedBundle{
-		ChainXML: chain.String(),
+		ChainXML:  chain.String(),
+		SearchXML: prerequisiteSearches(g.Requirements), // #93, D32
 	}, nil
 }
 

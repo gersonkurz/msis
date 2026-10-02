@@ -184,9 +184,12 @@ Attributes:
   without complaint and fails only on the target machine. Without `detect`, Burn cannot tell the
   package is already there, so it runs on every install of the bundle.
 - `args` - Command-line arguments for silent install (optional)
-- `per-machine` - `yes` runs the package in Burn's elevated engine, as an installer that
-  installs for the whole machine needs (optional; default `no`, per-user, as before) (#90,
-  decisions D30)
+- `per-machine` - `yes` marks the package per-machine, so Burn runs it elevated (optional). A
+  package without it takes the bundle's scope. That is per-machine as long as the chain holds no
+  per-user package, which covers every bundle of MSIs msis built, since those are per-machine.
+  An explicit `<bundle>` that chains a per-user MSI from elsewhere becomes per-user, and its
+  unmarked packages with it; there, give a machine-wide installer `per-machine="yes"` (#90, #94,
+  decisions D30, D32).
 
 ### Detecting from the registry: `<search>`
 
@@ -245,8 +248,8 @@ view ([Microsoft](https://learn.microsoft.com/en-us/microsoft-edge/webview2/conc
 </bundle>
 ```
 
-This detects only a machine-wide runtime, and `per-machine="yes"` installs one, elevated, for
-every user. Microsoft also registers a per-user runtime under
+This detects only a machine-wide runtime, and the bundle installs one, elevated, for every user.
+`per-machine="yes"` only says so explicitly. Microsoft also registers a per-user runtime under
 `HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`. Accepting
 that one too (`OR WebView2User > v0.0.0.0`, from a second search) is right only when the runtime
 is needed just for the user running setup: it is the HKCU of whoever runs the bundle, so a

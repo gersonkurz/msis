@@ -263,6 +263,9 @@ when it is released.
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+- **The .NET prerequisite is detected** ([#93](../../issues/93), D32). Its detect condition
+  tests `NETFRAMEWORK45`, which nothing set, so .NET counted as absent and its installer ran on
+  every install. The bundle now reads it from the registry.
 - **Silent bundles start** ([#95](../../issues/95), D31). The shipped silent bundle template gave
   the bootstrapper `Theme="none"`, which ships no theme. Every silent bundle built from it
   (explicit `<bundle>` or auto-bundle) failed before installing anything (0x80070490), so
@@ -272,8 +275,9 @@ when it is released.
 - **Bundles can detect an `<exe>` from the registry** ([#90](../../issues/90), D30). A
   `<search>` in `<bundle>` reads a registry key or value into a Burn variable that an
   `<exe detect>` tests. `bitness` (the registry view) is required, because the wrong view
-  reinstalls the package on every run. `<exe per-machine="yes">` runs an installer elevated, for
-  the whole machine. docs/Bundle.md has the WebView2 recipe. The bundle templates gained a
+  reinstalls the package on every run. `<exe per-machine="yes">` marks a package per-machine. An
+  unmarked one takes the bundle's scope, per-machine for a bundle of msis-built MSIs (#94). docs/Bundle.md has the
+  WebView2 recipe. The bundle templates gained a
   `{{{SEARCHES}}}` placeholder; a custom bundle template without it fails once a script has a
   `<search>`.
 - **`<feature condition="...">` is refused** ([#92](../../issues/92), D29). msis 3 has always

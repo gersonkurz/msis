@@ -1127,3 +1127,46 @@ then `/passive`.
 - Each uninstall, through the bundle, left neither registered and the file gone.
 - The VC++ runtime was still registered at the end, and the cleanup left no probe folder, key or
   ARP entry.
+
+## T93 — the .NET prerequisite is detected (NETFRAMEWORK45), and what runs elevated (#93, #94, D32): DONE 2026-10-02
+
+Why: nothing set `NETFRAMEWORK45`, so the .NET prerequisite always counted as absent and ran on
+every install (#93). #94 assumed that, without `PerMachine`, Burn runs prerequisites unelevated;
+this probe settles it.
+
+Probe: `testscripts/t93`. The build side (`uv run t93_prereq_probe.py`) builds one explicit
+bundle twice, from msis at 86efaa5 (the control) and from the working tree. It chains stand-ins
+(`marker/`, recording that they ran and whether elevated) for a .NET 4.8.1 and a VC++ 2022
+prerequisite, a `per-machine="yes"` and an unmarked `<exe>` with `detect="0"`, and a small MSI. It
+checks the new WXS has the search, the old one not.
+
+The VM side (`vm/t93_vm_probe.py`) runs from a **non-elevated** shell, so Burn has to elevate:
+one UAC prompt per install and uninstall. Expected:
+- new: the .NET and VC++ stand-ins detected Present and not run;
+- old (the control): the .NET stand-in detected Absent and run;
+- every stand-in that runs ran elevated, marked or not.
+
+### First run, 2026-10-02 (the owner's Windows 11 ARM64 VM)
+
+The probe reported FAIL, for two reasons:
+- its own string bug: Go writes `elevated=true`, and the probe expected `elevated=True`;
+- an expectation that was wrong: the unmarked stand-ins were expected to run unelevated.
+
+The data:
+- old: NETFX `elevated=true` (it ran: detected Absent), VC not run, EPM `elevated=true`, EPU
+  `elevated=true`;
+- new: NETFX not run (detected Present), VC not run, EPM and EPU `elevated=true`.
+
+So #93 is fixed, and #94's premise is false. WiX's binder starts a bundle per-machine and gives
+every package without `PerMachine` the bundle's scope, so the unmarked packages ran elevated.
+The #94 change was reverted; the probe's expectations were corrected to these facts.
+
+### Second run, 2026-10-02, the corrected probe: PASS
+
+| Bundle | NETFX | VC | EPM | EPU |
+|---|---|---|---|---|
+| old (control) | detected Absent, ran, `elevated=true` | not run | `elevated=true` | `elevated=true` |
+| new | detected Present, not run | not run | `elevated=true` | `elevated=true` |
+
+Both bundles installed and uninstalled cleanly, through UAC prompts from an unelevated shell. The
+machine was clean afterwards: no markers, no probe folder, no `Software\msis` key, no ARP entry.

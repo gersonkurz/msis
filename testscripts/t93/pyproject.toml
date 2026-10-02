@@ -1,0 +1,9 @@
+[project]
+name = "t93-prereq-probe"
+version = "1.0.0"
+description = "VM probe for #93 and #94 - prerequisites detected and per-machine (D32)"
+requires-python = ">=3.14"
+dependencies = ["loguru>=0.7.3"]
+
+[tool.uv]
+package = false

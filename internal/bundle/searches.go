@@ -98,3 +98,23 @@ func generateSearches(bundle *ir.Bundle) string {
 	}
 	return sb.String()
 }
+
+// netfxReleaseSearch sets NETFRAMEWORK45, which every netfx prerequisite's detect condition
+// tests (NETFRAMEWORK45 >= 528040 for 4.8, ...), to the installed .NET Framework 4.x Release
+// number (#93, decisions D32). Nothing set it before, so the condition was always false and the
+// .NET installer ran on every install of the bundle. The NDP key is written to both registry
+// views on 64-bit Windows, and the 32-bit view is the native one on 32-bit Windows, so the 32-bit
+// view answers everywhere. A machine without .NET 4.x has no value, the variable stays unset, and
+// the condition is false: the prerequisite installs.
+const netfxReleaseSearch = `    <util:RegistrySearch Id='MSIS_Prereq_NetFx4Release' Variable='NETFRAMEWORK45' Root='HKLM' Key='SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' Value='Release' Result='value' Bitness='always32'/>
+`
+
+// prerequisiteSearches returns the searches the chained prerequisites' detect conditions need
+// beyond what the bundle templates declare (the VC++ ones live in the templates). Only when such
+// a prerequisite is chained, so a bundle without one is unchanged.
+func prerequisiteSearches(prereqs []ir.Prerequisite) string {
+	if slices.ContainsFunc(prereqs, func(p ir.Prerequisite) bool { return p.Type == "netfx" }) {
+		return netfxReleaseSearch
+	}
+	return ""
+}

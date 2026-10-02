@@ -946,9 +946,9 @@ installed and is skipped. It tests Burn variables, not the registry directly, so
 
 `bitness` says which registry view is read: `64` for a key a 64-bit installer writes, `32` for one
 a 32-bit installer writes (under `WOW6432Node`). [Bundle.md](Bundle.md#detecting-from-the-registry-search)
-lists what `<search>` can read, and has the WebView2 recipe. An installer that installs for the
-whole machine needs `per-machine="yes"` on its `<exe>`. Without `detect`, the prerequisite runs on
-every install.
+lists what `<search>` can read, and has the WebView2 recipe. An `<exe>` runs elevated when the
+bundle is per-machine, which a bundle of msis-built MSIs is; `per-machine="yes"` makes it so in any
+bundle. Without `detect`, the prerequisite runs on every install.
 
 For more details on prerequisites, custom packages, and bundle variables, see [Bundle.md](Bundle.md).
 
