@@ -275,9 +275,9 @@ func TestEveryFileIDIsItsComponentsAndUnique(t *testing.T) {
 		t.Errorf("want 4 files (two config.json, svc.exe and the service's copy), got %d", len(seen))
 	}
 
-	// msiread extracts a shared target's copies in File-id order and puts the first at the
-	// target (writePayload), so the copy declared first must still sort first, as it did when
-	// ids were sequence numbers.
+	// The copy declared first must sort first. WiX sequences the File table by File id, so this is
+	// what installs the copy written last later, which for unversioned files is the copy left on
+	// disk (D33, D24, #86). msiread's extraction (writePayload) relies on the same order.
 	var configs []string
 	for _, comp := range ctx.DirectoryTrees["INSTALLDIR"].Components {
 		if comp.Files[0].Name == "config.json" {

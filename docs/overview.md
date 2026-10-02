@@ -93,7 +93,7 @@ files follow the operations: `main.go` (arguments and the build), `sbom.go`, `en
 | `ir` | Data types representing parsed .msis content |
 | `parser` | XML unmarshaling with validation: unknown attributes and missing required fields are errors |
 | `variables` | Variable dictionary with Handlebars expansion, typed accessors, deprecation and hook warnings |
-| `generator` | Converts IR to WXS XML fragments; component ids and GUIDs (D23), the deprecated-layout checks (D22, D24) |
+| `generator` | Converts IR to WXS XML fragments; ids and GUIDs (D23, D26, D28), the downgrade guard (D27), the deprecated-layout checks (D22, D24) |
 | `registry` | Converts .reg files to WiX registry XML, including `preserve="yes"` |
 | `requirements` | Launch conditions for `<requires>` under `/STANDALONE` |
 | `bundle` | Burn chain XML and the prerequisite registry (VC++, .NET) |
@@ -180,7 +180,7 @@ output, err := ctx.Generate()
 Key responsibilities:
 - **Directory tree building**: Scans source folders, creates WiX Directory elements
 - **Component generation**: One component per file (WiX best practice)
-- **ID generation**: Deterministic GUIDs from the product and the install destination (decisions D23)
+- **ID generation**: Deterministic GUIDs from the product and the install destination (decisions D23); Directory and File ids from where they install (D26); explicit feature ids (D28)
 - **Shortcut handling**: Creates shortcut components with registry keypaths
 - **Registry processing**: Delegates to `registry` package for .reg files
 
@@ -368,17 +368,24 @@ For each `<files>` element:
 
 ### Component ID Generation
 
-Component identity is deterministic and does not depend on where the build ran (decisions D23):
+Identity is deterministic and does not depend on where the build ran:
 
 - A file component's **id** is `CID_` plus a hash of its destination: the root key, the path
   below it and the file name, case-folded. Its **GUID** hashes the product's UpgradeCode plus
-  that destination.
+  that destination (decisions D23).
+- A **File** id is its component's id with `FILE_` for `CID_`. A **Directory** id is `DIR_` plus
+  a hash of the root key and the case-folded path below it; a root's own directory keeps the root
+  key (D26). So one added folder or file renumbers nothing.
 - Where several components install to one destination (#79), each GUID also carries its source
-  path relative to the script's folder. The id disambiguates with a counter.
+  path relative to the script's folder. The id disambiguates with a counter in the order the
+  `<files>` are written, on purpose: WiX sequences files by File id, so that order decides which
+  copy is installed last, which for unversioned files is the copy left on disk (D33, D24).
 - Non-file components (services, shortcuts, environment variables, permissions) hash the
-  UpgradeCode plus a name (`productScopedID`).
+  UpgradeCode plus a name (`productScopedID`); a permission component's name is its directory id.
+- Features are `FEATURE_nnnnn` in the order written, counting only those without an explicit
+  `id` (D28).
 
-So two builds of one script, from any folder, give the same component ids and GUIDs, and two products never
+So two builds of one script, from any folder, give the same ids and GUIDs, and two products never
 share one. `resolveFileGUIDs` assigns the file GUIDs once every file is known.
 
 ### File Exclusion
@@ -610,6 +617,6 @@ msis-3.x architecture follows these principles:
 1. **Pipeline design**: Clear phases (parse → resolve → generate → template → build)
 2. **Separation of concerns**: Each package has one responsibility
 3. **Compatibility**: Same .msis format as 2.x, same templates work
-4. **Determinism**: Same input produces a package identical except for the documented fields (PackageCode, timestamps), from any build folder (D20, D23)
+4. **Determinism**: Same input produces a package identical except for the documented fields (PackageCode, timestamps), from any build folder (D20, D23, D26)
 5. **Minimal dependencies**: a handful of Go modules; scanners and WiX are run, never bundled
 6. **Testability**: Each phase is independently testable

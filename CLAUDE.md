@@ -159,8 +159,8 @@ ids. The one engine difference is the separator — MSI directory properties alr
 backslash (`[INSTALLDIR]App.exe`, no extra `\`), whereas Burn's `[InstallFolder]` does not
 (`[InstallFolder]\App.exe`). `START_EXE` is assigned to `WixShellExecTarget` by an immediate
 property-setting custom action before `WixShellExec` runs, so MSI formats directory refs at launch
-time. It previously required a WiX File Id wrapped as `[#FileId]`, but msis emits opaque ids like
-`FILE_ID00007`, so that form was unusable; the templates no longer wrap the value, so a power user
+time. It previously required a WiX File Id wrapped as `[#FileId]`, but msis emits opaque ids
+(`FILE_ID00007` until 3.0.6, `FILE_<hash>` since, D26), so that form was unusable; the templates no longer wrap the value, so a power user
 can still pass `[#FileId]` explicitly.)
 
 ## Installer hooks & uninstall folder removal (dangerous, gated)

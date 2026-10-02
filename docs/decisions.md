@@ -1051,7 +1051,8 @@ path-derived; this does the same for the rest of the tree.
 - **A file's** id is its component's, with `FILE_` for `CID_`, suffix included. So it is as stable
   as the component id: the destination for a file component (D23), the service name for a
   service's own copy of its executable. The `_1` suffix of a destination two `<files>` share
-  (D24) is still the order they are written in; that is #86.
+  (D24) is still the order they are written in, deliberately: it preserves the copies' sequencing
+  (D33).
 - **A permission component** needed no change of its own: `perm_` plus a stable directory id is
   stable. At a root its key was already the root key, so its GUID did not move. **A
   `<create-folder>`** was keyed on the constant `create_folder` and told apart by a counter; it
@@ -1078,8 +1079,8 @@ Checked by `TestAnAddedFolderOrFileRenumbersNothing`, which fails on the sequenc
 `TestNestedRootNameIsNotDirectoryIdentity`, `TestDirectoryIDIgnoresNameCase`,
 `TestEveryFileIDIsItsComponentsAndUnique` and `TestADirectoryIDCollisionFailsTheBuild`.
 
-**What would reopen this:** patches, which key on File table entries across releases and would
-need #86 first; or a template moving `RemoveExistingProducts` late.
+**What would reopen this:** patches, which key on File table entries across releases; or a
+template moving `RemoveExistingProducts` late.
 
 ---
 
@@ -1462,3 +1463,47 @@ running unelevated so that Burn had to elevate:
 VC++ or .NET prerequisites, which would need the prerequisites marked `PerMachine` (or the per-user
 MSI refused); or a prerequisite whose detection needs a search of another kind, which
 `prerequisiteSearches` is the place for.
+
+---
+
+## D33 — Components sharing one target keep their order-dependent ids: the order decides which copy is installed last
+
+**Settled in:** [#86](https://github.com/gersonkurz/msis/issues/86), 2026-10-02, closed as won't-fix
+on the evidence below.
+**Implemented by:** `internal/generator/context.go` — `func (c *Context) NextComponentID(path string) string`, `func fileIDFor(componentID string) string`
+
+#86 proposed giving the components of a shared destination - two `<files>` installing one target
+in one feature, the override idiom of D24 - ids from the destination plus their relative source,
+as their GUIDs already are (D23). Today they are `CID_<hash>`, `CID_<hash>_1`, ... in the order
+the `<files>` are written, and their File ids follow (D26). Swapping two `<files>` therefore
+renumbers them, which #86 called diff noise.
+
+**It is not noise.** WiX numbers the File table (`File.Sequence`) by File id, not by document
+order. Built with the real wix, ProAKT's override shape - `core\CONFIG`, then `ng\CONFIG`, each
+with its own `CURRENCY.TXT` - written both ways round:
+
+| `<files>` order | ids | Sequence |
+|---|---|---|
+| core, then ng (counters) | core `FILE_<h>`, ng `FILE_<h>_1` | core 1, ng 2 |
+| ng, then core (counters) | ng `FILE_<h>`, core `FILE_<h>_1` | ng 1, core 2 |
+| ng, then core (#86's ids) | core `FILE_3aa1…`, ng `FILE_5fb9…` | core 1, ng 2 |
+
+So with the counters the copy **written last** is installed last, whichever way round the
+`<files>` are written; with #86's ids it would be whichever copy's hash sorts later. T79 found that
+the copy installed later is the one left on disk, for unversioned text after install and after a
+repair of the deleted file. That is what makes "write the override last" work for ProAKT's 32
+overridden currency files, and with #86's ids some of them would silently install the core copy
+instead. The counter is what carries the author's intent into the package.
+
+What this keeps is the **sequencing**. Which copy ends up on disk is still Windows Installer's
+file-replacement rules' decision (D24): T79 measured unversioned files only, and msis promises
+nothing for versioned files or for a repair over an existing, modified file.
+
+`TestTheLaterWrittenOverrideIsSequencedLast` builds the shape both ways with the real wix and
+checks the copy written later has the higher `File.Sequence`; it checks the sequencing, not the
+copy on disk. The generator test that the first-declared copy has the smaller File id guards the
+same rule one level down.
+
+**What would reopen this:** an explicit way to say which copy wins (an attribute, or a rule msis
+enforces). Then the ids could stop carrying the order, and the change would need a VM check of
+the copy on disk.

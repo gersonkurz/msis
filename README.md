@@ -225,7 +225,10 @@ when it is released.
 
 **Unreleased** (next: 3.0.7) — on `main`, not yet tagged or published
 
-**Upgrading products built with an earlier msis:**
+Upgrade and bundle correctness. Issues #85 to #95 are closed, the risky cases run on a VM
+(`todo-testme.md` T85, T87, T89, T90, T93, T95).
+
+**Upgrading products built with an earlier msis** — read this first:
 - **Directory and File ids are derived from where they install** ([#85](../../issues/85),
   decisions D26). They used to be sequence numbers (`DIR_ID00003`, `FILE_ID00007`), so one added
   folder or file renumbered every id after it, and with them every folder-permission component
@@ -243,19 +246,35 @@ when it is released.
   - SBOM file refs do not change; the `msis:msi.fileKey` property does.
   - A regression comparison against a reference build needs the same msis on both sides, as with
     3.0.6's GUID change.
-
 - **An older build is refused instead of breaking the install** ([#89](../../issues/89), D27).
   Windows Installer ignores the 4th version field, so installing 4.2.0.82 over 4.2.0.90 was taken
   as an upgrade. It reported success and left every binary whose version went down missing. msis
   has always behaved this way, back to msis-2.x. Each package now records its full version, and
   a later package refuses to install over a newer one, with "A later version of [ProductName] is
-  already installed". To go back, uninstall first.
+  already installed". To go back, uninstall first. A repair (`msiexec /fa`) recovers an install
+  already broken this way (T89).
   - It protects installs made by 3.0.7-built packages. A package built earlier records nothing,
     so the first 3.0.7 package over it is not checked.
-  - Every package now uses `{{{LAUNCH_CONDITION_SEARCHES}}}`, `{{{LAUNCH_CONDITIONS}}}` and
-    `{{{REGISTRY_ENTRIES}}}`. A custom template without them fails the build; copy them from the
-    shipped template (docs/templates.md).
+- **Rebuild any silent bundle made with 3.0.6 or earlier** ([#95](../../issues/95), D31): it does
+  not start (0x80070490). See *Bundles* below.
+- **`<feature condition="...">` is refused** ([#92](../../issues/92), D29). msis 3 has always
+  ignored it, so the feature installed unconditionally. A script with it now fails to build:
+  remove the attribute, and use `enabled="false"` for an optional feature. `<registry
+  condition>` is a different attribute and is unchanged.
+- **Custom templates need more placeholders.** Every MSI now uses `{{{LAUNCH_CONDITION_SEARCHES}}}`,
+  `{{{LAUNCH_CONDITIONS}}}` and `{{{REGISTRY_ENTRIES}}}` (the downgrade guard). A bundle uses
+  `{{{SEARCHES}}}` once it has a `<search>` or a .NET prerequisite. A bundle template whose
+  standard bootstrapper has `Theme="none"` is refused. A custom template without what it needs
+  fails the build with a message; copy the missing piece from the shipped template
+  (docs/templates.md, docs/Bundle.md).
+- **Known issue: upgrading an install made by a msis-2.x package** ([#91](../../issues/91),
+  closed). msis-2.x numbered the first feature `FEATURE_00002`; msis 3 has always numbered it
+  `FEATURE_00000`. So the first upgrade from a 2.x-built install to any msis 3 package matches
+  features by the wrong ids, once, as in #87. msis does not renumber to 2.x's scheme, which would
+  do the same to every install made by msis 3. msis-2.x was used internally only, and no such
+  installs are expected.
 
+**Features:**
 - **A feature can carry a permanent `id`** ([#87](../../issues/87), D28). Upgrades match
   features by id, and msis numbered them in the order written, so inserting a feature handed
   customers' choices to the wrong features (found by the T85 probe). Features without an `id`
@@ -263,33 +282,33 @@ when it is released.
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+
+**Bundles:**
+- **Silent bundles start** ([#95](../../issues/95), D31). The shipped silent bundle template gave
+  the bootstrapper `Theme="none"`, which ships no theme. Every silent bundle built from it
+  (explicit `<bundle>` or auto-bundle) failed before installing anything. It now uses the
+  standard theme, and its MSI shows no UI of its own. Run it with `/quiet` or `/passive`. Every
+  test run now starts the bundles it builds (`/layout`), not only compiles them.
+- **An `<exe>` can be detected from the registry** ([#90](../../issues/90), D30). A `<search>`
+  in `<bundle>` reads a registry key or value into a Burn variable that an `<exe detect>` tests.
+  `bitness` (the registry view) is required, because the wrong view reinstalls the package on
+  every run. docs/Bundle.md has the WebView2 recipe. `<exe per-machine="yes">` marks a package
+  per-machine; an unmarked one takes the bundle's scope, which is per-machine for a bundle of
+  msis-built MSIs.
 - **The .NET prerequisite is detected** ([#93](../../issues/93), D32). Its detect condition
   tests `NETFRAMEWORK45`, which nothing set, so .NET counted as absent and its installer ran on
   every install. The bundle now reads it from the registry.
-- **Silent bundles start** ([#95](../../issues/95), D31). The shipped silent bundle template gave
-  the bootstrapper `Theme="none"`, which ships no theme. Every silent bundle built from it
-  (explicit `<bundle>` or auto-bundle) failed before installing anything (0x80070490), so
-  **rebuild any silent bundle made with 3.0.6 or earlier**. It now uses the standard theme, and
-  its MSI shows no UI of its own. Run it with `/quiet` or `/passive`. A custom bundle template
-  that still has `Theme="none"` fails the build.
-- **Bundles can detect an `<exe>` from the registry** ([#90](../../issues/90), D30). A
-  `<search>` in `<bundle>` reads a registry key or value into a Burn variable that an
-  `<exe detect>` tests. `bitness` (the registry view) is required, because the wrong view
-  reinstalls the package on every run. `<exe per-machine="yes">` marks a package per-machine. An
-  unmarked one takes the bundle's scope, per-machine for a bundle of msis-built MSIs (#94). docs/Bundle.md has the
-  WebView2 recipe. The bundle templates gained a
-  `{{{SEARCHES}}}` placeholder; a custom bundle template without it fails once a script has a
-  `<search>`.
-- **`<feature condition="...">` is refused** ([#92](../../issues/92), D29). msis 3 has always
-  ignored it, so the feature installed unconditionally. A script with it now fails to build:
-  remove the attribute, and use `enabled="false"` for an optional feature. `<registry
-  condition>` is a different attribute and is unchanged.
-- **Known issue: upgrading an install made by a msis-2.x package** ([#91](../../issues/91),
-  closed). msis-2.x numbered the first feature `FEATURE_00002`; msis 3 has always numbered it
-  `FEATURE_00000`. So the first upgrade from a 2.x-built install to any msis 3 package matches
-  features by the wrong ids, once, as in #87. msis does not renumber to 2.x's scheme, which would
-  do the same to every install made by msis 3. msis-2.x was used internally only, and no such
-  installs are expected.
+
+**Docs, and questions settled without a code change:**
+- The `<exe detect>` examples used `EXISTS()`, which Burn does not have ([#88](../../issues/88)).
+- Prerequisites already run elevated ([#94](../../issues/94), closed, D32). A package without
+  `PerMachine` takes the bundle's scope (T93).
+- When two `<files>` in one feature install one target, the copy written last is installed
+  later ([#86](../../issues/86), closed, D33): WiX sequences files by File id, and their
+  order-dependent ids carry the order, so they stay. For unversioned files that copy was the one
+  left on disk (T79); for versioned files, or a repair over a modified file, Windows Installer's
+  file-replacement rules decide (D24).
+- [docs/decisions.md](docs/decisions.md) gains D26–D33.
 
 **3.0.6** — 2026-09-26 (tag [`v3.0.6`](../../releases/tag/v3.0.6))
 

@@ -75,6 +75,10 @@ What it does **not** catch, and a linter would:
 - Invalid GUIDs in `UPGRADE_CODE`
 - Duplicate shortcut names
 - Recommended-but-unset variables
+- **A feature renumbered between releases.** Positional feature ids (D28) move when a feature is
+  inserted without an `id`, and nothing in one build can see that. A `/DOCTOR` that compares a
+  script against the last shipped MSI's Feature table could, as a heuristic, since titles can be
+  renamed, duplicated or localized. Noted on #87; not filed.
 
 Note that `/DRY-RUN` stops before the build, so build-time checks do not run under it —
 the missing-hook-DLL check (`USE_INSTALLER_HOOKS` without the arch-native DLL) is one, and
@@ -135,6 +139,21 @@ These are explicitly **not** planned for msis:
   applied after the script's own `<set>` elements
 - `/SETUP-WIX`: installs the pinned WiX toolset and its extensions, version-matched
 - WiX 6 **and 7** integration (major version auto-detected; `-acceptEula` added for v7+)
+
+## In progress (3.0.7, unreleased)
+
+On `main`, not yet tagged; the release notes are the README's *Unreleased* entry.
+
+- Directory and File ids derived from where they install, so one added folder renumbers nothing
+  (decisions D26)
+- A downgrade guard: an older build is refused instead of breaking the install, the 4th version
+  field included (D27)
+- Permanent feature ids: `<feature id=...>`, positional numbers skipping features that have one,
+  `/STRICT` requiring them (D28)
+- Bundles: `<search>` reads the registry for an `<exe detect>` (D30); silent bundles start
+  (D31); the .NET prerequisite is detected (D32)
+- `<feature condition>` refused (D29)
+- Every test run starts the bundles it builds (`/layout`), not only compiles them
 
 ## Completed (3.0.6)
 
