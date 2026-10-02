@@ -563,6 +563,7 @@ func processAutoBundle(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 
 	// Generate bundle chain
 	gen := bundle.NewAutoBundleGenerator(vars, workDir, msiPath, prereqs)
+	gen.Silent = setup.Silent
 	// A supplied <requires source=> is verified against the file WiX will bind (#50): the
 	// record's bind paths are WiX's, so the same lookup serves both.
 	gen.ResolveSource = rec.Locate
@@ -855,7 +856,15 @@ func renderBundleTemplate(vars variables.Dictionary, sourceDir, templateFolder, 
 	}
 
 	// Render using raymond (same as MSI templates)
-	return template.RenderString(string(tmplContent), ctx)
+	rendered, err := template.RenderString(string(tmplContent), ctx)
+	if err != nil {
+		return "", err
+	}
+	// A bundle whose standard bootstrapper has no theme does not start (#95, D31).
+	if err := template.CheckBundleBootstrapper(templatePath, rendered); err != nil {
+		return "", err
+	}
+	return rendered, nil
 }
 
 func parseArgs() *cliArgs {

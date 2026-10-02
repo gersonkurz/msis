@@ -1341,3 +1341,61 @@ is #95, older than this change.
 **What would reopen this:** a need for dependent, file or product searches; or a WebView2
 download Microsoft publishes at a version-specific URL, which would allow a built-in
 prerequisite.
+
+---
+
+## D31 — A silent bundle runs the standard bootstrapper with a theme, and its MSI shows no UI of its own
+
+**Settled in:** [#95](https://github.com/gersonkurz/msis/issues/95), 2026-10-02, the product
+owner's go-ahead on the concept, revised after Codex's design review.
+**Implemented by:** `internal/template/bundleba.go` — `func CheckBundleBootstrapper(templatePath, rendered string) error`
+**Implemented by:** `internal/bundle/generator.go` — `func msiUI(packages string, silent bool) string`
+
+T90's first run found that a silent bundle does not start: Burn fails while creating the
+bootstrapper, "BootstrapperApplication.xml manifest is missing wixstdba information"
+(0x80070490). `templates/bundle-silent.wxs` had declared
+`<bal:WixStandardBootstrapperApplication LicenseUrl="" Theme="none"/>` since bundle support was
+added. WiX's `BalCompiler` references no theme payloads for `none`, and accepts it without a
+warning. No silent bundle had been run before; the build tests only compiled them.
+
+**The fix.**
+- The silent template uses `Theme="hyperlinkLicense" SuppressOptionsUI="yes"` with
+  `LicenseUrl="{{LICENSE_URL}}"`. As in msis-2.x's silent bootstrapper, it is the regular theme. An
+  empty URL hides the license link and checkbox, so Install is available at once.
+- A silent bundle's MSI packages carry no `bal:DisplayInternalUICondition='1'` (`msiUI`, in both
+  generators): with it, WixStdBA shows the MSI's full UI in a full run and its reduced UI under
+  `/passive`. That matches what msis-2.x's silent bootstrapper left out.
+- **What silent means:** for unattended deployment. Stock WixStdBA has no declarative always-quiet
+  switch, so the bundle is silent when started with `/quiet` or `/passive`, and shows its window
+  otherwise. The docs said "no UI"; they now say this.
+- Not promised: no Windows Installer dialog under any circumstances. Burn's defaults still permit
+  source-resolution UI, and an `<exe>` package's own UI is its own.
+
+**The guard.** `CheckBundleBootstrapper` reads the rendered bundle with namespaces (comments
+ignored, any prefix for the bal namespace) and refuses a `WixStandardBootstrapperApplication`
+with `Theme="none"`. That is msis policy, stated as such: from the rendered document msis cannot
+prove what a ThemeFile or payloads defined elsewhere would supply. A template keeps a built-in
+theme, and may add a ThemeFile to restyle it. Other bootstrapper applications are left alone. It
+runs after the render, in `renderBundleTemplate`, for explicit and auto-bundles; it is not part of
+the coverage check, which guards CHAIN and SEARCHES (D30).
+
+**Runtime evidence on every Verify.** `cmd/msis/silentbundle_windows_test.go` builds a silent and
+a regular explicit bundle and a silent auto-bundle (with a local stub prerequisite) with the real
+wix, and runs each with `/layout <dir> /quiet`. That creates the bootstrapper (where #95 failed),
+detects, plans a Layout and applies it, without elevation, installing or registering anything. It
+requires the detection and plan of MainPackage, "Apply complete, result: 0x0", and the laid-out
+bundle byte-identical to the built one.
+
+Rejected:
+- an invisible custom theme (WixStdBA would still wait for an Install click unless run quiet or
+  passive);
+- refusing `silent="yes"`;
+- `WixInternalUIBootstrapperApplication`, which shows the MSI's own UI.
+
+The VM probe `testscripts/t95` (todo-testme.md T95) installed and uninstalled both kinds of silent
+bundle on 2026-10-02 (ARM64 VM), with `/quiet` and `/passive`, uninstalling through the bundle.
+Every step passed: the MSI ran at UILevel 2, and the auto-bundle detected the VC++ runtime Present
+and did not run it.
+
+**What would reopen this:** a requirement for a bundle that is silent with no command-line switch,
+which needs a custom bootstrapper application.

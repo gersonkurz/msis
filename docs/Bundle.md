@@ -266,7 +266,7 @@ the installer yourself. A supplied `<exe>` is not checked against a digest the w
 | `MANUFACTURER` | Company name | Required |
 | `MANUFACTURER_URL` | The product creator's web address. Written as the bundle's `AboutUrl` (Programs and Features) and read back by `/SBOM` as the product creator's URL. Burn has no email field, so `MANUFACTURER_EMAIL` reaches only the MSI (#64) | Empty |
 | `UPGRADE_CODE` | Bundle upgrade code (GUID) | Required |
-| `LICENSE_URL` | URL to license agreement | Required for UI bundle |
+| `LICENSE_URL` | URL to license agreement. Without it the bundle shows no license link and no accept checkbox, and Install is available at once | Empty |
 | `LOGO_BOOTSTRAP` | Logo image for bootstrapper UI | `{LOGO_PREFIX}_LogoBootstrap.bmp` |
 | `LOGO_PREFIX` | Prefix for default logo files | Empty (uses WiX defaults) |
 | `PREREQUISITES_FOLDER` | Path to prerequisite installers | `./prerequisites` |
@@ -384,9 +384,9 @@ know* above.
 ### UI Bundle (Default)
 
 Uses WiX Standard Bootstrapper Application with `hyperlinkLicense` theme:
-- Displays license agreement link
+- Displays the license agreement link when `LICENSE_URL` is set
 - Shows installation progress
-- Requires `LICENSE_URL` variable
+- Shows the MSI's own UI (its dialogs, or reduced progress under `/passive`)
 
 ### Silent Bundle
 
@@ -397,7 +397,27 @@ When `silent="true"` on the setup element:
 </setup>
 ```
 
-Uses `none` theme - no UI, suitable for automated deployments.
+Meant for unattended deployment (#95, decisions D31):
+- the same standard bootstrapper and theme, with the Options button hidden and a license link
+  only if `LICENSE_URL` is set;
+- the chained MSI shows **no UI of its own**: msis leaves out `bal:DisplayInternalUICondition`
+  on every MSI package, in an explicit `<bundle>` and in the auto-bundle alike.
+
+It is silent when you start it so: the standard bootstrapper has no switch that forces quiet mode
+from inside the bundle.
+
+```
+setup.exe /quiet /norestart      no UI at all
+setup.exe /passive /norestart    progress only, no questions
+```
+
+Started with no switch, it shows the standard bootstrapper window. The install folder is the
+MSI's default; the bundle does not forward `INSTALLDIR` from its command line to the MSI.
+
+**Bundles built by msis 3.0.6 or earlier from the shipped silent template do not start at all**
+(0x80070490). That template gave the bootstrapper `Theme="none"`, which ships no theme. Rebuild
+them. A custom bundle template that still has `Theme="none"` on
+`WixStandardBootstrapperApplication` now fails the build with a message.
 
 ## Install Chain Order
 

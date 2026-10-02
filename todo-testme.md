@@ -1093,3 +1093,37 @@ round.
 | R8 the HKCU key exists | E32, E64, EKEY, EVAL (ECU skipped) |
 
 The cleanup left no folder, no probe or `Software\msis` key and no ARP entry.
+
+## T95 — silent bundles install and uninstall (#95, D31): DONE 2026-10-02
+
+Why: until 3.0.7 every silent bundle failed to start (0x80070490, T90's first run). D31 gives the
+silent template a real theme and drops the MSI's own UI. `/layout` in the test suite proves the
+bootstrapper starts; this proves the installs.
+
+Probe: `testscripts/t95`. The build side (`uv run t95_silent_probe.py`) builds two silent
+bundles from the working tree:
+- `explicit.exe`: a `<bundle>` chaining an x64 MSI from the regular template, which has UI;
+- `auto.exe`: the auto-bundle of a `<requires type="vcredist" version="2022">` script, with the
+  real, pinned redistributable.
+
+It checks both WXS have the fixed theme and no `DisplayInternalUICondition`.
+
+The VM side (`vm/t95_vm_probe.py`, elevated, unattended) installs and uninstalls each with
+`/quiet` and with `/passive`, uninstalling through the bundle. Each install must:
+- exit 0, with the bundle and the MSI registered and the file installed;
+- run the MSI with UILevel 2 (no UI);
+- for `auto.exe`, detect VC++ Present and never execute it.
+
+Each uninstall must leave neither registered and the file gone. The VC++ runtime must still be
+registered at the end.
+
+### Executed on 2026-10-02, on the product owner's Windows 11 ARM64 VM
+
+Every step passed: `explicit.exe` and `auto.exe`, each installed and uninstalled with `/quiet` and
+then `/passive`.
+- Each install exited 0 with the bundle and its MSI registered and the file installed, and the MSI
+  ran at UILevel 2.
+- `auto.exe` detected the VC++ 2022 x64 redistributable Present and never executed it.
+- Each uninstall, through the bundle, left neither registered and the file gone.
+- The VC++ runtime was still registered at the end, and the cleanup left no probe folder, key or
+  ARP entry.

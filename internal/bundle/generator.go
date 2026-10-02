@@ -609,7 +609,19 @@ func (g *Generator) generateMSIPackages(bundle *ir.Bundle) (string, error) {
 		return "", fmt.Errorf("bundle has no MSI source specified")
 	}
 
-	return sb.String(), nil
+	return msiUI(sb.String(), g.Setup.Silent), nil
+}
+
+// msiUI drops the MSI's own UI from a silent bundle's MSI packages (#95, decisions D31).
+// bal:DisplayInternalUICondition='1' makes WixStdBA show the MSI's full UI in a full run and its
+// reduced UI under /passive; a silent bundle is meant for unattended deployment, so its MSI shows
+// neither, as in msis-2.x's silent bootstrapper. Every MsiPackage the generators write carries the
+// attribute in exactly this form, so removing it here covers every architecture variant.
+func msiUI(packages string, silent bool) string {
+	if !silent {
+		return packages
+	}
+	return strings.ReplaceAll(packages, " bal:DisplayInternalUICondition='1'", "")
 }
 
 // escapeXMLAttr escapes special characters for XML attribute values.
@@ -627,6 +639,7 @@ type AutoBundleGenerator struct {
 	Variables           variables.Dictionary
 	WorkDir             string
 	MSIPath             string            // Path to the generated MSI file
+	Silent              bool              // <setup silent="yes">: the MSI shows no UI of its own (#95, D31)
 	Requirements        []ir.Prerequisite // Prerequisites to install before MSI
 	PrerequisitesFolder string
 
@@ -792,8 +805,8 @@ func (g *AutoBundleGenerator) Generate() (*GeneratedBundle, error) {
 	}
 
 	// Generate MsiPackage for the main MSI
-	chain.WriteString(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s' bal:DisplayInternalUICondition='1'/>\n",
-		escapeXMLAttr(g.MSIPath)))
+	chain.WriteString(msiUI(fmt.Sprintf("      <MsiPackage Id='MainPackage' SourceFile='%s' bal:DisplayInternalUICondition='1'/>\n",
+		escapeXMLAttr(g.MSIPath)), g.Silent))
 
 	return &GeneratedBundle{
 		ChainXML: chain.String(),

@@ -263,6 +263,12 @@ when it is released.
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+- **Silent bundles start** ([#95](../../issues/95), D31). The shipped silent bundle template gave
+  the bootstrapper `Theme="none"`, which ships no theme. Every silent bundle built from it
+  (explicit `<bundle>` or auto-bundle) failed before installing anything (0x80070490), so
+  **rebuild any silent bundle made with 3.0.6 or earlier**. It now uses the standard theme, and
+  its MSI shows no UI of its own. Run it with `/quiet` or `/passive`. A custom bundle template
+  that still has `Theme="none"` fails the build.
 - **Bundles can detect an `<exe>` from the registry** ([#90](../../issues/90), D30). A
   `<search>` in `<bundle>` reads a registry key or value into a Burn variable that an
   `<exe detect>` tests. `bitness` (the registry view) is required, because the wrong view
