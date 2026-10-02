@@ -1051,3 +1051,45 @@ file held its package's version.
 | 3.2 control, inserted without an id | **#87 reproduced**: NewTool local, Debug absent, so the probe tells the two apart |
 
 The final cleanup left no folder, no `Software\msis` key and no ARP entry.
+
+## T90 — a bundle's <search> elements gating <exe> packages (#90, D30): DONE 2026-10-02
+
+Why: `<search>` reads the registry into a Burn variable an `<exe detect>` tests. The semantics
+(`exists` vs `value`, the two registry views, HKCU) are only provable by Burn on a machine.
+
+Probe: `testscripts/t90`. The build side (`uv run t90_search_probe.py`) builds msis from the
+working tree, six stand-in installers (`marker/`, each stamped with its id so WiX's cache ids
+differ, and each writing a marker file when Burn runs it), a tiny MSI, and one bundle, from the regular template, run with `/quiet`. The first run used
+the silent template, and that bundle did not start at all (0x80070490, #95).
+The bundle has six searches gating the six exes, including the docs' WebView2 recipe with
+`per-machine="yes"`. The build side checks the WXS carries six searches and one per-machine
+package.
+
+The VM side (`vm/t90_vm_probe.py`, elevated, unattended) runs eight registry states against the
+probe's own keys: none; each view alone; a value present and absent under an existing key;
+`0.0.0.0`, an empty value and a positive version; a DWORD 0; the HKCU key. Each exe must have run
+exactly when Burn's log says it detected the exe Absent, and exactly when the documented semantics
+predict. WebView2 is skipped when the machine-wide runtime is registered, which the probe reads
+directly.
+
+Not covered: other accounts, SYSTEM, WiX 7, and runtime evidence of elevation.
+
+### Executed on 2026-10-02, on the product owner's Windows 11 ARM64 VM
+
+The machine-wide WebView2 runtime, read directly: `pv = 154.0.4258.48` (HKLM, 32-bit view only).
+Every round passed. Each exe ran exactly when Burn's log said it detected the exe Absent, and
+exactly when the documented semantics predict. EWV, the WebView2 recipe, was skipped in every
+round.
+
+| Round | Ran |
+|---|---|
+| R1 nothing set | E32, E64, ECU, EKEY, EVAL |
+| R2 flag in the 32-bit view only | E64, ECU, EKEY, EVAL (E32 skipped: the views are separate) |
+| R3 flag in the 64-bit view only | E32, ECU, EVAL (E64, EKEY skipped) |
+| R4 ver = 1.2.3, no flag | E32, E64, ECU, EKEY (EVAL skipped; E32 ran: a key without the value) |
+| R5 ver = 0.0.0.0 | all five |
+| R6 ver empty | all five |
+| R7 flag = DWORD 0 | E64, ECU, EKEY, EVAL (E32 skipped: exists counts a 0) |
+| R8 the HKCU key exists | E32, E64, EKEY, EVAL (ECU skipped) |
+
+The cleanup left no folder, no probe or `Software\msis` key and no ARP entry.

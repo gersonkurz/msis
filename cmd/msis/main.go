@@ -766,6 +766,9 @@ func processBundleFile(setup *ir.Setup, vars variables.Dictionary, workDir, temp
 	if err != nil {
 		return fmt.Errorf("generating bundle: %w", err)
 	}
+	for _, w := range bundleOutput.Warnings {
+		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
+	}
 
 	prereqCount := len(setup.Bundle.Prerequisites)
 	exeCount := len(setup.Bundle.ExePackages)
@@ -842,9 +845,13 @@ func renderBundleTemplate(vars variables.Dictionary, sourceDir, templateFolder, 
 	if abs, err := filepath.Abs(sourceDir); err == nil {
 		absSource = abs
 	}
-	ctx, logoWarnings := template.BuildBundleContext(vars, bundleOutput.ChainXML, absSource, customTemplates, templateFolder)
+	ctx, logoWarnings := template.BuildBundleContext(vars, bundleOutput.ChainXML, bundleOutput.SearchXML, absSource, customTemplates, templateFolder)
 	for _, w := range logoWarnings {
 		fmt.Printf("  %s\n", cli.Warning("Warning: "+w))
+	}
+	// A template with nowhere to put the chain or the searches fails, as an MSI template does (#90, D30).
+	if err := template.CheckBundleCoverage(templatePath, string(tmplContent), ctx, bundleOutput.ChainXML, bundleOutput.SearchXML); err != nil {
+		return "", err
 	}
 
 	// Render using raymond (same as MSI templates)

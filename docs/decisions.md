@@ -1268,3 +1268,76 @@ attribute, emitted as the registry component's condition, and is unchanged.
 **What would reopen this:** a real need for conditionally available features. That would be
 designed fresh, with an unambiguous name, the upgrade and uninstall guards, and a VM probe, not by
 restoring 2.x's semantics.
+
+---
+
+## D30 — A bundle reads the registry through `<search>`; `bitness` is required, searches are independent
+
+**Settled in:** [#90](https://github.com/gersonkurz/msis/issues/90), 2026-10-02, the product
+owner's decision on the concept, revised after Codex's design review.
+**Implemented by:** `internal/bundle/searches.go` — `func checkSearches(bundle *ir.Bundle) (warnings []string, err error)`, `func generateSearches(bundle *ir.Bundle) string`, `var burnBuiltins`, `var templateVariables`
+**Implemented by:** `internal/parser/parser.go` — `func parseSearch(t xml.StartElement) (ir.BundleSearch, error)`
+**Implemented by:** `internal/template/renderer.go` — `func CheckBundleCoverage(`
+
+An `<exe detect>` is a Burn condition, and a Burn condition can only test variables. Until 3.0.7
+the only way to set one from the registry was to fork a bundle template. Example: the WebView2
+Runtime, whose machine-wide registration on the product owner's Windows 11 ARM64 VM sits only in
+HKLM's 32-bit view.
+
+**The element.** `<search variable root key [value] [result] bitness>` inside `<bundle>` becomes a
+`util:RegistrySearch` in the templates' `{{{SEARCHES}}}` placeholder, directly under `<Bundle>`.
+It is at bundle level, not nested in `<exe>`, because Burn variables are global.
+- msis always writes `Result` and `Bitness` out. WiX's defaults differ (Result defaults to
+  `value`; the default view follows the engine, an x86 Burn).
+- `bitness` (`32` → `always32`, `64` → `always64`) is required: the wrong view never finds the
+  key, and the package is installed on every run.
+- What each `result`/`value` combination sets is documented in docs/Bundle.md. A value search
+  that finds nothing leaves the variable unset.
+
+**The checks.** The parser checks every attribute and refuses unknown ones, since a misspelt
+`bitness` or `result` would silently read the wrong thing. The bundle generator refuses a
+variable that is:
+- a Burn built-in;
+- starting with `Wix`;
+- one the shipped templates or msis's prerequisites use (including `NETFRAMEWORK45`, which the
+  .NET prerequisite tests without anything setting it, #93);
+- set twice. Burn names are case-insensitive, so the comparisons are too.
+
+It warns about a search no `<exe>` mentions in `detect` or `args`, not claiming it is unused,
+since a custom template may consume it.
+
+**Searches are independent.** Burn runs searches before package detection, but document order is
+not an ordering contract, so a search cannot use another's result. That would need `After=`,
+which msis does not offer.
+
+**Coverage.** The bundle render now gets the template coverage check MSI templates have, for
+`CHAIN` and `SEARCHES`: a custom bundle template with nowhere to put content the script generated
+fails.
+
+**`<exe per-machine="yes">`** writes `PerMachine='yes'`, so Burn runs the package elevated. A
+machine-wide installer such as WebView2's needs it. Without the attribute nothing is emitted, as
+before. That prerequisites never carry `PerMachine` either is #94.
+
+**The auto-bundle** built from `<requires>` carries no `<exe>` or `<search>`, and is unchanged.
+
+**Rejected:**
+- a built-in `webview2` prerequisite: Microsoft publishes its installers as evergreen links, which
+  D5's pinning (a version-specific URL and SHA-256) does not accept;
+- nesting `<search>` in `<exe>`;
+- dependent searches;
+- file and product searches, for now.
+
+The VM probe `testscripts/t90` (todo-testme.md T90) checked it on 2026-10-02 (ARM64 VM), in eight
+registry states against six exes. Every round passed:
+- the two views are separate;
+- `exists` with a value name counts a value holding 0, and is false for a key without the value;
+- `value` with `> v0.0.0.0` is false for `0.0.0.0`, an empty value and a missing one;
+- HKCU is read;
+- the WebView2 recipe skipped the runtime the machine has.
+
+The probe's first run used the silent bundle template, and the bundle did not start at all; that
+is #95, older than this change.
+
+**What would reopen this:** a need for dependent, file or product searches; or a WebView2
+download Microsoft publishes at a version-specific URL, which would allow a built-in
+prerequisite.

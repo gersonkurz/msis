@@ -129,7 +129,7 @@ func TestBuildBundleContextPrefix(t *testing.T) {
 	vars := variables.New()
 	vars["LOGO_PREFIX"] = "Acme"
 
-	ctx, warnings := BuildBundleContext(vars, "<MsiPackage SourceFile='x.msi'/>", src, "", "")
+	ctx, warnings := BuildBundleContext(vars, "<MsiPackage SourceFile='x.msi'/>", "", src, "", "")
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}
@@ -165,7 +165,7 @@ func TestBuildBundleContextExplicitBootstrap(t *testing.T) {
 	vars := variables.New()
 	vars["LOGO_BOOTSTRAP"] = "brand.png"
 
-	ctx, warnings := BuildBundleContext(vars, "", src, "", "")
+	ctx, warnings := BuildBundleContext(vars, "", "", src, "", "")
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
 	}

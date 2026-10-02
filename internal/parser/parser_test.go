@@ -1160,3 +1160,42 @@ func TestFeatureConditionIsRefused(t *testing.T) {
 		t.Errorf("<registry condition> must still parse: %v", err)
 	}
 }
+
+// TestParseBundleSearch (#90, D30): every attribute reaches the IR, result defaults to exists,
+// and what would silently read the wrong thing is refused: an unknown attribute, a missing or
+// wrong bitness, a bad root, result or variable name.
+func TestParseBundleSearch(t *testing.T) {
+	s, err := ParseBytes([]byte(`<setup><bundle>
+		<search variable="WV" root="HKLM" key="SOFTWARE\X" value="pv" result="value" bitness="32"/>
+		<search variable="K" root="HKCU" key="Software\Y" bitness="64"/>
+		<exe source="a.exe" detect="WV" per-machine="yes"/><exe source="b.exe"/>
+		<msi source="app.msi"/></bundle></setup>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ir.BundleSearch{
+		{Variable: "WV", Root: "HKLM", Key: `SOFTWARE\X`, Value: "pv", Result: "value", Bitness: "32"},
+		{Variable: "K", Root: "HKCU", Key: `Software\Y`, Result: "exists", Bitness: "64"},
+	}
+	if len(s.Bundle.Searches) != 2 || s.Bundle.Searches[0] != want[0] || s.Bundle.Searches[1] != want[1] {
+		t.Errorf("searches = %+v", s.Bundle.Searches)
+	}
+	if !s.Bundle.ExePackages[0].PerMachine || s.Bundle.ExePackages[1].PerMachine {
+		t.Errorf("per-machine = %v, %v", s.Bundle.ExePackages[0].PerMachine, s.Bundle.ExePackages[1].PerMachine)
+	}
+	for search, mustSay := range map[string]string{
+		`<search variable="V" root="HKLM" key="K" bitness="32" view="64"/>`:        "unknown attribute 'view'",
+		`<search variable="V" root="HKLM" key="K"/>`:                               "bitness is required",
+		`<search variable="V" root="HKLM" key="K" bitness="always32"/>`:            "bitness is required",
+		`<search variable="V" root="HKCR" key="K" bitness="32"/>`:                  "root must be HKLM or HKCU",
+		`<search variable="V" root="HKLM" key="K" result="version" bitness="32"/>`: "result must be exists or value",
+		`<search variable="1V" root="HKLM" key="K" bitness="32"/>`:                 "variable is required",
+		`<search root="HKLM" key="K" bitness="32"/>`:                               "variable is required",
+		`<search variable="V" root="HKLM" bitness="32"/>`:                          "key is required",
+	} {
+		_, err := ParseBytes([]byte(`<setup><bundle>` + search + `<msi source="a.msi"/></bundle></setup>`))
+		if err == nil || !strings.Contains(err.Error(), mustSay) {
+			t.Errorf("%s: want an error saying %q, got %v", search, mustSay, err)
+		}
+	}
+}

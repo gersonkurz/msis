@@ -274,7 +274,9 @@ func locateSupplied(source string, resolve func(string) (string, bool), workDir 
 
 // GeneratedBundle holds the generated bundle XML fragments.
 type GeneratedBundle struct {
-	ChainXML string // <Chain> content with ExePackage and MsiPackage elements
+	ChainXML  string   // <Chain> content with ExePackage and MsiPackage elements
+	SearchXML string   // util:RegistrySearch elements for <Bundle> (#90, D30); empty for an auto-bundle
+	Warnings  []string // build-time diagnostics for main to print
 }
 
 // Generate produces the bundle chain XML.
@@ -285,6 +287,11 @@ func (g *Generator) Generate() (*GeneratedBundle, error) {
 
 	bundle := g.Setup.Bundle
 	var chain strings.Builder
+
+	searchWarnings, err := checkSearches(bundle)
+	if err != nil {
+		return nil, err
+	}
 
 	// Generate prerequisite packages
 	for i, prereq := range bundle.Prerequisites {
@@ -309,7 +316,9 @@ func (g *Generator) Generate() (*GeneratedBundle, error) {
 	chain.WriteString(msiXML)
 
 	return &GeneratedBundle{
-		ChainXML: chain.String(),
+		ChainXML:  chain.String(),
+		SearchXML: generateSearches(bundle),
+		Warnings:  searchWarnings,
 	}, nil
 }
 
@@ -495,6 +504,11 @@ func (g *Generator) generateExePackage(exe ir.ExePackage) string {
 	}
 	if exe.InstallArgs != "" {
 		sb.WriteString(fmt.Sprintf(" InstallArguments='%s'", escapeXMLAttr(exe.InstallArgs)))
+	}
+	// Burn runs a per-machine package in its elevated engine (#90, D30). Not emitted otherwise,
+	// so an <exe> without per-machine= is exactly what it was.
+	if exe.PerMachine {
+		sb.WriteString(" PerMachine='yes'")
 	}
 
 	sb.WriteString(" Permanent='yes' Vital='yes'/>\n")

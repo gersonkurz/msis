@@ -166,6 +166,7 @@ Add custom executables to the install chain:
 
 ```xml
 <bundle>
+  <search variable="CustomAppInstalled" root="HKLM" key="SOFTWARE\CustomApp" bitness="64"/>
   <exe id="CustomSetup" source="custom-setup.exe"
        detect="CustomAppInstalled"
        args="/silent"/>
@@ -183,26 +184,78 @@ Attributes:
   without complaint and fails only on the target machine. Without `detect`, Burn cannot tell the
   package is already there, so it runs on every install of the bundle.
 - `args` - Command-line arguments for silent install (optional)
+- `per-machine` - `yes` runs the package in Burn's elevated engine, as an installer that
+  installs for the whole machine needs (optional; default `no`, per-user, as before) (#90,
+  decisions D30)
 
-**Detecting from the registry.** A Burn condition can only test variables, so registry state
-must first be read into one by a `util:RegistrySearch`. msis has no element for declaring one
-for an `<exe>` today. Add it in a custom bundle template: copy `templates/bundle.wxs` (or
-`bundle-silent.wxs` for a silent bundle) into your `/CUSTOMTEMPLATES` folder and declare the
-search next to the built-in ones:
+### Detecting from the registry: `<search>`
+
+A Burn condition can only test variables, so registry state is first read into one. A `<search>`
+inside `<bundle>` does that: it becomes a `util:RegistrySearch` that sets a Burn variable
+before Burn decides what to install (#90, decisions D30).
+
+| Attribute | |
+|---|---|
+| `variable` | The Burn variable it sets (required). A letter or underscore, then letters, digits and underscores. Not a Burn built-in (`VersionNT64`, `NativeMachine`, ...), not a name starting with `Wix`, not one the bundle templates use (`VcppRuntimeX64Installed`, `InstallFolder`, `NETFRAMEWORK45`, ...), and unique. |
+| `root` | `HKLM` or `HKCU` (required) |
+| `key` | The registry key (required), without `WOW6432Node`: `bitness` chooses the view |
+| `value` | The value name (optional) |
+| `result` | `exists` (default) or `value` |
+| `bitness` | `32` or `64` (required): which registry view is read |
+
+What each combination sets:
+
+| `result` | `value` | The variable is |
+|---|---|---|
+| `exists` | omitted | 1 if the key exists, else 0 |
+| `exists` | given | 1 if that value exists, whatever it holds (a DWORD 0 counts as existing), else 0 |
+| `value` | given | the value's data; left **unset** if there is none |
+| `value` | omitted | the key's default (unnamed) value; unset if there is none |
+
+- **`bitness` is required**, because the wrong view is how a prerequisite gets installed on
+  every run. On 64-bit Windows a 32-bit installer writes under `WOW6432Node`, which
+  `bitness="32"` reads; `bitness="64"` reads what 64-bit installers write.
+- **A `REG_SZ` is a string.** To compare it as a version, compare it with a version literal:
+  `MyVersion >= v2.1` (the `v` makes Burn compare versions); `MyVersion >= "2.1"` compares
+  strings.
+- **Searches are independent.** Burn runs them before it detects packages, but their order in
+  the script is no guarantee, so one search cannot use another's result.
+- **A search no `<exe>` refers to** (in `detect` or `args`) gets a warning, since a misspelt
+  name would leave the package undetected. A custom bundle template may use the variable
+  legitimately; the warning says only what this script shows.
+- The searches go into the bundle templates' `{{{SEARCHES}}}` placeholder. A custom bundle template
+  without it fails the build when the script has a search.
+- A condition over Burn's built-in variables (`VersionNT64`, `NativeMachine`, ...) needs no
+  search. The built-in VC++ detection works like a search: the shipped templates declare
+  `VcppRuntimeX64Installed` and the others, and the `vcredist` prerequisite tests them.
+
+### Example: the WebView2 Runtime, machine-wide
+
+Microsoft's rule: the runtime is installed if `pv` under its EdgeUpdate client key exists, is
+not empty and is above `0.0.0.0`. On 64-bit Windows the machine-wide key sits in the 32-bit
+view ([Microsoft](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution#detect-if-a-webview2-runtime-is-already-installed)).
 
 ```xml
-<!-- Sets CustomAppInstalled when HKLM\SOFTWARE\CustomApp exists -->
-<util:RegistrySearch Id="CustomAppSearch" Variable="CustomAppInstalled"
-    Root="HKLM" Key="SOFTWARE\CustomApp" Result="exists" Bitness="always64"/>
+<bundle>
+  <search variable="WebView2Machine" root="HKLM" bitness="32" value="pv" result="value"
+          key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"/>
+  <exe id="WebView2" source="MicrosoftEdgeWebview2Setup.exe" args="/silent /install"
+       per-machine="yes" detect="WebView2Machine &gt; v0.0.0.0"/>
+  <msi source="MyApp.msi"/>
+</bundle>
 ```
 
-`detect="CustomAppInstalled"` then skips the package where the key exists. `Bitness="always64"`
-reads the 64-bit registry view, where a 64-bit installer writes. For a key that a 32-bit
-installer writes (it lands under `WOW6432Node`), use `Bitness="always32"`. With the wrong view the
-search never finds the key, and the package is installed again every time. The built-in VC++
-detection works the same way: the shipped template declares `VcppRuntimeX64Installed` and the
-others, and the `vcredist` prerequisite's detect condition tests them. A condition over Burn's
-built-in variables (`VersionNT64`, `NativeMachine`, ...) needs no search.
+This detects only a machine-wide runtime, and `per-machine="yes"` installs one, elevated, for
+every user. Microsoft also registers a per-user runtime under
+`HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`. Accepting
+that one too (`OR WebView2User > v0.0.0.0`, from a second search) is right only when the runtime
+is needed just for the user running setup: it is the HKCU of whoever runs the bundle, so a
+per-user runtime found there would skip the machine-wide install other users need.
+
+msis has no built-in `webview2` prerequisite. Microsoft publishes the WebView2 installers as
+evergreen links, which msis's prerequisite pinning (decisions D5) does not accept, so you supply
+the installer yourself. A supplied `<exe>` is not checked against a digest the way
+`<prerequisite source= sha256=>` is.
 
 ## Bundle Variables
 
@@ -384,8 +437,8 @@ The bundle uses WiX Burn conditions to select the correct packages:
     <!-- Install .NET Framework 4.8 if needed -->
     <prerequisite type="netfx" version="4.8"/>
 
-    <!-- Custom prerequisite; DatabaseInstalled comes from a util:RegistrySearch in a
-         custom bundle template (see Custom Executable Packages) -->
+    <!-- Custom prerequisite, skipped where its registry key exists -->
+    <search variable="DatabaseInstalled" root="HKLM" key="SOFTWARE\MyCompany\Database" bitness="64"/>
     <exe id="DatabaseSetup" source="db-setup.exe"
          detect="DatabaseInstalled"
          args="/quiet"/>

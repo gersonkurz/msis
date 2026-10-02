@@ -190,6 +190,15 @@ var generatedContentHint = map[string]string{
 	"LAUNCH_CONDITION_SEARCHES": "the package could not see the version already installed, so the downgrade guard (decisions D27) could not refuse an older build",
 	"REGISTRY_ENTRIES":          "the imported .reg values, and the version record the next package's downgrade guard reads (decisions D27), would be missing from the package",
 	"FEATURES":                  "the package would contain no features at all",
+	"CHAIN":                     "the bundle would chain no packages",
+	"SEARCHES":                  "the <search> elements would be missing, so the <exe> detect conditions testing their variables would never be true (decisions D30)",
+}
+
+// CheckBundleCoverage is checkTemplateCoverage for a bundle template (#90, D30): a template
+// with nowhere to put the chain or the script's searches fails, rather than building a bundle
+// without them.
+func CheckBundleCoverage(templatePath, templateContent string, ctx map[string]interface{}, chainXML, searchXML string) error {
+	return checkTemplateCoverage(templatePath, templateContent, ctx, map[string]string{"CHAIN": chainXML, "SEARCHES": searchXML})
 }
 
 // xmlComment matches an XML comment in rendered output. Content substituted inside one is

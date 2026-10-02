@@ -84,12 +84,14 @@ func ResolveLogos(vars variables.Dictionary, names []string, sourceDir, customDi
 // prerequisite CHAIN, and resolved logo branding (LOGO_BOOTSTRAP, via explicit value or LOGO_PREFIX).
 // It returns the context and any logo warnings for the caller to surface. This is the bundle
 // counterpart of the MSI's buildContext, and the reason LOGO_PREFIX now works for bundles too.
-func BuildBundleContext(vars variables.Dictionary, chainXML, sourceDir, customDir, templateDir string) (map[string]interface{}, []string) {
-	ctx := make(map[string]interface{}, len(vars)+2)
+func BuildBundleContext(vars variables.Dictionary, chainXML, searchXML, sourceDir, customDir, templateDir string) (map[string]interface{}, []string) {
+	ctx := make(map[string]interface{}, len(vars)+3)
 	for k, v := range vars {
 		ctx[k] = v
 	}
+	// Set after the user's variables, so that a variable of the same name cannot replace them.
 	ctx["CHAIN"] = chainXML
+	ctx["SEARCHES"] = searchXML
 
 	logos := ResolveLogos(vars, BundleLogoVars, sourceDir, customDir, templateDir)
 	for name, value := range logos.Values {

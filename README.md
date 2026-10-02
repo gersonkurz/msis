@@ -263,6 +263,13 @@ when it is released.
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+- **Bundles can detect an `<exe>` from the registry** ([#90](../../issues/90), D30). A
+  `<search>` in `<bundle>` reads a registry key or value into a Burn variable that an
+  `<exe detect>` tests. `bitness` (the registry view) is required, because the wrong view
+  reinstalls the package on every run. `<exe per-machine="yes">` runs an installer elevated, for
+  the whole machine. docs/Bundle.md has the WebView2 recipe. The bundle templates gained a
+  `{{{SEARCHES}}}` placeholder; a custom bundle template without it fails once a script has a
+  `<search>`.
 - **`<feature condition="...">` is refused** ([#92](../../issues/92), D29). msis 3 has always
   ignored it, so the feature installed unconditionally. A script with it now fails to build:
   remove the attribute, and use `enabled="false"` for an optional feature. `<registry

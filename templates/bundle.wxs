@@ -46,6 +46,8 @@
         Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\arm64" Value="Installed"
         Result="exists" Bitness="always64"/>
 
+    <!-- The script's <search> elements (#90, decisions D30): registry searches setting Burn variables for <exe detect> -->
+{{{SEARCHES}}}
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication LicenseUrl="{{LICENSE_URL}}"{{#if LOGO_BOOTSTRAP}} LogoFile="{{LOGO_BOOTSTRAP}}"{{/if}} Theme="hyperlinkLicense" SuppressOptionsUI="yes"/>
     </BootstrapperApplication>

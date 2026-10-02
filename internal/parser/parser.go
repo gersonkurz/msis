@@ -149,6 +149,7 @@ type xmlBundle struct {
 	Prerequisites []xmlPrerequisite
 	MSI           *xmlBundleMSI
 	ExePackages   []xmlExePackage
+	Searches      []ir.BundleSearch
 }
 
 type xmlPrerequisite struct {
@@ -170,6 +171,7 @@ type xmlExePackage struct {
 	Source          string `xml:"source,attr"`
 	DetectCondition string `xml:"detect,attr"`
 	InstallArgs     string `xml:"args,attr"`
+	PerMachine      string `xml:"per-machine,attr"`
 }
 
 // xmlSBOM represents a supplied component SBOM: <sbom source="..." for="..."/>
@@ -658,6 +660,15 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 					return fmt.Errorf("<exe> requires 'source' attribute")
 				}
 				b.ExePackages = append(b.ExePackages, exe)
+			case "search":
+				search, err := parseSearch(t)
+				if err != nil {
+					return err
+				}
+				if err := d.Skip(); err != nil {
+					return err
+				}
+				b.Searches = append(b.Searches, search)
 			default:
 				return fmt.Errorf("unknown element <%s> in <bundle>", t.Name.Local)
 			}
@@ -665,6 +676,48 @@ func (b *xmlBundle) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 			return nil
 		}
 	}
+}
+
+// searchVariablePattern is a Burn variable name as <search> accepts it.
+var searchVariablePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// parseSearch reads a <search> (#90, D30): every attribute checked, unknown ones refused, since
+// a misspelt one would silently change which registry view or value is read. The bundle
+// generator checks what needs the whole bundle (reserved and duplicate variables).
+func parseSearch(t xml.StartElement) (ir.BundleSearch, error) {
+	s := ir.BundleSearch{Result: "exists"}
+	for _, attr := range t.Attr {
+		switch attr.Name.Local {
+		case "variable":
+			s.Variable = attr.Value
+		case "root":
+			s.Root = attr.Value
+		case "key":
+			s.Key = attr.Value
+		case "value":
+			s.Value = attr.Value
+		case "result":
+			s.Result = attr.Value
+		case "bitness":
+			s.Bitness = attr.Value
+		default:
+			return s, fmt.Errorf("unknown attribute '%s' on <search>", attr.Name.Local)
+		}
+	}
+	switch {
+	case !searchVariablePattern.MatchString(s.Variable):
+		return s, fmt.Errorf(`<search variable=%q>: variable is required, a letter or underscore then letters, digits and underscores`, s.Variable)
+	case s.Root != "HKLM" && s.Root != "HKCU":
+		return s, fmt.Errorf(`<search variable=%q>: root must be HKLM or HKCU, not %q`, s.Variable, s.Root)
+	case strings.TrimSpace(s.Key) == "":
+		return s, fmt.Errorf(`<search variable=%q>: key is required`, s.Variable)
+	case s.Result != "exists" && s.Result != "value":
+		return s, fmt.Errorf(`<search variable=%q>: result must be exists or value, not %q`, s.Variable, s.Result)
+	case s.Bitness != "32" && s.Bitness != "64":
+		return s, fmt.Errorf(`<search variable=%q>: bitness is required and must be 32 or 64 (which registry view is read), not %q; `+
+			`a search of the wrong view never finds the key, and the package is installed again every time`, s.Variable, s.Bitness)
+	}
+	return s, nil
 }
 
 // UnmarshalXML for xmlSetup to preserve item order
@@ -1033,8 +1086,10 @@ func convertSetup(raw *xmlSetup) (*ir.Setup, error) {
 				Source:          e.Source,
 				DetectCondition: e.DetectCondition,
 				InstallArgs:     e.InstallArgs,
+				PerMachine:      parseMsisBoolDefault(e.PerMachine, false),
 			})
 		}
+		bundle.Searches = raw.Bundle.Searches
 
 		setup.Bundle = bundle
 	}

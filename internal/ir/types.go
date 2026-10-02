@@ -184,6 +184,18 @@ type Bundle struct {
 	Prerequisites []Prerequisite
 	MSI           *BundleMSI
 	ExePackages   []ExePackage
+	Searches      []BundleSearch // registry searches setting Burn variables, in document order (#90, D30)
+}
+
+// BundleSearch represents: <search variable="..." root="HKLM" key="..." value="..." result="exists" bitness="32"/>
+// It becomes a util:RegistrySearch that sets a Burn variable, which an <exe detect> can test.
+type BundleSearch struct {
+	Variable string // the Burn variable it sets
+	Root     string // HKLM or HKCU
+	Key      string
+	Value    string // the value name; "" for the key itself (exists) or its default value (value)
+	Result   string // exists or value
+	Bitness  string // 32 or 64: which registry view is read
 }
 
 func (b Bundle) ItemType() string { return "bundle" }
@@ -213,6 +225,7 @@ type ExePackage struct {
 	Source          string
 	DetectCondition string
 	InstallArgs     string
+	PerMachine      bool // per-machine="yes": Burn runs it elevated (#90, D30); default per-user, as before
 }
 
 // CreateFolder represents: <create-folder target="[APPDATADIR]MyApp\Logs"/>

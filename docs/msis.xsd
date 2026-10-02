@@ -247,6 +247,51 @@
     <xs:attribute name="source" type="xs:string" use="required"/>
     <xs:attribute name="detect" type="xs:string" use="optional"/>
     <xs:attribute name="args" type="xs:string" use="optional"/>
+    <xs:attribute name="per-machine" type="msisBoolean" use="optional">
+      <xs:annotation><xs:documentation>
+        yes: Burn runs the package in its elevated engine, as a machine-wide installer needs
+        (#90, decisions D30). Default no (per-user), as before.
+      </xs:documentation></xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
+  <xs:complexType name="BundleSearchType">
+    <xs:annotation><xs:documentation>
+      A registry search that sets a Burn variable for an exe's detect condition (#90, decisions
+      D30). It becomes a util:RegistrySearch. Searches are independent: none may use another's
+      result.
+    </xs:documentation></xs:annotation>
+    <xs:attribute name="variable" use="required">
+      <xs:annotation><xs:documentation>The Burn variable it sets. Not a Burn built-in, not a
+        name starting with Wix, not one the bundle templates use; unique.</xs:documentation></xs:annotation>
+      <xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[A-Za-z_][A-Za-z0-9_]*"/></xs:restriction></xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="root" use="required">
+      <xs:simpleType><xs:restriction base="xs:string">
+        <xs:enumeration value="HKLM"/><xs:enumeration value="HKCU"/>
+      </xs:restriction></xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="key" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>The value name. Without it, result="exists" tests the key,
+        and result="value" reads the key's default (unnamed) value.</xs:documentation></xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="result" use="optional">
+      <xs:annotation><xs:documentation>exists (default): 1 when the key or value exists, else 0.
+        value: the value's data (a REG_SZ is a string; compare a version with a v-literal, e.g.
+        X > v1.2). A value search that finds nothing leaves the variable unset.</xs:documentation></xs:annotation>
+      <xs:simpleType><xs:restriction base="xs:string">
+        <xs:enumeration value="exists"/><xs:enumeration value="value"/>
+      </xs:restriction></xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="bitness" use="required">
+      <xs:annotation><xs:documentation>Which registry view is read: 32 (on 64-bit Windows, what
+        32-bit installers write, under WOW6432Node) or 64. A search of the wrong view never finds
+        the key, and the package is installed again every time.</xs:documentation></xs:annotation>
+      <xs:simpleType><xs:restriction base="xs:string">
+        <xs:enumeration value="32"/><xs:enumeration value="64"/>
+      </xs:restriction></xs:simpleType>
+    </xs:attribute>
   </xs:complexType>
 
   <xs:complexType name="BundleType">
@@ -255,6 +300,7 @@
         <xs:element name="prerequisite" type="PrerequisiteType"/>
         <xs:element name="msi" type="BundleMsiType"/>
         <xs:element name="exe" type="BundleExeType"/>
+        <xs:element name="search" type="BundleSearchType"/>
       </xs:choice>
     </xs:sequence>
     <!-- Legacy shorthand attributes (still supported) -->

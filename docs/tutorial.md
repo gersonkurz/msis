@@ -938,17 +938,17 @@ For prerequisites not in the built-in list:
 
 The `detect` attribute is a Burn condition: where it is true, the prerequisite counts as
 installed and is skipped. It tests Burn variables, not the registry directly, so
-`CustomRuntimeInstalled` has to be set by a `util:RegistrySearch`, declared in a custom bundle
-template:
+`CustomRuntimeInstalled` is set by a `<search>` in the same `<bundle>`:
 
 ```xml
-<util:RegistrySearch Id="CustomRuntimeSearch" Variable="CustomRuntimeInstalled"
-    Root="HKLM" Key="SOFTWARE\CustomRuntime" Result="exists" Bitness="always64"/>
+<search variable="CustomRuntimeInstalled" root="HKLM" key="SOFTWARE\CustomRuntime" bitness="64"/>
 ```
 
-[Bundle.md](Bundle.md#custom-executable-packages) shows where that goes, and when a 32-bit
-installer's key needs `Bitness="always32"` instead. Without `detect`, the
-prerequisite runs on every install.
+`bitness` says which registry view is read: `64` for a key a 64-bit installer writes, `32` for one
+a 32-bit installer writes (under `WOW6432Node`). [Bundle.md](Bundle.md#detecting-from-the-registry-search)
+lists what `<search>` can read, and has the WebView2 recipe. An installer that installs for the
+whole machine needs `per-machine="yes"` on its `<exe>`. Without `detect`, the prerequisite runs on
+every install.
 
 For more details on prerequisites, custom packages, and bundle variables, see [Bundle.md](Bundle.md).
 
