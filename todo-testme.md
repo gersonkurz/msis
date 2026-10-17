@@ -1170,3 +1170,19 @@ The #94 change was reverted; the probe's expectations were corrected to these fa
 
 Both bundles installed and uninstalled cleanly, through UAC prompts from an unelevated shell. The
 machine was clean afterwards: no markers, no probe folder, no `Software\msis` key, no ARP entry.
+
+## T96 — a service running under `account=` (#96, D34): OPEN
+
+**Ticket:** [#96](https://github.com/gersonkurz/msis/issues/96). `wix build` checks the account
+reaches the MSI's `ServiceInstall.StartName` (`TestServiceAttributesReachThePackage`); whether
+the service then installs, starts and can write is only settled by an install.
+
+Build a package with a small service executable that writes a file into an msis-created folder
+under `[INSTALLDIR]`, once per account: `NT SERVICE\<name>`, `NT AUTHORITY\LocalService`,
+`NT AUTHORITY\NetworkService` (and `DOMAIN\gmsa$` where a domain is available). Expected, for
+each: install returns 0, the service starts (`start-after-install` default), `sc qc` shows the
+account as SERVICE_START_NAME, the file is written (D34's `Users` assumption), and uninstall
+removes the service. Record the folder's ACL (`icacls`) beside each result, so a write is
+attributed to the entry that allowed it. Also: with `RESTRICT_FILE_PERMISSIONS=True`, record
+whether the write still succeeds and which remaining entry allows it - D34 promises nothing either
+way. For the gMSA, note whether the account needed "Log on as a service" granted by hand.

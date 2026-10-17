@@ -45,6 +45,7 @@ func TestServiceAttributesReachThePackage(t *testing.T) {
 		name, service string
 		wxs           []string // fragments the ServiceInstall/ServiceControl lines must carry
 		displayName   string   // as the built MSI's ServiceInstall table holds it
+		startName     string   // the ServiceInstall table's StartName: the account (#96)
 	}{
 		{"every attribute set",
 			`<service file-name="svc.exe" service-name="svcA" service-display-name="R&amp;D Svc" description="does &lt;things&gt;"
@@ -53,11 +54,15 @@ func TestServiceAttributesReachThePackage(t *testing.T) {
 				`Name='svcA' DisplayName='R&amp;D Svc' Description='does &lt;things&gt;' Start='demand' Type='shareProcess' ErrorControl='critical'>`,
 				`<util:ServiceConfig FirstFailureActionType='restart' SecondFailureActionType='restart' ThirdFailureActionType='restart' RestartServiceDelayInSeconds='30' ResetPeriodInDays='1'/>`,
 			},
-			"R&D Svc"},
+			"R&D Svc", ""},
+		{"a virtual account (#96)",
+			`<service file-name="svc.exe" service-name="svcC" account="NT SERVICE\svcC"/>`,
+			[]string{`ErrorControl='normal' Account='NT SERVICE\svcC'>`},
+			"svcC", `NT SERVICE\svcC`},
 		{"only the required attributes: msis-2.x's defaults",
 			`<service file-name="svc.exe" service-name="svcB"/>`,
 			[]string{`Name='svcB' DisplayName='svcB' Description='svcB' Start='auto' Type='ownProcess' ErrorControl='normal'>`},
-			"svcB"},
+			"svcB", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,8 +101,9 @@ func TestServiceAttributesReachThePackage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(pkg.Services) != 1 || pkg.Services[0].DisplayName != tc.displayName {
-				t.Errorf("the MSI's services are %+v, want one with DisplayName %q", pkg.Services, tc.displayName)
+			if len(pkg.Services) != 1 || pkg.Services[0].DisplayName != tc.displayName || pkg.Services[0].StartName != tc.startName {
+				t.Errorf("the MSI's services are %+v, want one with DisplayName %q and StartName %q",
+					pkg.Services, tc.displayName, tc.startName)
 			}
 		})
 	}

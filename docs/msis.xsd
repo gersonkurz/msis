@@ -99,6 +99,18 @@
       </xs:documentation></xs:annotation>
     </xs:attribute>
     <xs:attribute name="start-after-install" type="xs:string" use="optional"/>
+    <xs:attribute name="account" type="xs:string" use="optional">
+      <xs:annotation><xs:documentation>
+        The account the service runs as (#96, decisions D34). Only accounts that need no
+        password: NT SERVICE\&lt;service-name&gt; (the service's virtual account),
+        NT AUTHORITY\LocalService, NT AUTHORITY\NetworkService, a group managed service account
+        DOMAIN\name$, or LocalSystem. Any other account is refused at build time, and so is any
+        account but LocalSystem on a shareProcess service. Default: LocalSystem. msis grants the
+        account nothing itself: on the folders msis creates, the entry msis adds is for Users,
+        which RESTRICT_FILE_PERMISSIONS makes read-only and DISABLE_FILE_PERMISSIONS leaves out;
+        what the account can do there also depends on every other entry on the folder.
+      </xs:documentation></xs:annotation>
+    </xs:attribute>
   </xs:complexType>
 
   <xs:complexType name="ExcludeType">

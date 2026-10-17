@@ -543,6 +543,23 @@ For background services that run without user interaction:
 | `service-type` | `ownProcess`, `shareProcess` | Process model; default `ownProcess` |
 | `error-control` | `ignore`, `normal`, `critical` | What happens if the service fails to start; default `normal` |
 | `restart` | `yes`, `no` | `yes`: restart the service 30 seconds after each failure, with no limit; the failure count resets after a day without failures; default `no` |
+| `account` | see below | The account the service runs as; default LocalSystem |
+
+`account` takes only accounts that need no password, because msis has no way to pass one
+(decisions D34):
+- `NT SERVICE\<service-name>`, the service's own virtual account;
+- `NT AUTHORITY\LocalService` or `NT AUTHORITY\NetworkService`;
+- a group managed service account, `DOMAIN\name$`;
+- `LocalSystem`, the same as leaving `account` out.
+
+msis refuses anything else at build time, including the virtual account of another service,
+and any account but `LocalSystem` on a `service-type="shareProcess"` service, which Windows
+Installer runs as LocalSystem only.
+
+msis grants the account nothing itself. On the folders msis creates, the entry msis adds is for
+`Users` ([Permissions](templates.md#permissions)): `RESTRICT_FILE_PERMISSIONS` makes it
+read-only and `DISABLE_FILE_PERMISSIONS` leaves it out. Whether the service can write there
+also depends on every other entry on the folder, inherited ones included.
 
 These defaults are msis-2.x's. Before 3.0.6, msis 3.x had four problems (#78):
 - leaving out `service-display-name` made the build fail;

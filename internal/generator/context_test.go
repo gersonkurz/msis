@@ -681,6 +681,68 @@ func TestServiceFileRelPath(t *testing.T) {
 	}
 }
 
+// #96 (D34): an account that needs a password is refused at build time; msis writes no
+// Password, so Windows Installer would refuse it only at install time.
+func TestCheckServiceAccount(t *testing.T) {
+	cases := []struct {
+		account string
+		ok      bool
+	}{
+		{"", true},
+		{"LocalSystem", true},
+		{`NT AUTHORITY\LocalService`, true},
+		{`nt authority\networkservice`, true},
+		{`NT SERVICE\MySvc`, true},
+		{`nt service\mysvc`, true},
+		{`NT SERVICE\OtherSvc`, false}, // another service's virtual account has no SID
+		{`CORP\watchdog$`, true},       // gMSA
+		{`CORP\$`, false},
+		{`watchdog$`, false},
+		{`\watchdog$`, false},
+		{`CORP\watchdog`, false}, // a domain user: needs a password
+		{`.\watchdog`, false},
+		{`LocalService`, false}, // Windows Installer wants NT AUTHORITY\LocalService
+		{`NT AUTHORITY\SYSTEM`, false},
+	}
+	for _, tc := range cases {
+		err := checkServiceAccount(tc.account, "MySvc", "ownProcess")
+		if (err == nil) != tc.ok {
+			t.Errorf("checkServiceAccount(%q) = %v, want ok=%v", tc.account, err, tc.ok)
+		}
+	}
+	// A shareProcess service runs as LocalSystem only.
+	for account, ok := range map[string]bool{"": true, "LocalSystem": true, `NT SERVICE\MySvc`: false, `NT AUTHORITY\LocalService`: false} {
+		if err := checkServiceAccount(account, "MySvc", "shareProcess"); (err == nil) != ok {
+			t.Errorf("shareProcess, checkServiceAccount(%q) = %v, want ok=%v", account, err, ok)
+		}
+	}
+}
+
+func TestServiceAccountReachesServiceInstall(t *testing.T) {
+	for _, tc := range []struct{ account, want string }{
+		{`NT SERVICE\MySvc`, ` Account='NT SERVICE\MySvc'>`},
+		{"", ` ErrorControl='normal'>`}, // no Account: LocalSystem, as before #96
+	} {
+		setup := &ir.Setup{Features: []ir.Feature{{Name: "F", Enabled: true, Items: []ir.Item{
+			ir.Service{FileName: "myservice.exe", ServiceName: "MySvc", Account: tc.account},
+		}}}}
+		output, err := NewContext(setup, variables.New(), ".").Generate()
+		if err != nil {
+			t.Fatalf("Generate failed: %v", err)
+		}
+		if !strings.Contains(output.DirectoryXML, tc.want) {
+			t.Errorf("account %q: ServiceInstall lacks %q", tc.account, tc.want)
+		}
+	}
+
+	setup := &ir.Setup{Features: []ir.Feature{{Name: "F", Enabled: true, Items: []ir.Item{
+		ir.Service{FileName: "myservice.exe", ServiceName: "MySvc", Account: `CORP\someone`},
+	}}}}
+	if _, err := NewContext(setup, variables.New(), ".").Generate(); err == nil || !strings.Contains(err.Error(), "needs a password") {
+		t.Errorf("an account that needs a password was not refused: %v", err)
+	}
+}
+
 func TestNestedFeatures(t *testing.T) {
 	setup := &ir.Setup{
 		Features: []ir.Feature{

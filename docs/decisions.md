@@ -1507,3 +1507,35 @@ same rule one level down.
 **What would reopen this:** an explicit way to say which copy wins (an attribute, or a rule msis
 enforces). Then the ids could stop carrying the order, and the change would need a VM check of
 the copy on disk.
+
+## D34 — `<service account>` takes only accounts that need no password
+
+**Settled in:** [#96](https://github.com/gersonkurz/msis/issues/96), 2026-10-17.
+**Implemented by:** `internal/generator/context.go` — `func checkServiceAccount(account, serviceName, serviceType string) error`
+
+`account` becomes `ServiceInstall Account`. msis writes no `Password`, and #96 scoped passwords
+out: no user asks for one, and passing one safely is a feature of its own. An account that needs
+a password would build and then fail at install time (error 1923), so it is refused at build
+time. Accepted, case-insensitively:
+- `NT SERVICE\<service-name>`, the service's virtual account. The name must be the service's own:
+  a virtual account exists only for the service of that name, so another one has no SID.
+- `NT AUTHORITY\LocalService`, `NT AUTHORITY\NetworkService`. Windows Installer wants the
+  `NT AUTHORITY\` prefix, so a bare `LocalService` is refused.
+- `DOMAIN\name$`, a group managed service account.
+- `LocalSystem`, the default.
+
+Any account but `LocalSystem` is refused on a `shareProcess` service: the ServiceInstall table
+documents `StartName` as LocalSystem for a shared process, and WiX documents `Account` as valid
+for an own-process service only.
+
+What msis does not do for the account: a script cannot grant it rights on a folder. The
+`util:PermissionEx` msis writes on the folders it creates is for `Users` (templates.md,
+Permissions), so that entry helps the account only if its token carries `Users`. Service tokens
+normally carry Authenticated Users, a member of `Users`; that is checked by T96, not by this
+code. `RESTRICT_FILE_PERMISSIONS` makes the `Users` entry read-only and `DISABLE_FILE_PERMISSIONS`
+leaves it out; neither removes any other entry on the folder, inherited ones included, so
+neither promises the account cannot write.
+
+**What would reopen this:** a user who needs a password account (a `Password` and a secure way to
+pass it), or a per-account folder grant. A grant to a virtual account would have to run after
+`InstallServices`, because its SID resolves only once the service exists.

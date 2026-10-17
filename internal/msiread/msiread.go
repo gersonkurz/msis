@@ -125,6 +125,7 @@ type Service struct {
 	DisplayName string
 	Component   string
 	StartType   int
+	StartName   string // the account the service runs as; empty: LocalSystem
 }
 
 type Shortcut struct {
@@ -334,7 +335,7 @@ func readRegistry(db *database, p *Package) error {
 
 func readServices(db *database, p *Package) error {
 	return optional(db, "ServiceInstall",
-		"SELECT `ServiceInstall`,`Name`,`DisplayName`,`StartType`,`Component_` FROM `ServiceInstall`",
+		"SELECT `ServiceInstall`,`Name`,`DisplayName`,`StartType`,`Component_`,`StartName` FROM `ServiceInstall`",
 		func(r *row) error {
 			start, _ := r.number(4)
 			p.Services = append(p.Services, Service{
@@ -343,6 +344,7 @@ func readServices(db *database, p *Package) error {
 				DisplayName: r.text(3),
 				StartType:   start,
 				Component:   r.text(5),
+				StartName:   r.text(6),
 			})
 			return nil
 		})

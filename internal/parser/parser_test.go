@@ -201,6 +201,7 @@ func TestParseService(t *testing.T) {
             service-display-name="My Service"
             start="auto"
             description="My service description"
+            account="NT SERVICE\MyService"
         />
     </feature>
 </setup>`
@@ -222,6 +223,9 @@ func TestParseService(t *testing.T) {
 	item := feature.Items[0]
 	if item.ItemType() != "service" {
 		t.Errorf("expected 'service', got %s", item.ItemType())
+	}
+	if got := item.(ir.Service).Account; got != `NT SERVICE\MyService` {
+		t.Errorf("account = %q, want NT SERVICE\\MyService", got)
 	}
 }
 

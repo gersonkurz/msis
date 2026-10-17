@@ -116,6 +116,7 @@ type xmlService struct {
 	ErrorControl       string `xml:"error-control,attr"`
 	Restart            string `xml:"restart,attr"`
 	StartAfterInstall  string `xml:"start-after-install,attr"`
+	Account            string `xml:"account,attr"`
 }
 
 type xmlExclude struct {
@@ -500,6 +501,8 @@ func (s *xmlService) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error 
 			s.Restart = attr.Value
 		case "start-after-install":
 			s.StartAfterInstall = attr.Value
+		case "account":
+			s.Account = attr.Value
 		default:
 			return fmt.Errorf("unknown attribute '%s' on <service>", attr.Name.Local)
 		}
@@ -1172,6 +1175,7 @@ func convertItems(rawItems []xmlItem) ([]ir.Item, error) {
 				ErrorControl:       raw.Service.ErrorControl,
 				Restart:            parseMsisBool(raw.Service.Restart),
 				StartAfterInstall:  raw.Service.StartAfterInstall,
+				Account:            raw.Service.Account,
 			})
 
 		case "exclude":

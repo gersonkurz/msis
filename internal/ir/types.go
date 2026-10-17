@@ -147,6 +147,7 @@ type Service struct {
 	ErrorControl       string // ignore, normal, critical
 	Restart            bool   // restart the service on failure (util:ServiceConfig)
 	StartAfterInstall  string // yes (default), no
+	Account            string // passwordless account the service runs as; empty: LocalSystem
 }
 
 func (s Service) ItemType() string { return "service" }

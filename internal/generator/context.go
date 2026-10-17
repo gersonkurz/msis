@@ -206,7 +206,8 @@ type Service struct {
 	ErrorControl      string
 	Restart           bool // restart on failure, as msis-2.x's restart="yes"
 	FileName          string
-	StartAfterInstall bool // true (default): start service on install
+	StartAfterInstall bool   // true (default): start service on install
+	Account           string // ServiceInstall Account; empty: LocalSystem
 }
 
 // Shortcut represents a shortcut (Desktop or StartMenu).
@@ -1298,7 +1299,41 @@ func (c *Context) processCreateFolder(cf ir.CreateFolder, featureID string) erro
 	return nil
 }
 
+// checkServiceAccount refuses a <service account> that needs a password (#96, D34). msis
+// writes no ServiceInstall Password, so such an account would fail only at install time
+// (error 1923); what is accepted are the accounts Windows runs a service as without one.
+// A shareProcess service runs as LocalSystem only (the ServiceInstall table's StartName).
+func checkServiceAccount(account, serviceName, serviceType string) error {
+	domain, name, qualified := strings.Cut(account, `\`)
+	switch {
+	case account == "", strings.EqualFold(account, "LocalSystem"):
+	case strings.EqualFold(serviceType, "shareProcess"):
+		return fmt.Errorf(`service %q: a shareProcess service runs as LocalSystem only, so account %q `+
+			`needs service-type="ownProcess"`, serviceName, account)
+	case strings.EqualFold(domain, "NT AUTHORITY") &&
+		(strings.EqualFold(name, "LocalService") || strings.EqualFold(name, "NetworkService")):
+	case strings.EqualFold(domain, "NT SERVICE"):
+		// A virtual account exists only for the service of its name; another name has no SID.
+		if !strings.EqualFold(name, serviceName) {
+			return fmt.Errorf(`service %q: account %q is the virtual account of another service; use "NT SERVICE\%s"`,
+				serviceName, account, serviceName)
+		}
+	case qualified && domain != "" && len(name) > 1 && strings.HasSuffix(name, "$"):
+		// A group managed service account, DOMAIN\name$.
+	default:
+		return fmt.Errorf(`service %q: account %q needs a password, which msis cannot pass; use `+
+			`"NT SERVICE\%s", "NT AUTHORITY\LocalService", "NT AUTHORITY\NetworkService", `+
+			`a group managed service account ("DOMAIN\name$") or "LocalSystem"`,
+			serviceName, account, serviceName)
+	}
+	return nil
+}
+
 func (c *Context) processService(svc ir.Service, featureID string) error {
+	if err := checkServiceAccount(svc.Account, svc.ServiceName, svc.ServiceType); err != nil {
+		return err
+	}
+
 	svcID := c.NextServiceID()
 
 	start := "auto"
@@ -1320,6 +1355,7 @@ func (c *Context) processService(svc ir.Service, featureID string) error {
 		Restart:           svc.Restart,
 		FileName:          svc.FileName,
 		StartAfterInstall: startAfterInstall,
+		Account:           svc.Account,
 	}
 	serviceDef.Description = cmp.Or(svc.Description, serviceDef.DisplayName)
 
@@ -1978,9 +2014,13 @@ func (c *Context) generateComponentXML(comp *Component, sb *strings.Builder, dep
 		}
 
 		name := escapeXMLAttr(svc.Name)
-		fmt.Fprintf(sb, "%s    <ServiceInstall Id='%s' Name='%s' DisplayName='%s' Description='%s' Start='%s' Type='%s' ErrorControl='%s'>\n",
+		account := ""
+		if svc.Account != "" {
+			account = fmt.Sprintf(" Account='%s'", escapeXMLAttr(svc.Account))
+		}
+		fmt.Fprintf(sb, "%s    <ServiceInstall Id='%s' Name='%s' DisplayName='%s' Description='%s' Start='%s' Type='%s' ErrorControl='%s'%s>\n",
 			indent, svc.ID, name, escapeXMLAttr(svc.DisplayName), escapeXMLAttr(svc.Description), startType,
-			escapeXMLAttr(svc.Type), escapeXMLAttr(svc.ErrorControl))
+			escapeXMLAttr(svc.Type), escapeXMLAttr(svc.ErrorControl), account)
 		if svc.Restart {
 			// msis-2.x's restart="yes", value for value (SetupItem/Service.cs, the RM4V case).
 			fmt.Fprintf(sb, "%s        <util:ServiceConfig FirstFailureActionType='restart' SecondFailureActionType='restart' ThirdFailureActionType='restart' RestartServiceDelayInSeconds='30' ResetPeriodInDays='1'/>\n", indent)
