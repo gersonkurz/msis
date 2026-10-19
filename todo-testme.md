@@ -1224,3 +1224,39 @@ Expected after `msiexec /x steps.msi /qn /l*v uninstall.log` (exit 0):
 Optional contrast, only before reverting the snapshot: the same package built with 3.0.8 shows
 the defect - path-step SDDLs replaced at install, and the generated WiX marks `HKLM\SOFTWARE`
 create-and-delete-on-uninstall (`*` row), so expect the uninstall to try to remove it.
+
+## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): OPEN
+
+**Ticket:** [#97](https://github.com/gersonkurz/msis/issues/97). Deferred with the product
+owner's explicit acceptance (2026-10-19): the script's list mode, its 32-bit refusal and the
+Set-Acl inheritance propagation ran on the dev machine (an HKCU probe); `-Fix` against HKLM did
+not, and is run here, on a VM with a snapshot, once the reference table is filled in.
+
+1. **Reference values.** On a clean VM - no msis-built package ever installed - run, per
+   Windows version the customers use:
+   ```powershell
+   'SOFTWARE','SOFTWARE\WOW6432Node','SOFTWARE\Classes','SYSTEM','SYSTEM\CurrentControlSet','SYSTEM\CurrentControlSet\Services','SYSTEM\CurrentControlSet\Services\EventLog','SYSTEM\CurrentControlSet\Services\EventLog\Application' | % { "$_`t" + (Get-Acl "HKLM:\$_").Sddl }; (Get-CimInstance Win32_OperatingSystem).Caption
+   ```
+   The DACL part (`D:...`) of each line goes into `$Reference` in the script. Record whether
+   the versions agree.
+2. **Make the VM affected.** Install `ProAKT for Poste Italiane - 4.2.0.90 x86 - BIOPERATORE.msi`
+   (or any MSI `scripts/msis-check-msi.ps1` flags). Record `(Get-Acl HKLM:\X).Sddl` for each key
+   of step 1, plus `Get-Acl` owner/group, and the Users entry of an inheriting child (for
+   example `HKLM:\SOFTWARE\WOW6432Node` or a third-party key under `HKLM:\SOFTWARE`). Expected:
+   the script without `-Fix` reports the affected key(s), exit code 1.
+3. **Repair.** Elevated, 64-bit: `.\msis-registry-acl.ps1 -Fix`. Expected: a backup file
+   `msis-registry-acl-backup-*.txt` with each affected key's SDDL before the change; `REPAIRED`
+   per key; exit 0. Then: each repaired key's DACL equals the reference (compare the entries:
+   Windows adds the `AI` flag, auto-inherited, to a DACL it propagates); owner and group are
+   unchanged from step 2; the inheriting child no longer has a Users write entry; a second run
+   without `-Fix` reports nothing, exit 0. Also: `-Fix` in a non-elevated shell exits 2 and
+   changes nothing.
+4. **Restore from the backup** (proves the backup is usable). Elevated, 64-bit:
+   ```powershell
+   foreach ($line in Get-Content .\msis-registry-acl-backup-*.txt) {
+       $k, $s = $line -split "`t"; $p = 'HKLM:\' + ($k -replace '^HKLM\\', '')
+       $a = Get-Acl -Path $p; $a.SetSecurityDescriptorSddlForm($s, 'Access'); Set-Acl -Path $p -AclObject $a
+   }
+   ```
+   Expected: the key's SDDL equals the one recorded in step 2, up to an `AI` flag Windows may
+   add (`D:AI(...)` for `D:(...)`, same entries). Revert the snapshot afterwards.
