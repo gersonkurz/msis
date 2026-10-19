@@ -64,6 +64,10 @@ type PrerequisiteURL struct {
 // list for these files, so the pin is that download, on that date, signed by that
 // signer — not a third party's attestation.
 //
+// 2026-10-19: the aka.ms aliases for VC++ 2022 x64 and x86 moved to a new CDN folder
+// serving the same files: digest, size and file version 14.44.35211.0 unchanged,
+// signature again Valid, CN=Microsoft Corporation. Only those two URLs were re-pinned.
+//
 // The .NET Framework entries are the OFFLINE installers. Before pinning, 4.8.1 and
 // 4.7.2 pointed at fwlinks that resolve to the 1.4 MB WEB installers (NDP481-Web.exe,
 // ndp472-kb4054531-web.exe) while naming the cached file after the offline one, so a
@@ -73,7 +77,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 		"2022": {
 			"x64": {
 				Type: "vcredist", Version: "2022", Arch: "x64",
-				URL:         "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+				URL:         "https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
 				FileName:    "vc_redist.x64.exe",
 				SHA256:      "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
 				FileVersion: "14.44.35211.0",
@@ -81,7 +85,7 @@ var DownloadURLs = map[string]map[string]map[string]PrerequisiteURL{
 			},
 			"x86": {
 				Type: "vcredist", Version: "2022", Arch: "x86",
-				URL:         "https://download.visualstudio.microsoft.com/download/pr/bd1c8d9d-ba95-4eee-bc6e-df1fcc876373/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe",
+				URL:         "https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/0C09F2611660441084CE0DF425C51C11E147E6447963C3690F97E0B25C55ED64/VC_redist.x86.exe",
 				FileName:    "vc_redist.x86.exe",
 				SHA256:      "0c09f2611660441084ce0df425c51c11e147e6447963c3690f97e0b25c55ed64",
 				FileVersion: "14.44.35211.0",
