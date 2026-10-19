@@ -1221,11 +1221,11 @@ Expected after `msiexec /x steps.msi /qn /l*v uninstall.log` (exit 0):
 - `SOFTWARE\Msis97Vendor\Empty` is gone, the `TypesSupported` and `A` values are gone,
   `SOFTWARE\Msis97Vendor\Old` is still absent.
 
-Optional contrast, only before reverting the snapshot: the same package built with 3.0.8 shows
+Optional contrast, only before reverting the snapshot: the same package built with 3.0.7 shows
 the defect - path-step SDDLs replaced at install, and the generated WiX marks `HKLM\SOFTWARE`
 create-and-delete-on-uninstall (`*` row), so expect the uninstall to try to remove it.
 
-## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): OPEN
+## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): REPAIR DONE 2026-10-19, restore and non-elevated run OPEN
 
 **Ticket:** [#97](https://github.com/gersonkurz/msis/issues/97). Deferred with the product
 owner's explicit acceptance (2026-10-19): the script's list mode, its 32-bit refusal and the
@@ -1265,3 +1265,22 @@ not, and is run here, on a VM with a snapshot, once the reference table is fille
    ```
    Expected: the key's SDDL equals the one recorded in step 2, up to an `AI` flag Windows may
    add (`D:AI(...)` for `D:(...)`, same entries). Revert the snapshot afterwards.
+
+### Executed on 2026-10-19, on the snapshot VM (Windows 11 Pro N, PowerShell 7.6.7, elevated)
+
+The VM was already affected: `HKLM\SOFTWARE\WOW6432Node` carried msis's SDDL
+`O:BAG:SYD:P(A;OICI;KA;;;AU)(A;OICI;KA;;;SY)(A;OICI;KA;;;LS)(A;OICI;KA;;;BU)(A;OICI;KA;;;LA)`
+from a 32-bit package; the other seven keys were untouched. PASS for steps 2 and 3:
+- list mode: `AFFECTED HKLM\SOFTWARE\WOW6432Node - writable by: Authenticated Users (0x000F003F),
+  Users (0x000F003F)`, the other seven OK;
+- `-Fix`: `Saved the current permissions to C:\Temp\msis-registry-acl-backup-20261019-180538.txt`,
+  `REPAIRED HKLM\SOFTWARE\WOW6432Node`;
+- list mode again: all eight OK, "No affected keys found.";
+- `HKLM\SOFTWARE\WOW6432Node` afterwards:
+  `O:BAG:SYD:AI(A;CIID;KR;;;BU)(A;CIID;KA;;;BA)(A;CIID;KA;;;SY)(A;CIIOID;KA;;;CO)(A;CIID;KR;;;AC)(A;CIID;KR;;;S-1-15-3-1024-...)`
+  - no own entries (as `$Reference` `D:`), only those inherited from the untouched `SOFTWARE`;
+  owner and group `BA`/`SY` as before.
+
+Not run here: step 4 (restore from the backup) and `-Fix` in a non-elevated shell. Both ran
+elsewhere - the restore loop on an HKCU stand-in under 5.1 and 7 (equal up to `AI`), the
+non-elevated `-Fix` on the dev machine (exit 2, nothing changed) - but not on this VM.

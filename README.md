@@ -208,6 +208,50 @@ msis-3.x is largely compatible with msis-2.x scripts:
 
 Most scripts work unchanged. See the [Tutorial](docs/tutorial.md) for the full element reference.
 
+## Security notice: registry permissions (msis 3.0.0 to 3.0.7)
+
+**What went wrong.** An installer that imports a `.reg` file (`<registry file="...">`) sets
+permissions on the registry keys it writes. msis 3.0.0 to 3.0.7 set them not only on the keys
+the `.reg` file is about, but on every key on the way there - including keys that belong to
+Windows. A `.reg` file for `HKLM\SOFTWARE\Vendor\Product` changed the permissions of
+`HKLM\SOFTWARE` itself. An Event Log source under
+`HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application` changed `HKLM\SYSTEM` and every key
+on the path below it. A 32-bit installer on 64-bit Windows changed `HKLM\SOFTWARE\WOW6432Node`
+instead of `HKLM\SOFTWARE`. ([#97](../../issues/97))
+
+**Why it matters.** The default permissions give every user of the machine full control. They
+replace whatever the key had before, the keys below it inherit them, and uninstalling the
+product does not undo them. On an affected machine, any local user can create, change or delete
+keys directly under `HKLM\SOFTWARE`, and in every other vendor's key that inherits its
+permissions from there. If a service, or a program an administrator runs, reads a file path from
+such a key, a standard user can make it run code of their choice. On the machine we checked,
+sensitive Windows keys such as Run and Image File Execution Options did not inherit the changed
+permissions. Check affected machines rather than assuming those keys are protected.
+
+msis 3.0.2 to 3.0.7 could also build an installer that **deletes `HKLM\SOFTWARE`**, with
+everything in it, when the product is uninstalled. This could happen when the part of the `.reg`
+file under `HKLM\SOFTWARE` held only empty keys or `[-...]` deletions, even if the file had
+values elsewhere (the same goes for `HKLM\SYSTEM`). None of the production installers we checked
+does this; the check script below reports it as `DELETE`.
+
+**Is my installer affected?** Run `scripts\msis-check-msi.ps1 "Product.msi"`. It reads the MSI
+and installs nothing. `PERMISSIONS` or `DELETE` lines mean yes. Most installers built with msis
+3.0.0 to 3.0.7 that import a `.reg` file are. `DISABLE_REGISTRY_PERMISSIONS=True` avoided the
+permissions, not the deletion. Installers built with msis 2 spared `HKLM\SOFTWARE`
+but changed deeper Windows keys such as `HKLM\SYSTEM\CurrentControlSet\Services`; the script
+reports those too.
+
+**Is my machine affected?** Run `scripts\msis-registry-acl.ps1` in 64-bit PowerShell. It checks
+eight Windows keys and changes nothing. To repair, run it again as administrator with `-Fix`. It
+saves the current permissions to a backup file, gives each affected key back the permissions
+Windows ships it with, and the keys below it follow. It repairs only on Windows 11, because those
+are the only original permissions we have verified, and only those eight keys. If
+`msis-check-msi.ps1` reports other Windows keys for an MSI that was installed on the machine,
+repair those by hand.
+
+**Rebuilding is not enough.** msis 3.0.8 no longer does this. But installing a rebuilt product
+does not repair a machine that had an older build installed: run the repair script there.
+
 ## History
 
 msis has had three generations, all sharing the same `.msis` script format:
@@ -222,6 +266,29 @@ Earlier versions were reconstructed from the Git log and tagged retroactively. T
 entry below is the current release; `just set-version X.Y.Z` adds the next one. An
 **Unreleased** entry lists what is on `main` since that tag. It becomes that version's notes
 when it is released.
+
+**3.0.8** — 2026-10-19 (tag [`v3.0.8`](../../releases/tag/v3.0.8))
+
+A security fix. **Read [Security notice: registry permissions](#security-notice-registry-permissions-msis-300-to-307)
+first** if you shipped installers built with msis 3.0.0 to 3.0.7 that import `.reg` files.
+
+- **A `.reg` import changes only the keys the file names** ([#97](../../issues/97), D35).
+  Permissions, `ForceCreateOnInstall` and `ForceDeleteOnUninstall` now go only on keys named in a
+  `[...]` header of the `.reg` file. The keys on the way to them (`HKLM\SOFTWARE`, `HKLM\SYSTEM`,
+  ...) are left alone. Before, every one of those keys got the permissions, and a `.reg` file
+  whose part under `HKLM\SOFTWARE` held no values could make uninstall delete `HKLM\SOFTWARE`.
+- **Two scripts for products already shipped**, in [`scripts/`](scripts/):
+  `msis-check-msi.ps1` tells whether an MSI is affected, `msis-registry-acl.ps1` checks and
+  repairs a machine. See the notice.
+- Rebuilding a product with 3.0.8 changes its registry components: path-step keys lose their
+  `PermissionEx`, `ForceCreateOnInstall` and `ForceDeleteOnUninstall`. And for an import that
+  writes no values - only empty keys or deletions - the installer's tracking value (its
+  keypath) now goes in a key the file keeps, or else in msis's own package key
+  (`HKLM\Software\msis\Packages\<UpgradeCode>`), never in `HKLM\SOFTWARE` itself.
+- Needs go-regis3 `d9bec9e`, which records which keys a `.reg` header names.
+- Still open: a `.reg` file that names a Windows key itself still sets its permissions
+  ([#99](../../issues/99)).
+- [docs/decisions.md](docs/decisions.md) gains D35.
 
 **3.0.7** — 2026-10-19 (tag [`v3.0.7`](../../releases/tag/v3.0.7))
 

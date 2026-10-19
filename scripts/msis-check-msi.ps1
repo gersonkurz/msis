@@ -23,7 +23,7 @@
     HKLM\SYSTEM - including a key the package creates there for itself, such as an Event Log
     source, whose permissions matter for the same reason.
 
-    msis 3.0.0 to 3.0.8 wrote such rows for most packages that import a .reg file; msis 2 for
+    msis 3.0.0 to 3.0.7 wrote such rows for most packages that import a .reg file; msis 2 for
     keys like HKLM\SYSTEM\CurrentControlSet\Services. To repair a machine on which such a
     package was installed, use msis-registry-acl.ps1 from the same folder.
 

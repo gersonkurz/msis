@@ -4,7 +4,7 @@
     installer replaced (gersonkurz/msis#97).
 
 .DESCRIPTION
-    Installers built with msis 3.0.0 to 3.0.8 that import a .reg file set permissions on every
+    Installers built with msis 3.0.0 to 3.0.7 that import a .reg file set permissions on every
     key on the path to the imported keys, not just on the imported keys. For a .reg file under
     HKLM\SOFTWARE\Vendor that includes HKLM\SOFTWARE itself (HKLM\SOFTWARE\WOW6432Node for a
     32-bit installer on 64-bit Windows); for an Event Log source it includes HKLM\SYSTEM and
