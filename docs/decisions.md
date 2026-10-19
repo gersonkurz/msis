@@ -1539,3 +1539,43 @@ neither promises the account cannot write.
 **What would reopen this:** a user who needs a password account (a `Password` and a secure way to
 pass it), or a per-account folder grant. A grant to a virtual account would have to run after
 `InstallServices`, because its SID resolves only once the service exists.
+
+## D35 — A `.reg` file's permissions, creation and deletion apply to the keys it declares, never to the path to them
+
+**Settled in:** [#97](https://github.com/gersonkurz/msis/issues/97), 2026-10-19.
+**Implemented by:** `internal/registry/registry.go` — `func declaredKeyXML(`, `func firstDeclaredKey(`
+
+A key is **declared** when a `[...]` header of the `.reg` file names it (go-regis3
+`KeyEntry.Declared`). Every other key in the parsed tree is a path step: `HKLM\SYSTEM`,
+`SYSTEM\CurrentControlSet`, ... above `[HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application\NG1]`.
+Only a declared key the file does not remove gets `ForceCreateOnInstall`, `PermissionEx`
+(the `<registry sddl>`, else `DefaultSDDL`) and, when its subtree holds no values,
+`ForceDeleteOnUninstall`. A path step is emitted as a bare `<RegistryKey>` that only nests;
+Windows Installer creates the missing parents of what it writes anyway.
+
+Before this, every key of the tree got all three. #97 measured the consequence on a VM:
+`HKLM\SYSTEM` had its DACL replaced by the default SDDL (Users and Authenticated Users full
+control, inheritable), and uninstall did not restore it. The generated WiX also showed
+`ForceDeleteOnUninstall` - delete the key and its subtree on uninstall - on `HKLM\SOFTWARE`
+for a file declaring only an empty key or only a `[-...]` removal, because the
+"empty keys get it" rule (7f433f5) counted path steps as empty keys.
+
+"Declared" and not "has values" because regedit exports declare empty parents
+(`[HKLM\SOFTWARE\Pergamon]` in the ProAKT files): those are the vendor's own keys, msis-2.x
+set the permissions on them, and the application may write there at runtime.
+
+A component that writes no value still needs a keypath. It goes into the first declared key
+the file keeps; when every declared key is removed, into the package's own key
+(`PackageKey`, the D27 key) as `_msis_keypath_<component id>` - never into a path step, and
+never into a key being removed, which writing a value would recreate.
+
+**Departure from msis-2.x:** msis-2.x (`RegistryKey.cs`) spared only the key directly below
+the hive and set permissions on every key under it, so it opened up
+`SYSTEM\CurrentControlSet\Services`, for instance. msis 3 follows the declared rule instead.
+
+**Not settled here:** a header that declares an existing Windows key (`...\CurrentVersion\Run`,
+`HKCR\.txt`) still has that key's DACL replaced, as in msis-2.x. Which keys those are cannot
+be known at build time, so this needs a policy decision of its own.
+
+**What would reopen this:** a package that relied on the permissions msis set on a path step,
+or a declared key that must not be created.

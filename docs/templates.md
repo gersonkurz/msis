@@ -349,7 +349,9 @@ Setting both: `DISABLE_FILE_PERMISSIONS` wins, because there is no entry left to
 
 ### Registry keys: `DISABLE_REGISTRY_PERMISSIONS`
 
-Every registry key written from a `<registry file="…">` carries a `PermissionEx` with an SDDL —
+Every registry key a `<registry file="…">` declares — names in a `[…]` header — carries a
+`PermissionEx` with an SDDL. The keys on the path to it (`HKLM\SOFTWARE` above
+`[HKLM\SOFTWARE\Vendor]`) carry none and keep their own security (decisions D35). The SDDL is
 the element's own `sddl="…"` attribute, or msis's default
 `O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)`
 (full access for SYSTEM, built-in users, authenticated users, the local administrator and the

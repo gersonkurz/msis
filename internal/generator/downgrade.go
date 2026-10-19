@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/gersonkurz/msis/internal/registry"
 )
 
 // The downgrade guard (#89, decisions D27).
@@ -25,7 +27,7 @@ import (
 // guardKey is where a package records its version: one key per UpgradeCode, in the hive view
 // of the package's own platform (the component and the search both follow it).
 func guardKey(upgradeCode string) string {
-	return `Software\msis\Packages\` + strings.ToUpper(strings.Trim(upgradeCode, "{}"))
+	return registry.PackageKey(upgradeCode)
 }
 
 const (

@@ -1186,3 +1186,41 @@ removes the service. Record the folder's ACL (`icacls`) beside each result, so a
 attributed to the entry that allowed it. Also: with `RESTRICT_FILE_PERMISSIONS=True`, record
 whether the write still succeeds and which remaining entry allows it - D34 promises nothing either
 way. For the gMSA, note whether the account needed "Log on as a service" granted by hand.
+
+## T97 — `.reg` permissions and key deletion stay on declared keys (#97, D35): OPEN
+
+**Ticket:** [#97](https://github.com/gersonkurz/msis/issues/97). `wix build` checks the MSI's
+Registry and MsiLockPermissionsEx rows (`TestRegistryPathStepsGetNoRowsInTheMSI`); that Windows
+Installer then leaves the path steps alone is only settled by an install. **On a VM with a
+snapshot** - #97's reporter had to revert theirs.
+
+Build, with the msis from this fix, the package of `cmd/msis/regpathsteps_windows_test.go`
+(the two `.reg` files and the script are in the test; `/BUILD /RETAINWXS`). Before installing,
+in an elevated PowerShell:
+
+```powershell
+$steps = 'HKLM:\SYSTEM','HKLM:\SOFTWARE','HKLM:\SYSTEM\CurrentControlSet\Services\EventLog\Application'
+$before = $steps | % { (Get-Acl $_).Sddl }
+New-Item HKLM:\SOFTWARE\Msis97Sentinel -Force | Out-Null; Set-ItemProperty HKLM:\SOFTWARE\Msis97Sentinel S 1
+New-Item HKLM:\SOFTWARE\Msis97Vendor\Old -Force | Out-Null   # the delete-only file's target
+```
+
+Expected after `msiexec /i steps.msi /qn /l*v install.log` (exit 0):
+- `$steps | % { (Get-Acl $_).Sddl }` equals `$before`, entry for entry;
+- `...\EventLog\Application\Msis97`, `SOFTWARE\Msis97Vendor`, `...\Product\Settings` and
+  `...\Empty` carry the default SDDL's entries (BUILTIN\Users, Authenticated Users full control)
+  as their own, non-inherited entries;
+- `SOFTWARE\Msis97Vendor\Product` (a path step under a declared key) has no entry of its own:
+  `(Get-Acl HKLM:\SOFTWARE\Msis97Vendor\Product).Access | ? { -not $_.IsInherited }` is empty.
+  It may well show the default SDDL's entries INHERITED from `Msis97Vendor` - that is correct;
+- `SOFTWARE\Msis97Vendor\Old` is gone.
+
+Expected after `msiexec /x steps.msi /qn /l*v uninstall.log` (exit 0):
+- the path-step SDDLs still equal `$before`;
+- `HKLM:\SOFTWARE\Msis97Sentinel` and its value `S` still exist;
+- `SOFTWARE\Msis97Vendor\Empty` is gone, the `TypesSupported` and `A` values are gone,
+  `SOFTWARE\Msis97Vendor\Old` is still absent.
+
+Optional contrast, only before reverting the snapshot: the same package built with 3.0.8 shows
+the defect - path-step SDDLs replaced at install, and the generated WiX marks `HKLM\SOFTWARE`
+create-and-delete-on-uninstall (`*` row), so expect the uninstall to try to remove it.

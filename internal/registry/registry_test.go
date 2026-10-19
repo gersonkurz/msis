@@ -1393,3 +1393,133 @@ func TestWarnFormattedIgnoresEscapedBrackets(t *testing.T) {
 		t.Errorf("no value here contains a real [~], so none may warn as a multi-string, got: %s", joined)
 	}
 }
+
+// registryKeyLine returns the <RegistryKey> line for name (its Key attribute, which is the
+// full path for a top-level key and the last component below it) and whether the line after
+// it is a <PermissionEx>.
+func registryKeyLine(t *testing.T, xml, name string) (line string, permission bool) {
+	t.Helper()
+	lines := strings.Split(xml, "\n")
+	for i, l := range lines {
+		if strings.Contains(l, "<RegistryKey ") && strings.Contains(l, "Key='"+name+"'") {
+			return l, i+1 < len(lines) && strings.Contains(lines[i+1], "<PermissionEx")
+		}
+	}
+	t.Fatalf("no <RegistryKey> for %q in:\n%s", name, xml)
+	return "", false
+}
+
+// TestPathStepKeysAreLeftAlone is #97 (D35): only a key a [...] header declares is created,
+// permissioned or force-deleted. The keys on the path to it - HKLM\SYSTEM, HKLM\SOFTWARE -
+// are existing keys Windows owns, and nothing may be emitted on them.
+func TestPathStepKeysAreLeftAlone(t *testing.T) {
+	cases := []struct {
+		name     string
+		content  string
+		steps    []string // path steps: bare
+		declared []string // declared keys: ForceCreateOnInstall + PermissionEx
+		emptyAt  string   // declared key that also gets ForceDeleteOnUninstall
+	}{
+		{
+			name: "eventlog",
+			content: `[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\Application\NG1]
+"TypesSupported"=dword:00000007
+`,
+			steps:    []string{"SYSTEM", "CurrentControlSet", "Services", "EventLog", "Application"},
+			declared: []string{"NG1"},
+		},
+		{
+			name: "vendor",
+			content: `[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor]
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Product\Settings]
+"A"="1"
+`,
+			steps:    []string{"SOFTWARE", "Product"},
+			declared: []string{"Vendor", "Settings"},
+		},
+		{
+			name: "empty key",
+			content: `[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Empty]
+`,
+			steps:    []string{"SOFTWARE", "Vendor"},
+			declared: []string{"Empty"},
+			emptyAt:  "Empty",
+		},
+		{
+			name: "delete only",
+			content: `[-HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Old]
+`,
+			steps: []string{"SOFTWARE", "Vendor"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			content := "Windows Registry Editor Version 5.00\n\n" + tc.content
+			if err := os.WriteFile(filepath.Join(tmpDir, "x.reg"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			proc := NewProcessor(tmpDir, "{11111111-2222-3333-4444-555555555555}")
+			components, err := proc.Process(ir.Registry{File: "x.reg"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			xml := proc.GenerateXML(components, true)
+
+			for _, name := range tc.steps {
+				line, permission := registryKeyLine(t, xml, name)
+				if strings.Contains(line, "Force") || permission {
+					t.Errorf("path step %s must be a bare <RegistryKey>, got %q (PermissionEx: %v)", name, line, permission)
+				}
+			}
+			for _, name := range tc.declared {
+				line, permission := registryKeyLine(t, xml, name)
+				if !strings.Contains(line, "ForceCreateOnInstall='yes'") || !permission {
+					t.Errorf("declared key %s needs ForceCreateOnInstall and PermissionEx, got %q (PermissionEx: %v)", name, line, permission)
+				}
+				if wantDelete := name == tc.emptyAt; strings.Contains(line, "ForceDeleteOnUninstall") != wantDelete {
+					t.Errorf("declared key %s: ForceDeleteOnUninstall should be %v, got %q", name, wantDelete, line)
+				}
+			}
+		})
+	}
+}
+
+// TestDummyKeypathNeverOnPathStepOrRemovedKey is the keypath half of D35: a component that
+// writes no value keeps its keypath in a declared key it keeps, or else in the package's own
+// key - never in a path step such as HKLM\SOFTWARE, and never in a key the file deletes,
+// which writing a value into would recreate.
+func TestDummyKeypathNeverOnPathStepOrRemovedKey(t *testing.T) {
+	const upgradeCode = "{11111111-2222-3333-4444-555555555555}"
+	cases := []struct{ name, content, want string }{
+		{"empty key", `[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Empty]
+`, `<RegistryValue Root='HKLM' Key='SOFTWARE\Vendor\Empty' Name='_msis_keypath' Value='' Type='string' KeyPath='yes'/>`},
+		{"delete only", `[-HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Old]
+`, `<RegistryValue Root='HKLM' Key='Software\msis\Packages\11111111-2222-3333-4444-555555555555' Name='_msis_keypath_REG_CID_00000' Value='' Type='string' KeyPath='yes'/>`},
+		{"value removal only", `[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\App]
+"Old"=-
+`, `<RegistryValue Root='HKLM' Key='SOFTWARE\Vendor\App' Name='_msis_keypath' Value='' Type='string' KeyPath='yes'/>`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			content := "Windows Registry Editor Version 5.00\n\n" + tc.content
+			if err := os.WriteFile(filepath.Join(tmpDir, "x.reg"), []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			proc := NewProcessor(tmpDir, upgradeCode)
+			components, err := proc.Process(ir.Registry{File: "x.reg"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			xml := proc.GenerateXML(components, true)
+			if !strings.Contains(xml, tc.want) {
+				t.Errorf("want keypath\n  %s\nin:\n%s", tc.want, xml)
+			}
+			if n := strings.Count(xml, "KeyPath='yes'"); n != 1 {
+				t.Errorf("want exactly one KeyPath, got %d", n)
+			}
+		})
+	}
+}

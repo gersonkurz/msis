@@ -38,6 +38,11 @@ type RegistryKey struct {
 	Values     []*RegistryValue
 	SubKeys    []*RegistryKey
 	RemoveFlag bool
+
+	// Declared marks a key a [...] header of the .reg file names. The others are path
+	// steps - HKLM\SOFTWARE above [HKLM\SOFTWARE\Vendor] - which msis nests through but
+	// never creates, deletes or sets permissions on (#97, docs/decisions.md D35).
+	Declared bool
 }
 
 // RegistryValue represents a WiX RegistryValue element.
@@ -307,6 +312,7 @@ func (p *Processor) convertSubKey(entry *regis3.KeyEntry, root, keyPath string) 
 		Root:       root,
 		Key:        keyPath,
 		RemoveFlag: entry.RemoveFlag(),
+		Declared:   entry.Declared(),
 	}
 
 	// Process values
@@ -727,15 +733,18 @@ func (p *Processor) generateComponentXML(comp *Component, sb *strings.Builder, s
 		}
 	}
 
-	// If no RegistryValue was emitted (delete-only .reg file), add a dummy keypath value
-	// WiX/MSI requires every component to have a KeyPath resource
+	// If no RegistryValue was emitted (empty keys or a delete-only .reg file), add a dummy
+	// keypath value: WiX/MSI requires every component to have a KeyPath resource. It goes
+	// into a key the file declares and keeps; failing that - every declared key is being
+	// removed - into this package's own key, never into a path step such as HKLM\SOFTWARE
+	// and never into a key the file deletes, which writing a value would recreate (D35).
 	if isFirstValue {
-		// Find the first non-removal key to use as the keypath location
-		root, keyPath := p.findFirstKeyPath(comp.Keys)
-		if root != "" && keyPath != "" {
-			sb.WriteString(fmt.Sprintf("            <RegistryValue Root='%s' Key='%s' Name='_msis_keypath' Value='' Type='string' KeyPath='yes'/>\n",
-				root, escapeXML(keyPath)))
+		root, keyPath, name := "HKLM", PackageKey(p.upgradeCode), "_msis_keypath_"+comp.ID
+		if key := firstDeclaredKey(comp.Keys); key != nil {
+			root, keyPath, name = key.Root, key.Key, "_msis_keypath"
 		}
+		sb.WriteString(fmt.Sprintf("            <RegistryValue Root='%s' Key='%s' Name='%s' Value='' Type='string' KeyPath='yes'/>\n",
+			root, escapeXML(keyPath), name))
 	}
 
 	sb.WriteString("        </Component>\n")
@@ -778,21 +787,10 @@ func (p *Processor) generateRegistryKeyXML(key *RegistryKey, sb *strings.Builder
 		return
 	}
 
-	// Only add ForceDeleteOnUninstall to empty keys (no values in this key or any subkeys).
-	// Keys with values are left alone — MSI removes individual values it created, and
-	// runtime-created values (not in the .reg file) are preserved.
-	deleteAttr := ""
-	if canForceDelete && !keyTreeHasValues(key) {
-		deleteAttr = " ForceDeleteOnUninstall='yes'"
-	}
-	sb.WriteString(fmt.Sprintf("%s<RegistryKey Root='%s' Key='%s' ForceCreateOnInstall='yes'%s>\n",
-		indent, key.Root, escapeXML(key.Key), deleteAttr))
-
-	// Add permissions if enabled
-	// Note: Use core WiX PermissionEx (not util:PermissionEx) for Sddl attribute on registry keys
-	if setPermissions && sddl != "" {
-		sb.WriteString(fmt.Sprintf("%s    <PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
-	}
+	attrs, permission := declaredKeyXML(key, indent, sddl, setPermissions, canForceDelete)
+	sb.WriteString(fmt.Sprintf("%s<RegistryKey Root='%s' Key='%s'%s>\n",
+		indent, key.Root, escapeXML(key.Key), attrs))
+	sb.WriteString(permission)
 
 	// Generate values (skip removals, they're at component level)
 	for _, val := range key.Values {
@@ -822,18 +820,9 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 	parts := strings.Split(key.Key, "\\")
 	keyName := parts[len(parts)-1]
 
-	// Only add ForceDeleteOnUninstall to empty keys (no values in this key or any subkeys)
-	deleteAttr := ""
-	if canForceDelete && !keyTreeHasValues(key) {
-		deleteAttr = " ForceDeleteOnUninstall='yes'"
-	}
-	sb.WriteString(fmt.Sprintf("%s<RegistryKey Key='%s' ForceCreateOnInstall='yes'%s>\n",
-		indent, escapeXML(keyName), deleteAttr))
-
-	// Add permissions if enabled (core WiX PermissionEx, not util:PermissionEx)
-	if setPermissions && sddl != "" {
-		sb.WriteString(fmt.Sprintf("%s    <PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl)))
-	}
+	attrs, permission := declaredKeyXML(key, indent, sddl, setPermissions, canForceDelete)
+	sb.WriteString(fmt.Sprintf("%s<RegistryKey Key='%s'%s>\n", indent, escapeXML(keyName), attrs))
+	sb.WriteString(permission)
 
 	// Generate values (skip removals, they're at component level)
 	for _, val := range key.Values {
@@ -848,6 +837,30 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 	}
 
 	sb.WriteString(fmt.Sprintf("%s</RegistryKey>\n", indent))
+}
+
+// declaredKeyXML returns what a <RegistryKey> carries beyond its name: the attributes and
+// the <PermissionEx> child line. Only a declared key gets anything. A path step is usually a
+// key Windows owns - HKLM\SYSTEM above [HKLM\SYSTEM\...\EventLog\Application\NG1] - and
+// ForceCreateOnInstall, ForceDeleteOnUninstall or PermissionEx there would create it,
+// delete its whole subtree on uninstall, or replace its DACL (#97, D35). Bare, the element
+// only nests; Windows Installer creates the missing parents of what it writes anyway.
+//
+// A declared key whose subtree holds no values gets ForceDeleteOnUninstall: keys with values
+// are left alone, because MSI removes the values it created and runtime-created ones must
+// survive. PermissionEx is the core WiX one, not util:PermissionEx (Sddl on registry keys).
+func declaredKeyXML(key *RegistryKey, indent, sddl string, setPermissions, canForceDelete bool) (attrs, permission string) {
+	if !key.Declared {
+		return "", ""
+	}
+	attrs = " ForceCreateOnInstall='yes'"
+	if canForceDelete && !keyTreeHasValues(key) {
+		attrs += " ForceDeleteOnUninstall='yes'"
+	}
+	if setPermissions && sddl != "" {
+		permission = fmt.Sprintf("%s    <PermissionEx Sddl='%s'/>\n", indent, escapeXML(sddl))
+	}
+	return attrs, permission
 }
 
 func (p *Processor) generateRegistryValueXML(val *RegistryValue, key *RegistryKey, sb *strings.Builder, depth int, isFirstValue *bool, preservedIDs map[string]int) {
@@ -919,32 +932,28 @@ func keyTreeHasValues(key *RegistryKey) bool {
 	return false
 }
 
-// findFirstKeyPath finds the first non-removal key to use for a dummy keypath.
-// Returns root and key path, or empty strings if no suitable key found.
-func (p *Processor) findFirstKeyPath(keys []*RegistryKey) (string, string) {
+// firstDeclaredKey returns the first declared key the file does not remove, in tree
+// order, or nil. A removed key's subtree is not searched: it is deleted with it.
+func firstDeclaredKey(keys []*RegistryKey) *RegistryKey {
 	for _, key := range keys {
-		if !key.RemoveFlag {
-			return key.Root, key.Key
+		if key.RemoveFlag {
+			continue
 		}
-		// Check subkeys recursively
-		if root, path := p.findFirstKeyPathInSubKeys(key.SubKeys); root != "" {
-			return root, path
+		if key.Declared {
+			return key
+		}
+		if found := firstDeclaredKey(key.SubKeys); found != nil {
+			return found
 		}
 	}
-	return "", ""
+	return nil
 }
 
-// findFirstKeyPathInSubKeys recursively searches subkeys for a non-removal key.
-func (p *Processor) findFirstKeyPathInSubKeys(keys []*RegistryKey) (string, string) {
-	for _, key := range keys {
-		if !key.RemoveFlag {
-			return key.Root, key.Key
-		}
-		if root, path := p.findFirstKeyPathInSubKeys(key.SubKeys); root != "" {
-			return root, path
-		}
-	}
-	return "", ""
+// PackageKey is the HKLM key a package owns, one per UpgradeCode: the downgrade guard records
+// the installed version there (D27), and a registry component with no declared key to hold
+// its keypath puts it there (D35).
+func PackageKey(upgradeCode string) string {
+	return `Software\msis\Packages\` + strings.ToUpper(strings.Trim(upgradeCode, "{}"))
 }
 
 // nextComponentIDStr generates a unique component ID.
