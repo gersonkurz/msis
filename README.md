@@ -287,7 +287,8 @@ first** if you shipped installers built with msis 3.0.0 to 3.0.7 that import `.r
   (`HKLM\Software\msis\Packages\<UpgradeCode>`), never in `HKLM\SOFTWARE` itself.
 - Needs go-regis3 `d9bec9e`, which records which keys a `.reg` header names.
 - Still open: a `.reg` file that names a Windows key itself still sets its permissions
-  ([#99](../../issues/99)).
+  ([#99](../../issues/99)); an empty key the file creates does not get its permissions at
+  install ([#100](../../issues/100), as in every 3.0.x - the key inherits from its parent).
 - [docs/decisions.md](docs/decisions.md) gains D35.
 
 **3.0.7** — 2026-10-19 (tag [`v3.0.7`](../../releases/tag/v3.0.7))

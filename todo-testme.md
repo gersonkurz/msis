@@ -1187,7 +1187,7 @@ attributed to the entry that allowed it. Also: with `RESTRICT_FILE_PERMISSIONS=T
 whether the write still succeeds and which remaining entry allows it - D34 promises nothing either
 way. For the gMSA, note whether the account needed "Log on as a service" granted by hand.
 
-## T97 — `.reg` permissions and key deletion stay on declared keys (#97, D35): OPEN
+## T97 — `.reg` permissions and key deletion stay on declared keys (#97, D35): DONE 2026-10-19 (24/25, the miss filed as #100)
 
 **Ticket:** [#97](https://github.com/gersonkurz/msis/issues/97). `wix build` checks the MSI's
 Registry and MsiLockPermissionsEx rows (`TestRegistryPathStepsGetNoRowsInTheMSI`); that Windows
@@ -1224,6 +1224,27 @@ Expected after `msiexec /x steps.msi /qn /l*v uninstall.log` (exit 0):
 Optional contrast, only before reverting the snapshot: the same package built with 3.0.7 shows
 the defect - path-step SDDLs replaced at install, and the generated WiX marks `HKLM\SOFTWARE`
 create-and-delete-on-uninstall (`*` row), so expect the uninstall to try to remove it.
+
+### Executed on 2026-10-19, on the snapshot VM (Windows 11 Pro N), elevated PowerShell 7
+
+Run as one script (`t97-run.ps1`, kept outside the repo) against `t97.msi`, built by 37df24b from
+the same two `.reg` files as `TestRegistryPathStepsGetNoRowsInTheMSI`; `msis-check-msi.ps1` on
+that MSI showed permissions only on the declared keys. The script compares each path step's own
+entries and protection flag before and after. 24 of 25 checks PASS:
+- install and uninstall exit 0;
+- after install AND after uninstall, `HKLM\SOFTWARE`, `HKLM\SYSTEM`, `...\CurrentControlSet`,
+  `...\Services`, `...\EventLog`, `...\EventLog\Application` keep their permissions;
+- the declared keys `...\EventLog\Application\Msis97`, `SOFTWARE\Msis97Vendor`,
+  `...\Product\Settings` carry the package's own `Users` entry; the path step
+  `SOFTWARE\Msis97Vendor\Product` has no entries of its own;
+- `SOFTWARE\Msis97Vendor\Old` (the `[-...]` key) removed at install, still absent after uninstall;
+- after uninstall: a sentinel key created beside the others under `HKLM\SOFTWARE` and its value
+  intact; `SOFTWARE\Msis97Vendor\Empty` and the values `TypesSupported` and `Settings\A` removed.
+
+FAIL: the declared empty key `SOFTWARE\Msis97Vendor\Empty` existed after install but had no
+`Users` entry of its own. The MSI has its lock row; its Registry row is `*`, the three that got
+theirs are `+`. Not caused by D35 (3.0.7 builds the same rows) and not a security problem (the
+key inherits from its parent); filed as [#100](https://github.com/gersonkurz/msis/issues/100).
 
 ## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): REPAIR DONE 2026-10-19, restore and non-elevated run OPEN
 
