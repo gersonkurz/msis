@@ -15,8 +15,9 @@
     reports each one whose OWN (not inherited) permissions let Users, Authenticated Users or
     Everyone write to it. Windows never grants that on these keys.
 
-    With -Fix (run as administrator) it gives each reported key back the permissions Windows
-    ships it with. Windows then recalculates the inherited permissions of every key below it,
+    With -Fix (run as administrator, on Windows 11) it gives each reported key back the
+    permissions Windows 11 ships it with. On any other Windows version it repairs nothing and
+    says so: the original permissions are verified for Windows 11 only. Windows then recalculates the inherited permissions of every key below it,
     which repairs those keys too. Before changing anything it saves each key's current
     permissions to a backup file in the current directory.
 
@@ -42,18 +43,27 @@ param([switch]$Fix)
 
 $ErrorActionPreference = 'Stop'
 
-# The permissions (DACL, as SDDL) Windows ships each key with, read from clean installations.
-# A key without an entry is still checked, but -Fix refuses to change it.
+# The permissions (DACL, as SDDL) Windows 11 ships each key with.
 $Reference = [ordered]@{
-    'SOFTWARE'                                              = $null
-    'SOFTWARE\WOW6432Node'                                  = $null
-    'SOFTWARE\Classes'                                      = $null
-    'SYSTEM'                                                = $null
-    'SYSTEM\CurrentControlSet'                              = $null
-    'SYSTEM\CurrentControlSet\Services'                     = $null
-    'SYSTEM\CurrentControlSet\Services\EventLog'            = $null
-    'SYSTEM\CurrentControlSet\Services\EventLog\Application' = $null
+    'SOFTWARE'                                               = 'D:PAI(A;CI;KA;;;CO)(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KR;;;BU)(A;CI;KR;;;AC)(A;CI;KR;;;S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681)'
+    'SOFTWARE\WOW6432Node'                                   = 'D:'
+    'SOFTWARE\Classes'                                       = 'D:PAI(A;CIIO;GA;;;CO)(A;;KA;;;SY)(A;CIIO;GA;;;SY)(A;;KA;;;SY)(A;CIIO;GA;;;BA)(A;;KA;;;BA)(A;CIIO;GR;;;BU)(A;;KR;;;BU)(A;;KR;;;AC)(A;CIIO;GR;;;AC)(A;;KR;;;S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681)(A;CIIO;GR;;;S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681)'
+    'SYSTEM'                                                 = 'D:PAI(A;CI;KA;;;CO)(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KR;;;BU)(A;CI;KR;;;AC)(A;CI;KR;;;S-1-15-3-1024-1065365936-1281604716-3511738428-1654721687-432734479-3232135806-4053264122-3456934681)'
+    'SYSTEM\CurrentControlSet'                               = 'D:(A;;KA;;;BA)'
+    'SYSTEM\CurrentControlSet\Services'                      = 'D:'
+    'SYSTEM\CurrentControlSet\Services\EventLog'             = 'D:PAI(A;;KR;;;AU)(A;CIIO;GR;;;AU)(A;CIIO;GA;;;SY)(A;;KA;;;SY)(A;;KA;;;BA)(A;CIIO;GA;;;BA)(A;CIIO;GR;;;SO)(A;;KR;;;SO)'
+    'SYSTEM\CurrentControlSet\Services\EventLog\Application' = 'D:'
 }
+
+# The values above hold only each key's OWN entries; 'D:' means "none: inherit everything from
+# the parent", and inherited entries come back by themselves once the parent is right (the
+# table is in parent-first order). They were read on Windows 11 Pro and Pro N, on keys no
+# msis-built package had touched, and agreed wherever both machines had an untouched key.
+# They are not verified for any other Windows version, so -Fix repairs nothing there.
+# (Windows Server 2025 shares Windows 11's build numbers, hence the product type.)
+$os = Get-CimInstance Win32_OperatingSystem
+$Verified = $os.ProductType -eq 1 -and [int]$os.BuildNumber -ge 22000
+$OsName = "$($os.Caption) (build $($os.BuildNumber))"
 
 # -Path, not -LiteralPath: Windows PowerShell 5.1's Get-Acl cannot find a registry key by
 # -LiteralPath. The key names above contain no wildcard characters.
@@ -110,11 +120,17 @@ if ($affected.Count -eq 0) {
     Write-Output $Scope
     exit 0
 }
+$NoReference = "This script has no verified original permissions for $OsName - only for Windows 11. Repair these keys by hand, from a clean machine of the same Windows version."
 if (-not $Fix) {
     Write-Output "$($affected.Count) affected key(s). Keys below them that inherit their permissions are affected too."
-    Write-Output 'Run again with -Fix, as administrator, to repair them.'
+    if ($Verified) { Write-Output 'Run again with -Fix, as administrator, to repair them.' } else { Write-Output $NoReference }
     Write-Output $Scope
     exit 1
+}
+if (-not $Verified) {
+    Write-Output $NoReference
+    Write-Output 'Nothing was changed.'
+    exit 2
 }
 
 $backup = Join-Path (Get-Location) ('msis-registry-acl-backup-{0:yyyyMMdd-HHmmss}.txt' -f (Get-Date))

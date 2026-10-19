@@ -1232,8 +1232,11 @@ owner's explicit acceptance (2026-10-19): the script's list mode, its 32-bit ref
 Set-Acl inheritance propagation ran on the dev machine (an HKCU probe); `-Fix` against HKLM did
 not, and is run here, on a VM with a snapshot, once the reference table is filled in.
 
-1. **Reference values.** On a clean VM - no msis-built package ever installed - run, per
-   Windows version the customers use:
+1. **Reference values.** DONE 2026-10-19 for Windows 11 only: `$Reference` holds each key's own
+   entries as read on Windows 11 Pro N (the snapshot VM: all keys but WOW6432Node untouched) and
+   Windows 11 Pro (the dev machine: all keys but SOFTWARE untouched); where both had an untouched
+   key they agree. `-Fix` repairs nothing on another Windows version. To add one, on a machine of
+   that version no msis-built package has touched, run:
    ```powershell
    'SOFTWARE','SOFTWARE\WOW6432Node','SOFTWARE\Classes','SYSTEM','SYSTEM\CurrentControlSet','SYSTEM\CurrentControlSet\Services','SYSTEM\CurrentControlSet\Services\EventLog','SYSTEM\CurrentControlSet\Services\EventLog\Application' | % { "$_`t" + (Get-Acl "HKLM:\$_").Sddl }; (Get-CimInstance Win32_OperatingSystem).Caption
    ```
@@ -1246,8 +1249,10 @@ not, and is run here, on a VM with a snapshot, once the reference table is fille
    the script without `-Fix` reports the affected key(s), exit code 1.
 3. **Repair.** Elevated, 64-bit: `.\msis-registry-acl.ps1 -Fix`. Expected: a backup file
    `msis-registry-acl-backup-*.txt` with each affected key's SDDL before the change; `REPAIRED`
-   per key; exit 0. Then: each repaired key's DACL equals the reference (compare the entries:
-   Windows adds the `AI` flag, auto-inherited, to a DACL it propagates); owner and group are
+   per key; exit 0. Then: each repaired key's OWN entries (those without `ID`) and its
+   protection flag (`P` or not) equal `$Reference` - the reference holds no inherited entries;
+   Windows may add the `AI` flag. Its inherited entries (`ID`) equal the parent's inheritable
+   ones, i.e. the same as on the untouched key of the other machine; owner and group are
    unchanged from step 2; the inheriting child no longer has a Users write entry; a second run
    without `-Fix` reports nothing, exit 0. Also: `-Fix` in a non-elevated shell exits 2 and
    changes nothing.
