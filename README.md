@@ -223,10 +223,11 @@ entry below is the current release; `just set-version X.Y.Z` adds the next one. 
 **Unreleased** entry lists what is on `main` since that tag. It becomes that version's notes
 when it is released.
 
-**Unreleased** (next: 3.0.7) — on `main`, not yet tagged or published
+**3.0.7** — 2026-10-19 (tag [`v3.0.7`](../../releases/tag/v3.0.7))
 
-Upgrade and bundle correctness. Issues #85 to #95 are closed, the risky cases run on a VM
-(`todo-testme.md` T85, T87, T89, T90, T93, T95).
+Upgrade and bundle correctness. Issues #85 to #96 are closed, the risky cases run on a VM
+(`todo-testme.md` T85, T87, T89, T90, T93, T95). T96, installing a service under `account=`, has
+not been run yet.
 
 **Upgrading products built with an earlier msis** — read this first:
 - **Directory and File ids are derived from where they install** ([#85](../../issues/85),
@@ -282,6 +283,13 @@ Upgrade and bundle correctness. Issues #85 to #95 are closed, the risky cases ru
   **with** an `id` moves no other feature's number. Before reordering or removing features,
   give every existing feature its shipped id (docs/tutorial.md, *Feature ids and upgrades*).
   `/STRICT` now also requires an id on every feature.
+- **A service can run under a passwordless account** ([#96](../../issues/96), D34).
+  `<service account="...">` takes `NT SERVICE\<service-name>` (the service's virtual account),
+  `NT AUTHORITY\LocalService`, `NT AUTHORITY\NetworkService`, a gMSA `DOMAIN\name$`, or
+  `LocalSystem`, the default. msis writes no password, so an account that needs one is refused at
+  build time instead of failing at install (error 1923). So is any account but `LocalSystem` on a
+  `shareProcess` service. msis grants the account nothing; see docs/tutorial.md for what it can
+  write. Without `account`, the generated `.wxs` is unchanged.
 
 **Bundles:**
 - **Silent bundles start** ([#95](../../issues/95), D31). The shipped silent bundle template gave
@@ -308,7 +316,7 @@ Upgrade and bundle correctness. Issues #85 to #95 are closed, the risky cases ru
   order-dependent ids carry the order, so they stay. For unversioned files that copy was the one
   left on disk (T79); for versioned files, or a repair over a modified file, Windows Installer's
   file-replacement rules decide (D24).
-- [docs/decisions.md](docs/decisions.md) gains D26–D33.
+- [docs/decisions.md](docs/decisions.md) gains D26–D34.
 
 **3.0.6** — 2026-09-26 (tag [`v3.0.6`](../../releases/tag/v3.0.6))
 
