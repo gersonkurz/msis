@@ -1277,15 +1277,14 @@ not, and is run here, on a VM with a snapshot, once the reference table is fille
    unchanged from step 2; the inheriting child no longer has a Users write entry; a second run
    without `-Fix` reports nothing, exit 0. Also: `-Fix` in a non-elevated shell exits 2 and
    changes nothing.
-4. **Restore from the backup** (proves the backup is usable). Elevated, 64-bit:
-   ```powershell
-   foreach ($line in Get-Content .\msis-registry-acl-backup-*.txt) {
-       $k, $s = $line -split "`t"; $p = 'HKLM:\' + ($k -replace '^HKLM\\', '')
-       $a = Get-Acl -Path $p; $a.SetSecurityDescriptorSddlForm($s, 'Access'); Set-Acl -Path $p -AclObject $a
-   }
-   ```
-   Expected: the key's SDDL equals the one recorded in step 2, up to an `AI` flag Windows may
-   add (`D:AI(...)` for `D:(...)`, same entries). Revert the snapshot afterwards.
+4. ~~Restore from the backup~~ - **REMOVED 2026-10-21: it breaks Windows.** Writing the backed-up
+   SDDL back with `Set-Acl` (the loop this step used to give) pushes it into every subkey that
+   inherits - on the VM, msis's permissions without `AC` (ALL APPLICATION PACKAGES) and `BA`
+   reached about 12,000 more keys below `WOW6432Node`, and Calculator and other apps stopped
+   starting. Windows Installer had set it on the key alone, so the "restored" state is far worse
+   than the original damage. The backup is a record of the previous state, not something to
+   write back; nothing outside this runbook ever said otherwise. `-Fix` repairs the broken state
+   (measured below). Do not run the old loop.
 
 ### Executed on 2026-10-19, on the snapshot VM (Windows 11 Pro N, PowerShell 7.6.7, elevated)
 
@@ -1306,7 +1305,7 @@ Not run here: step 4 (restore from the backup) and `-Fix` in a non-elevated shel
 elsewhere - the restore loop on an HKCU stand-in under 5.1 and 7 (equal up to `AI`), the
 non-elevated `-Fix` on the dev machine (exit 2, nothing changed) - but not on this VM.
 
-### Executed on 2026-10-21, on the snapshot VM (Windows 11 Pro N, PowerShell 7.6.7, elevated): step 4 PASS
+### Executed on 2026-10-21, on the snapshot VM (Windows 11 Pro N, PowerShell 7.6.7, elevated): step 4 recorded as PASS - WRONG, see below
 
 Reverted to the snapshot with `WOW6432Node` affected. `-Fix` saved
 `msis-registry-acl-backup-20261021-103228.txt` and reported `REPAIRED HKLM\SOFTWARE\WOW6432Node`;
@@ -1314,9 +1313,32 @@ the step-4 loop then wrote the backup back:
 - before `-Fix`:  `O:BAG:SYD:P(A;OICI;KA;;;AU)(A;OICI;KA;;;SY)(A;OICI;KA;;;LS)(A;OICI;KA;;;BU)(A;OICI;KA;;;LA)`
 - after restore: `O:BAG:SYD:PAI(A;OICI;KA;;;AU)(A;OICI;KA;;;SY)(A;OICI;KA;;;LS)(A;OICI;KA;;;BU)(A;OICI;KA;;;LA)`
 
-Equal up to the `AI` flag, as expected; list mode reports `WOW6432Node` AFFECTED again.
+Equal up to the `AI` flag; list mode reports `WOW6432Node` AFFECTED again. This was recorded as a
+PASS because only the key itself was compared. It was not: see the next run.
 `-Fix` in a non-elevated PowerShell 7 on the same VM: `-Fix needs an elevated PowerShell (Run as
 administrator).`, exit code 2, nothing changed. PASS.
+
+### Executed on 2026-10-21, after the VM broke: the restore loop is the cause, `-Fix` the cure
+
+After the run above the VM's Windows was broken - many tools failed to start, also after a
+reboot. Reverted to the snapshot and repeated the steps one by one, `vmcheck.ps1` (kept beside
+`t97.msi`, outside the repo) after each: the SDDL of SOFTWARE, SOFTWARE\Microsoft, WOW6432Node,
+WOW6432Node\Microsoft, WOW6432Node\Microsoft\Windows\CurrentVersion; a scan of all 92,891 keys
+below WOW6432Node; and a start test of Calculator, Settings, Notepad, 32-bit cmd and PowerShell.
+
+| Checkpoint | keys without read for app packages (`AC`) | keys writable by users | start test |
+|---|---|---|---|
+| 0-start (affected snapshot) | 3,083 | 1,789 | all run |
+| 1 after `-Fix` | 2,904 | 1,610 | all run |
+| 2 after the restore loop | 15,775 | 14,524 | CalculatorApp.exe crashes (Application Error); other apps fail |
+| 3 `-Fix` again | apps run again (owner's report; checkpoint not captured) | | |
+
+At 0-start `WOW6432Node\Microsoft` still had the original inherited entries (with `AC` and `BA`):
+Windows Installer had set msis's SDDL on `WOW6432Node` alone. After the restore loop it held only
+msis's entries (`(A;OICIID;KA;;;AU)...`), i.e. `Set-Acl` had propagated them. `-Fix` improves the
+affected state and repairs the broken one. Not separately re-checked in this run: `t100-run.ps1`
+(the T97 MSI) and a reboot.
+
 
 ## T100 — why the empty declared key got no permissions in T97 (#100): DONE 2026-10-21, not a defect
 
