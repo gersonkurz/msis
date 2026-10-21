@@ -267,7 +267,9 @@ entry below is the current release; `just set-version X.Y.Z` adds the next one. 
 **Unreleased** entry lists what is on `main` since that tag. It becomes that version's notes
 when it is released.
 
-**Unreleased** (next: 3.0.9) — on `main`, not yet tagged or published
+**3.0.9** — 2026-10-21 (tag [`v3.0.9`](../../releases/tag/v3.0.9))
+
+Safer registry permissions by default, and the toolchain fixes for the 3.0.8 scan findings.
 
 - **A `.reg` import sets no permissions unless `sddl=` asks for them** ([#99](../../issues/99),
   D36). Up to 3.0.8, every key a `<registry file="...">` declared got a default that gives every
@@ -283,7 +285,11 @@ when it is released.
   `go.mod` pins `toolchain go1.27.2`.
 - The scan test no longer breaks when grype's database learns of a new vulnerability
   ([#98](../../issues/98)).
-- [docs/decisions.md](docs/decisions.md) gains D36.
+- Correction to the 3.0.8 notes: an empty key a `.reg` file creates **does** get its
+  permissions ([#100](../../issues/100), closed). Measured on a VM, it inherits them from its
+  parent, which carries the same `sddl=`, instead of holding them as entries of its own; the
+  access is the same.
+- [docs/decisions.md](docs/decisions.md) gains D36; Tutorial 4 explains `sddl=`.
 
 **3.0.8** — 2026-10-19 (tag [`v3.0.8`](../../releases/tag/v3.0.8))
 
