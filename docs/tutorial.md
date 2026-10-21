@@ -276,6 +276,31 @@ Windows Registry Editor Version 5.00
 "MaxConnections"=dword:00000010
 ```
 
+### Who May Change These Keys: `sddl=`
+
+By default msis leaves the permissions of registry keys alone: a key the installer creates gets
+the same permissions as the key above it. Under `HKEY_LOCAL_MACHINE` that usually means
+everyone can read it and only administrators can change it.
+
+If your application must be able to write to its own keys while running as a normal user, say
+so with `sddl=`, which gives every key named in a `[...]` header of the file those permissions:
+
+```xml
+<registry file="settings.reg"
+          sddl="O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)"/>
+```
+
+This example gives SYSTEM, all users, authenticated users, the local administrator and the
+local service full control. Up to msis 3.0.8 it was applied automatically to every `.reg` file
+without `sddl=`; since then you must ask for it.
+
+Use `sddl=` only for keys that belong to your product, such as
+`HKEY_LOCAL_MACHINE\SOFTWARE\MyCompany\MyApp`. If the file also names a key that belongs to
+Windows (anything under `SOFTWARE\Microsoft` or `SYSTEM`, for example an Event Log source),
+those permissions replace that key's own, uninstalling does not restore them, and msis warns
+about it when it builds. Put such keys in a separate `.reg` file without `sddl=`. See
+[decisions.md](decisions.md) D35 and D36 for the details.
+
 ### Using Variables and Properties in Registry Values
 
 A string value in your `.reg` file can be filled in at two different times.

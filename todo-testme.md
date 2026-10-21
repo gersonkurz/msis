@@ -1305,3 +1305,13 @@ from a 32-bit package; the other seven keys were untouched. PASS for steps 2 and
 Not run here: step 4 (restore from the backup) and `-Fix` in a non-elevated shell. Both ran
 elsewhere - the restore loop on an HKCU stand-in under 5.1 and 7 (equal up to `AI`), the
 non-elevated `-Fix` on the dev machine (exit 2, nothing changed) - but not on this VM.
+
+## T100 — why the empty declared key got no permissions in T97 (#100): OPEN
+
+**Ticket:** [#100](https://github.com/gersonkurz/msis/issues/100). Per user under HKCU it does not
+reproduce (see the issue); this measures the per-machine case. On the snapshot VM, elevated
+64-bit PowerShell, in a folder with `t97.msi` (T97) and `t100-run.ps1` (kept beside it outside the
+repo): `.\t100-run.ps1`. It installs `t97.msi` with a log, prints the SDDL of
+`SOFTWARE\Msis97Vendor`, `...\Empty`, `...\Product` and `...\Product\Settings`, then every
+registry operation Windows Installer ran, in order, and uninstalls. Paste the output into #100;
+revert the snapshot afterwards.
