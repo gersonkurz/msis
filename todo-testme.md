@@ -1246,7 +1246,7 @@ FAIL: the declared empty key `SOFTWARE\Msis97Vendor\Empty` existed after install
 theirs are `+`. Not caused by D35 (3.0.7 builds the same rows) and not a security problem (the
 key inherits from its parent); filed as [#100](https://github.com/gersonkurz/msis/issues/100).
 
-## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): REPAIR DONE 2026-10-19, restore and non-elevated run OPEN
+## T97b — the #97 repair script, end to end (`scripts/msis-registry-acl.ps1 -Fix`): DONE 2026-10-21
 
 **Ticket:** [#97](https://github.com/gersonkurz/msis/issues/97). Deferred with the product
 owner's explicit acceptance (2026-10-19): the script's list mode, its 32-bit refusal and the
@@ -1306,7 +1306,19 @@ Not run here: step 4 (restore from the backup) and `-Fix` in a non-elevated shel
 elsewhere - the restore loop on an HKCU stand-in under 5.1 and 7 (equal up to `AI`), the
 non-elevated `-Fix` on the dev machine (exit 2, nothing changed) - but not on this VM.
 
-## T100 — why the empty declared key got no permissions in T97 (#100): OPEN
+### Executed on 2026-10-21, on the snapshot VM (Windows 11 Pro N, PowerShell 7.6.7, elevated): step 4 PASS
+
+Reverted to the snapshot with `WOW6432Node` affected. `-Fix` saved
+`msis-registry-acl-backup-20261021-103228.txt` and reported `REPAIRED HKLM\SOFTWARE\WOW6432Node`;
+the step-4 loop then wrote the backup back:
+- before `-Fix`:  `O:BAG:SYD:P(A;OICI;KA;;;AU)(A;OICI;KA;;;SY)(A;OICI;KA;;;LS)(A;OICI;KA;;;BU)(A;OICI;KA;;;LA)`
+- after restore: `O:BAG:SYD:PAI(A;OICI;KA;;;AU)(A;OICI;KA;;;SY)(A;OICI;KA;;;LS)(A;OICI;KA;;;BU)(A;OICI;KA;;;LA)`
+
+Equal up to the `AI` flag, as expected; list mode reports `WOW6432Node` AFFECTED again.
+`-Fix` in a non-elevated PowerShell 7 on the same VM: `-Fix needs an elevated PowerShell (Run as
+administrator).`, exit code 2, nothing changed. PASS.
+
+## T100 — why the empty declared key got no permissions in T97 (#100): DONE 2026-10-21, not a defect
 
 **Ticket:** [#100](https://github.com/gersonkurz/msis/issues/100). Per user under HKCU it does not
 reproduce (see the issue); this measures the per-machine case. On the snapshot VM, elevated
@@ -1315,3 +1327,12 @@ repo): `.\t100-run.ps1`. It installs `t97.msi` with a log, prints the SDDL of
 `SOFTWARE\Msis97Vendor`, `...\Empty`, `...\Product` and `...\Product\Settings`, then every
 registry operation Windows Installer ran, in order, and uninstalls. Paste the output into #100;
 revert the snapshot afterwards.
+
+### Executed on 2026-10-21, on the snapshot VM (Windows 11 Pro N), elevated
+
+`Msis97Vendor\Empty` had the package's SDDL entries (SY, BU, AU, LA, LS, full control) as entries
+INHERITED from `Msis97Vendor`, which carries the same SDDL - the same effective access, not entries
+of its own, which is what T97's check required. Windows Installer ran the key operations children
+first: `...\Empty`, `...\Product\Settings`, then `SOFTWARE\Msis97Vendor`, then the Event Log key.
+The path step `Product` kept the inheritance it got when created (from `SOFTWARE`: Users read).
+Full output and assessment on #100.
