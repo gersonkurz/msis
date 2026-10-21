@@ -2,6 +2,8 @@ module github.com/gersonkurz/msis
 
 go 1.25.5
 
+toolchain go1.27.2
+
 require (
 	github.com/aymerick/raymond v2.0.2+incompatible
 	github.com/gersonkurz/go-regis3 v0.0.0-20261019140652-d9bec9e54f65
@@ -11,6 +13,6 @@ require (
 )
 
 require (
-	golang.org/x/text v0.39.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

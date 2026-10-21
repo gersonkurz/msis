@@ -97,8 +97,21 @@ func TestScanWithAThresholdAndAnUpperCaseName(t *testing.T) {
 	if want := filepath.Join(dir, "app.msi.grype.json"); res.out != want {
 		t.Errorf("report %s, want %s", res.out, want)
 	}
-	if len(res.report.Findings) != 1 || res.report.Findings[0].SuppressedBy == "" {
-		t.Errorf("findings %+v, want GO-2026-5970 answered by the VEX beside the document (VEX: %s)",
-			res.report.Findings, res.report.VEX)
+	// The finding the VEX names must be answered. Others may come and go with grype's database -
+	// x/text v0.20.0 gained GO-2026-6629 after this test was written (#98) - so they are not
+	// counted, only required to stay unanswered: the VEX says nothing about them.
+	var found bool
+	for _, f := range res.report.Findings {
+		if f.ID == "GO-2026-5970" {
+			found = true
+			if f.SuppressedBy == "" {
+				t.Errorf("GO-2026-5970 is not answered by the VEX beside the document (VEX: %s)", res.report.VEX)
+			}
+		} else if f.SuppressedBy != "" {
+			t.Errorf("%s is answered by %q, but the VEX names only CVE-2026-56852", f.ID, f.SuppressedBy)
+		}
+	}
+	if !found {
+		t.Errorf("findings %+v, want GO-2026-5970 among them", res.report.Findings)
 	}
 }
