@@ -267,6 +267,24 @@ entry below is the current release; `just set-version X.Y.Z` adds the next one. 
 **Unreleased** entry lists what is on `main` since that tag. It becomes that version's notes
 when it is released.
 
+**Unreleased** (next: 3.0.9) — on `main`, not yet tagged or published
+
+- **A `.reg` import sets no permissions unless `sddl=` asks for them** ([#99](../../issues/99),
+  D36). Up to 3.0.8, every key a `<registry file="...">` declared got a default that gives every
+  user full control - Windows keys included, such as an Event Log source or the Run key. Now a
+  key without `sddl=` simply inherits from its parent. **If your product relies on users being
+  able to write to its keys, add
+  `sddl="O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)"`
+  (the old default) to its `<registry>` elements.** msis warns at build time when `sddl=`
+  reaches a key in a Windows tree (`HKLM\SOFTWARE\Microsoft`, `HKLM\SYSTEM`, ...), and no longer
+  deletes an empty key it declares there on uninstall.
+- **msis is built with Go 1.27.2 and golang.org/x/text v0.41.0**, which fixes the 43 findings the
+  3.0.8 release scan reported (13 in Go's standard library per MSI, GO-2026-6629 in x/text).
+  `go.mod` pins `toolchain go1.27.2`.
+- The scan test no longer breaks when grype's database learns of a new vulnerability
+  ([#98](../../issues/98)).
+- [docs/decisions.md](docs/decisions.md) gains D36.
+
 **3.0.8** — 2026-10-19 (tag [`v3.0.8`](../../releases/tag/v3.0.8))
 
 A security fix. **Read [Security notice: registry permissions](#security-notice-registry-permissions-msis-300-to-307)

@@ -2118,8 +2118,8 @@ func (c *Context) generateAllRegistryXML(preservedIDs []map[string]int) string {
 		return ""
 	}
 
-	// Apply registry permissions unless explicitly disabled
-	// (msis-2.x always applies SDDL from registry entries)
+	// Apply the <registry sddl> permissions unless explicitly disabled. msis-2.x applied a
+	// default SDDL to every .reg import; msis 3.0.9 applies only an explicit one (D36).
 	setPermissions := !c.Variables.GetBool("DISABLE_REGISTRY_PERMISSIONS")
 
 	// Generate XML using the registry processor with preservation support

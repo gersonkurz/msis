@@ -15,7 +15,8 @@ import (
 // "*") and MsiLockPermissionsEx rows exist for the keys a .reg file declares, and for none of
 // the keys on the path to them - HKLM\SYSTEM, HKLM\SOFTWARE and the rest. The generator test
 // checks the WiX authoring; this checks what WiX turned it into, which is what Windows
-// Installer acts on.
+// Installer acts on. The declared file carries an explicit sddl=, because without one no key
+// gets permissions at all (D36).
 func TestRegistryPathStepsGetNoRowsInTheMSI(t *testing.T) {
 	requireWix(t)
 	dir := t.TempDir()
@@ -27,6 +28,11 @@ func TestRegistryPathStepsGetNoRowsInTheMSI(t *testing.T) {
 		"[HKEY_LOCAL_MACHINE\\SOFTWARE\\Msis97Vendor\\Empty]\r\n")
 	write(t, filepath.Join(dir, "deleteonly.reg"), "Windows Registry Editor Version 5.00\r\n\r\n"+
 		"[-HKEY_LOCAL_MACHINE\\SOFTWARE\\Msis97Vendor\\Old]\r\n")
+	// D36, imported without sddl=: no key of it gets a permission row, and the empty Windows key
+	// it declares is created but never deleted on uninstall.
+	write(t, filepath.Join(dir, "nosddl.reg"), "Windows Registry Editor Version 5.00\r\n\r\n"+
+		"[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run]\r\n\r\n"+
+		"[HKEY_LOCAL_MACHINE\\SOFTWARE\\Msis99Vendor]\r\n\"V\"=\"1\"\r\n")
 	script := scriptFor(t, dir, "steps.msi", `<?xml version="1.0" encoding="utf-8"?>
 <setup>
   <set name="PRODUCT_NAME" value="PathSteps97"/>
@@ -36,8 +42,9 @@ func TestRegistryPathStepsGetNoRowsInTheMSI(t *testing.T) {
   <set name="PLATFORM" value="x64"/>
   <set name="BUILD_TARGET" value="{{TARGET}}"/>
   <feature name="Main">
-    <registry file="declared.reg"/>
+    <registry file="declared.reg" sddl="O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BA)"/>
     <registry file="deleteonly.reg"/>
+    <registry file="nosddl.reg"/>
   </feature>
 </setup>`)
 	if err := processFile(script, &cliArgs{build: true, setOverrides: map[string]string{}, templateFolder: repoTemplates(t)}); err != nil {
@@ -58,11 +65,14 @@ func TestRegistryPathStepsGetNoRowsInTheMSI(t *testing.T) {
 		}
 	}
 	sort.Strings(keyRows)
-	// "*" is ForceCreateOnInstall + ForceDeleteOnUninstall: only the empty declared key.
+	// "*" is ForceCreateOnInstall + ForceDeleteOnUninstall: only the product's own empty key,
+	// never the empty Windows key Run (D36).
 	wantKeyRows := []string{
 		`* SOFTWARE\Msis97Vendor\Empty`,
+		`+ SOFTWARE\Microsoft\Windows\CurrentVersion\Run`,
 		`+ SOFTWARE\Msis97Vendor`,
 		`+ SOFTWARE\Msis97Vendor\Product\Settings`,
+		`+ SOFTWARE\Msis99Vendor`,
 		`+ SYSTEM\CurrentControlSet\Services\EventLog\Application\Msis97`,
 	}
 	if strings.Join(keyRows, "\n") != strings.Join(wantKeyRows, "\n") {

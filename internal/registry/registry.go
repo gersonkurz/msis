@@ -16,10 +16,6 @@ import (
 	"github.com/gersonkurz/msis/internal/variables"
 )
 
-// DefaultSDDL is the default security descriptor for registry keys.
-// Grants generic access to System, Built-in Users, Authenticated Users, Local Admin, and Local Service.
-const DefaultSDDL = "O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)"
-
 // Component represents a WiX registry component.
 type Component struct {
 	ID        string
@@ -125,13 +121,9 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 		return nil, fmt.Errorf("parsing registry file %s: %w", reg.File, err)
 	}
 
-	// Apply SDDL default
-	sddl := reg.SDDL
-	if sddl == "" {
-		sddl = DefaultSDDL
-	}
-
-	// Generate component
+	// Generate component. Without <registry sddl>, no key gets permissions: msis used to apply
+	// a default granting Users and Authenticated Users full control, inherited by every subkey,
+	// on every key the file declared - Windows keys included (#99, docs/decisions.md D36).
 	compID := p.nextComponentIDStr()
 	guid := generateGUID(p.upgradeCode + "/registry_" + reg.File)
 
@@ -141,7 +133,7 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 		Permanent: reg.Permanent,
 		Preserve:  reg.Preserve,
 		Condition: reg.Condition,
-		SDDL:      sddl,
+		SDDL:      reg.SDDL,
 	}
 
 	// Convert regis3 tree to our RegistryKey structure
@@ -149,9 +141,57 @@ func (p *Processor) Process(reg ir.Registry) ([]*Component, error) {
 
 	for _, key := range comp.Keys {
 		p.warnFormattedValues(key, reg.Preserve)
+		p.warnWindowsKeys(key, reg, comp.SDDL != "" && !p.Variables.GetBool("DISABLE_REGISTRY_PERMISSIONS"))
 	}
 
 	return []*Component{comp}, nil
+}
+
+// warnWindowsKeys reports each key the .reg file declares inside a Windows tree (see
+// windowsKey), where what msis does to a declared key reaches a key the product does not
+// own (#99, D36): sddl= replaces its permissions, which uninstalling does not restore. And
+// an empty declared key there is NOT deleted on uninstall, as an empty key of the
+// product's own is (declaredKeyXML), because the key and everything below it belong to Windows.
+func (p *Processor) warnWindowsKeys(key *RegistryKey, reg ir.Registry, setsPermissions bool) {
+	if key.RemoveFlag {
+		return
+	}
+	if key.Declared && windowsKey(key.Root, key.Key) {
+		if setsPermissions {
+			p.warn("registry file %s declares %s\\%s, a Windows key: sddl=%q replaces its permissions at install, "+
+				"and uninstalling does not restore them. Declare only the product's own keys, or drop sddl=.",
+				reg.File, key.Root, key.Key, reg.SDDL)
+		}
+		if !reg.Permanent && !keyTreeHasValues(key) {
+			p.warn("registry file %s declares %s\\%s, a Windows key, without values: msis leaves it in place on "+
+				"uninstall instead of deleting it, as it would an empty key of the product's own.",
+				reg.File, key.Root, key.Key)
+		}
+	}
+	for _, sub := range key.SubKeys {
+		p.warnWindowsKeys(sub, reg, setsPermissions)
+	}
+}
+
+// windowsKey reports whether a key belongs to Windows rather than to a product: a top-level
+// key of HKLM or HKCU (SOFTWARE, SYSTEM, ...), HKLM\SOFTWARE\WOW6432Node and SOFTWARE\Classes,
+// or anything under SOFTWARE\Microsoft, SOFTWARE\WOW6432Node\Microsoft, SOFTWARE\Policies and
+// HKLM\SYSTEM. scripts/msis-check-msi.ps1 uses the same trees.
+// HKCR is left out: its top-level keys are mostly products' own ProgIDs and file types.
+func windowsKey(root, key string) bool {
+	if root != "HKLM" && root != "HKCU" {
+		return false
+	}
+	k := strings.ToUpper(strings.Trim(key, `\`))
+	if !strings.Contains(k, `\`) || k == `SOFTWARE\WOW6432NODE` || k == `SOFTWARE\CLASSES` {
+		return true
+	}
+	for _, tree := range []string{`SOFTWARE\MICROSOFT`, `SOFTWARE\WOW6432NODE\MICROSOFT`, `SOFTWARE\POLICIES`, `SYSTEM`} {
+		if k == tree || strings.HasPrefix(k, tree+`\`) {
+			return true
+		}
+	}
+	return false
 }
 
 // warnFormattedValues reports string values that Windows Installer will reinterpret.
@@ -848,13 +888,14 @@ func (p *Processor) generateSubKeyXML(key *RegistryKey, sb *strings.Builder, sdd
 //
 // A declared key whose subtree holds no values gets ForceDeleteOnUninstall: keys with values
 // are left alone, because MSI removes the values it created and runtime-created ones must
-// survive. PermissionEx is the core WiX one, not util:PermissionEx (Sddl on registry keys).
+// survive. So is an empty declared key in a Windows tree (windowsKey, #99): deleting it would
+// take Windows' own subkeys with it. PermissionEx is the core WiX one, not util:PermissionEx (Sddl on registry keys).
 func declaredKeyXML(key *RegistryKey, indent, sddl string, setPermissions, canForceDelete bool) (attrs, permission string) {
 	if !key.Declared {
 		return "", ""
 	}
 	attrs = " ForceCreateOnInstall='yes'"
-	if canForceDelete && !keyTreeHasValues(key) {
+	if canForceDelete && !keyTreeHasValues(key) && !windowsKey(key.Root, key.Key) {
 		attrs += " ForceDeleteOnUninstall='yes'"
 	}
 	if setPermissions && sddl != "" {

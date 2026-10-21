@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gersonkurz/msis/internal/ir"
+	"github.com/gersonkurz/msis/internal/variables"
 )
 
 func TestProcessBasicRegistry(t *testing.T) {
@@ -45,8 +46,8 @@ func TestProcessBasicRegistry(t *testing.T) {
 	if comp.GUID == "" {
 		t.Error("Component GUID should not be empty")
 	}
-	if comp.SDDL != DefaultSDDL {
-		t.Errorf("Expected default SDDL, got %s", comp.SDDL)
+	if comp.SDDL != "" {
+		t.Errorf("without sddl= a component sets no permissions (D36), got SDDL %s", comp.SDDL)
 	}
 
 	if len(comp.Keys) == 0 {
@@ -1461,7 +1462,7 @@ func TestPathStepKeysAreLeftAlone(t *testing.T) {
 				t.Fatal(err)
 			}
 			proc := NewProcessor(tmpDir, "{11111111-2222-3333-4444-555555555555}")
-			components, err := proc.Process(ir.Registry{File: "x.reg"})
+			components, err := proc.Process(ir.Registry{File: "x.reg", SDDL: "D:(A;CI;KA;;;SY)"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1521,5 +1522,116 @@ func TestDummyKeypathNeverOnPathStepOrRemovedKey(t *testing.T) {
 				t.Errorf("want exactly one KeyPath, got %d", n)
 			}
 		})
+	}
+}
+
+// processReg writes content as a .reg file and runs it through a Processor.
+func processReg(t *testing.T, content string, reg ir.Registry, vars variables.Dictionary) (*Processor, []*Component) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "x.reg"), []byte("Windows Registry Editor Version 5.00\n\n"+content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg.File = "x.reg"
+	proc := NewProcessor(dir, "{11111111-2222-3333-4444-555555555555}")
+	proc.Variables = vars
+	components, err := proc.Process(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return proc, components
+}
+
+// #99 (D36): without <registry sddl> no key gets permissions, even with registry permissions
+// enabled - the keys inherit from their parents.
+func TestNoSddlSetsNoPermissions(t *testing.T) {
+	proc, components := processReg(t, `[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\App]
+"V"="1"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Empty]
+`, ir.Registry{}, nil)
+	xml := proc.GenerateXML(components, true)
+	if strings.Contains(xml, "PermissionEx") {
+		t.Errorf("no sddl= must mean no PermissionEx:\n%s", xml)
+	}
+	if !strings.Contains(xml, "Key='App' ForceCreateOnInstall='yes'") {
+		t.Errorf("declared keys are still created:\n%s", xml)
+	}
+}
+
+// #99 (D36): a declared key in a Windows tree is warned about when sddl= replaces its
+// permissions, and an empty one is not deleted on uninstall. The product's own keys are not
+// warned about, and an empty one of theirs is still deleted.
+func TestWindowsKeysAreWarnedAboutAndNeverDeleted(t *testing.T) {
+	content := `[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run]
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\Application\Product]
+"TypesSupported"=dword:00000007
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Vendor\Empty]
+`
+	const sddl = "D:(A;CI;KA;;;SY)"
+
+	proc, components := processReg(t, content, ir.Registry{SDDL: sddl}, nil)
+	joined := strings.Join(proc.Warnings(), "\n")
+	for _, key := range []string{`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, `HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application\Product`} {
+		if !strings.Contains(joined, key+", a Windows key: sddl=") {
+			t.Errorf("no permissions warning for %s in:\n%s", key, joined)
+		}
+	}
+	if !strings.Contains(joined, `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run, a Windows key, without values`) {
+		t.Errorf("no warning that the empty Run key is left in place:\n%s", joined)
+	}
+	if strings.Contains(joined, "Vendor") {
+		t.Errorf("the product's own key must not be warned about:\n%s", joined)
+	}
+	xml := proc.GenerateXML(components, true)
+	if line, _ := registryKeyLine(t, xml, "Run"); strings.Contains(line, "ForceDeleteOnUninstall") {
+		t.Errorf("an empty Windows key must never be deleted on uninstall: %s", line)
+	}
+	if line, _ := registryKeyLine(t, xml, "Empty"); !strings.Contains(line, "ForceDeleteOnUninstall='yes'") {
+		t.Errorf("the product's own empty key is still deleted on uninstall: %s", line)
+	}
+
+	// No sddl=, or permissions disabled: nothing replaces permissions, so no such warning.
+	for name, tc := range map[string]struct {
+		reg  ir.Registry
+		vars variables.Dictionary
+	}{
+		"no sddl":  {ir.Registry{}, nil},
+		"disabled": {ir.Registry{SDDL: sddl}, variables.Dictionary{"DISABLE_REGISTRY_PERMISSIONS": "True"}},
+	} {
+		proc, _ := processReg(t, content, tc.reg, tc.vars)
+		if j := strings.Join(proc.Warnings(), "\n"); strings.Contains(j, "replaces its permissions") {
+			t.Errorf("%s: no permissions are set, yet: %s", name, j)
+		}
+	}
+}
+
+func TestWindowsKey(t *testing.T) {
+	for _, tc := range []struct {
+		root, key string
+		want      bool
+	}{
+		{"HKLM", `SOFTWARE`, true},
+		{"HKLM", `SYSTEM`, true},
+		{"HKLM", `SOFTWARE\WOW6432Node`, true},
+		{"HKLM", `SOFTWARE\Classes`, true},
+		{"HKLM", `SOFTWARE\Microsoft`, true},
+		{"HKLM", `software\microsoft\Windows\CurrentVersion\Run`, true},
+		{"HKLM", `SOFTWARE\WOW6432Node\Microsoft\Windows`, true},
+		{"HKLM", `SOFTWARE\Policies\Vendor`, true},
+		{"HKLM", `SYSTEM\CurrentControlSet\Services\EventLog\Application\Product`, true},
+		{"HKCU", `Software\Microsoft\Windows\CurrentVersion\Run`, true},
+		{"HKLM", `SOFTWARE\Vendor`, false},
+		{"HKLM", `SOFTWARE\MicrosoftVendor`, false},
+		{"HKLM", `SOFTWARE\WOW6432Node\Vendor`, false},
+		{"HKLM", `SOFTWARE\Classes\Vendor.Document`, false},
+		{"HKCR", `WOSA/XFS_ROOT`, false},
+		{"HKCU", `Software\Vendor`, false},
+	} {
+		if got := windowsKey(tc.root, tc.key); got != tc.want {
+			t.Errorf("windowsKey(%s, %s) = %v, want %v", tc.root, tc.key, got, tc.want)
+		}
 	}
 }

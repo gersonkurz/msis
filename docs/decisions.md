@@ -1549,7 +1549,7 @@ A key is **declared** when a `[...]` header of the `.reg` file names it (go-regi
 `KeyEntry.Declared`). Every other key in the parsed tree is a path step: `HKLM\SYSTEM`,
 `SYSTEM\CurrentControlSet`, ... above `[HKLM\SYSTEM\CurrentControlSet\Services\EventLog\Application\NG1]`.
 Only a declared key the file does not remove gets `ForceCreateOnInstall`, `PermissionEx`
-(the `<registry sddl>`, else `DefaultSDDL`) and, when its subtree holds no values,
+(the `<registry sddl>`; since D36 nothing without it) and, when its subtree holds no values,
 `ForceDeleteOnUninstall`. A path step is emitted as a bare `<RegistryKey>` that only nests;
 Windows Installer creates the missing parents of what it writes anyway.
 
@@ -1575,7 +1575,40 @@ the hive and set permissions on every key under it, so it opened up
 
 **Not settled here:** a header that declares an existing Windows key (`...\CurrentVersion\Run`,
 `HKCR\.txt`) still has that key's DACL replaced, as in msis-2.x. Which keys those are cannot
-be known at build time, so this needs a policy decision of its own.
+be known at build time, so this needs a policy decision of its own - since settled as D36.
 
 **What would reopen this:** a package that relied on the permissions msis set on a path step,
 or a declared key that must not be created.
+
+## D36 — A `.reg` import sets permissions only when `sddl=` asks for them; Windows keys are warned about and never deleted
+
+**Settled in:** [#99](https://github.com/gersonkurz/msis/issues/99), 2026-10-21.
+**Implemented by:** `internal/registry/registry.go` — `SDDL:      reg.SDDL,`, `func windowsKey(root, key string) bool`, `func (p *Processor) warnWindowsKeys(`
+
+Without `<registry sddl="...">`, no key of a `.reg` import gets a `PermissionEx`; a key the
+install creates inherits from its parent. msis used to apply a default,
+`O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)`,
+to every key the file declared: Users and Authenticated Users full control, inherited by every
+subkey. D35 stopped that reaching the keys on the path; it still reached a declared key that
+belongs to Windows - an Event Log source (NG1, #97's package), `...\CurrentVersion\Run` - where
+any user could then point `EventMessageFile` or an autostart entry at code of their choice, and
+uninstalling does not restore the permissions. Nobody chose those permissions: the scripts that
+want them (ProAKT's) already name an `sddl=`.
+
+A declared key in a Windows tree - a top-level key of HKLM or HKCU, `HKLM\SOFTWARE\WOW6432Node`
+or `SOFTWARE\Classes`, or anything under `SOFTWARE\Microsoft`, `SOFTWARE\WOW6432Node\Microsoft`,
+`SOFTWARE\Policies` and `HKLM\SYSTEM` (`windowsKey`) - gets a build warning when `sddl=` replaces its
+permissions. A warning, not a refusal: an explicit `sddl=` there may be deliberate, and the
+author is told. HKCR is not in the list: its top-level keys are mostly products' own ProgIDs and
+file types, and a list of Windows ones would be guesswork.
+
+An empty declared key in such a tree is never given `ForceDeleteOnUninstall`, which deletes the
+key and everything below it: an empty `[HKLM\...\CurrentVersion\Run]` would otherwise remove
+every autostart entry on uninstall. The cost is that a product's own empty key there (a
+service's `Parameters`) stays behind after uninstall; a build warning says so.
+
+**Departure from msis-2.x:** msis-2.x applied the same default SDDL (`SetupItem/RegistryKey.cs`,
+`GetOptional(sd, "sddl", ...)`). A script that relied on it names it in `sddl=` now.
+
+**What would reopen this:** a package that needs permissions on its keys and cannot say so in
+`sddl=`, or a Windows tree the list misses.

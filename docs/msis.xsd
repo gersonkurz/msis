@@ -27,7 +27,15 @@
 
   <xs:complexType name="RegistryType">
     <xs:attribute name="file" type="xs:string" use="required"/>
-    <xs:attribute name="sddl" type="xs:string" use="optional"/>
+    <xs:attribute name="sddl" type="xs:string" use="optional">
+      <xs:annotation>
+        <xs:documentation>
+          Permissions (an SDDL string) for every key the .reg file declares in a [...] header.
+          Without it no key gets permissions; a key the install creates inherits from its
+          parent (decisions D36). Up to 3.0.8 msis applied a default giving Users full control.
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
     <xs:attribute name="preserve" type="msisBoolean" use="optional">
       <xs:annotation>
         <xs:documentation>

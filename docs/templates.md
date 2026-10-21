@@ -323,7 +323,7 @@ on an existing key survive it. Neither is a way to harden an existing installati
 |----------|---------|---------------------|
 | `DISABLE_FILE_PERMISSIONS` | off | msis adds no entry to the folders it creates; a newly created folder has only what it inherits |
 | `RESTRICT_FILE_PERMISSIONS` | off | The entry msis adds for `Users` grants read and execute instead of full control |
-| `DISABLE_REGISTRY_PERMISSIONS` | off | msis adds no `PermissionEx` to the registry keys written from `.reg` files; `sddl=` attributes are ignored |
+| `DISABLE_REGISTRY_PERMISSIONS` | off | msis adds no `PermissionEx` to the registry keys written from `.reg` files; `sddl=` attributes are ignored. Without `sddl=` there is none anyway (D36) |
 
 ### Folders: `DISABLE_FILE_PERMISSIONS` and `RESTRICT_FILE_PERMISSIONS`
 
@@ -349,19 +349,22 @@ Setting both: `DISABLE_FILE_PERMISSIONS` wins, because there is no entry left to
 
 ### Registry keys: `DISABLE_REGISTRY_PERMISSIONS`
 
-Every registry key a `<registry file="…">` declares — names in a `[…]` header — carries a
-`PermissionEx` with an SDDL. The keys on the path to it (`HKLM\SOFTWARE` above
-`[HKLM\SOFTWARE\Vendor]`) carry none and keep their own security (decisions D35). The SDDL is
-the element's own `sddl="…"` attribute, or msis's default
-`O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)`
-(full access for SYSTEM, built-in users, authenticated users, the local administrator and the
-local service, inherited by subkeys). Unlike the folder entry this is the core `PermissionEx`,
-applied by Windows Installer as the key's security descriptor (`MsiLockPermissionsEx`); on a key
-that already exists with customer-specific permissions, expect the supplied or default SDDL to
-be what the key ends up with — do not rely on its other entries surviving.
-`DISABLE_REGISTRY_PERMISSIONS=True` emits none, and any `sddl=` attributes are ignored: a key the
-install **creates** then has what it inherits from its parent, and msis does not touch the
-security of a key that **already existed**.
+A `<registry file="…" sddl="…">` gives every registry key the file declares — names in a `[…]`
+header — a `PermissionEx` with that SDDL. The keys on the path to it (`HKLM\SOFTWARE` above
+`[HKLM\SOFTWARE\Vendor]`) carry none and keep their own security (decisions D35). **Without
+`sddl=`, no key gets one** (D36): a key the install creates has what it inherits from its parent.
+Up to 3.0.8 msis applied a default instead,
+`O:BAG:SYD:(A;CIOI;GA;;;SY)(A;CIOI;GA;;;BU)(A;CIOI;GA;;;AU)(A;CIOI;GA;;;LA)(A;CIOI;GA;;;LS)`,
+which gives Users and Authenticated Users full control; a script that relied on it now names it
+in `sddl=`. Unlike the folder entry this is the core `PermissionEx`, applied by Windows
+Installer as the key's security descriptor (`MsiLockPermissionsEx`); on a key that already exists
+with customer-specific permissions, expect the SDDL to be what the key ends up with — do not rely
+on its other entries surviving, and uninstalling does not restore them. msis therefore warns at
+build time when `sddl=` reaches a declared key in a Windows tree (`HKLM\SOFTWARE\Microsoft`,
+`HKLM\SYSTEM`, ...; `windowsKey` in `internal/registry/registry.go`), and never deletes an empty
+declared key there on uninstall, as it does an empty key of the product's own.
+`DISABLE_REGISTRY_PERMISSIONS=True` emits no `PermissionEx`, and any `sddl=` attributes are
+ignored; msis then does not touch the security of a key that **already existed**.
 
 ```xml
 <set name="RESTRICT_FILE_PERMISSIONS" value="True"/>
