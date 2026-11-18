@@ -31,8 +31,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -140,8 +142,14 @@ var (
 				`$v = (Get-Item -LiteralPath $p).VersionInfo.FileVersion; `+
 				`Write-Output ($s.Status.ToString() + '|' + $s.SignerCertificate.Subject + '|' + $v)`,
 			strings.ReplaceAll(path, "'", "''"))
-		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
+		cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+		cmd.Env = windowsPowerShellEnv(os.Environ())
+		out, err := cmd.Output()
 		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && len(bytes.TrimSpace(exitErr.Stderr)) > 0 {
+				return "", "", "", fmt.Errorf("powershell: %w: %s", err, bytes.TrimSpace(exitErr.Stderr))
+			}
 			return "", "", "", fmt.Errorf("powershell: %w", err)
 		}
 		parts := strings.SplitN(strings.TrimSpace(string(out)), "|", 3)
@@ -231,6 +239,24 @@ func examine(pin prereqcache.PrerequisiteURL) finding {
 
 // vsCDNHash matches the SHA-256 the Visual Studio CDN carries in its download paths.
 var vsCDNHash = regexp.MustCompile(`/download/pr/[^/]+/([0-9A-Fa-f]{64})/`)
+
+// windowsPowerShellEnv is environ without PSModulePath, for starting Windows PowerShell 5.1.
+// PowerShell 7 rewrites PSModulePath to put its own module folders first. Started from a pwsh
+// terminal, this tool inherits that value (also through the powershell.exe `just` uses as its
+// recipe shell), and handed on unchanged it made powershell.exe autoload pwsh's
+// Microsoft.PowerShell.Security, fail, and report every moved pin as "verification FAILED".
+// With the variable unset, Windows PowerShell builds its own default (pwsh does the same when
+// it starts powershell.exe itself). Windows environment names are case-insensitive.
+func windowsPowerShellEnv(environ []string) []string {
+	env := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if name, _, _ := strings.Cut(kv, "="); strings.EqualFold(name, "PSModulePath") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
 
 // verify downloads what the alias serves now and gathers the evidence a re-pin needs.
 func verify(f *finding) {

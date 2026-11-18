@@ -101,3 +101,17 @@ func TestVerifyRejectsAnUnsignedFile(t *testing.T) {
 		t.Errorf("PowerShell reported %q for an unsigned file", f.SigStatus)
 	}
 }
+
+// Started from a pwsh terminal, repin inherits a PSModulePath naming PowerShell 7's module
+// folders first. Inherited by the powershell.exe the signature reader starts, it made Windows PowerShell 5.1
+// autoload pwsh's Microsoft.PowerShell.Security, which it cannot load, so every moved pin
+// failed verification with "powershell: exit status 1". The reader must not depend on the
+// caller's shell: with that environment, a genuine installer still verifies.
+func TestVerifyIgnoresAPowerShell7ModulePath(t *testing.T) {
+	pwshModules := filepath.Join(os.Getenv("ProgramFiles"), "PowerShell", "7", "Modules")
+	if _, err := os.Stat(filepath.Join(pwshModules, "Microsoft.PowerShell.Security")); err != nil {
+		t.Skipf("PowerShell 7 is not installed at %s; the condition this guards against cannot arise", pwshModules)
+	}
+	t.Setenv("PSModulePath", pwshModules+";"+os.Getenv("PSModulePath"))
+	TestVerifyReadsARealMicrosoftSignature(t)
+}

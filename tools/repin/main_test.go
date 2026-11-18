@@ -290,3 +290,14 @@ func TestPinsAreCheckedInADefinedOrder(t *testing.T) {
 		}
 	}
 }
+
+// The environment handed to Windows PowerShell drops PSModulePath - under any spelling, since
+// Windows environment names are case-insensitive - and keeps everything else in order.
+func TestWindowsPowerShellEnvDropsOnlyPSModulePath(t *testing.T) {
+	in := []string{`PATH=C:\x`, `PSModulePath=C:\pwsh`, `psmodulepath=C:\other`, "PSModulePathX=keep", `TEMP=C:\t`}
+	got := windowsPowerShellEnv(in)
+	want := []string{`PATH=C:\x`, "PSModulePathX=keep", `TEMP=C:\t`}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("windowsPowerShellEnv = %q, want %q", got, want)
+	}
+}
